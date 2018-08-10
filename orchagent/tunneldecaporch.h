@@ -18,6 +18,7 @@ struct TunnelTermEntry
 struct TunnelEntry
 {
     sai_object_id_t            tunnel_id;              // tunnel id
+    sai_object_id_t            overlay_intf_id;        // overlay interface id
     vector<TunnelTermEntry>    tunnel_term_info;       // tunnel_entry ids related to the tunnel abd ips related to the tunnel (all ips for tunnel entries that refer to this tunnel)
 };
 

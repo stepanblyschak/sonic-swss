@@ -282,7 +282,7 @@ bool TunnelDecapOrch::addDecapTunnel(string key, string type, IpAddresses dst_ip
         return false;
     }
 
-    tunnelTable[key] = { tunnel_id, {} };
+    tunnelTable[key] = { tunnel_id, overlayIfId, {} };
 
     // TODO:
     // there should also be "business logic" for netbouncer in the "tunnel application" code, which is a different source file and daemon process
@@ -528,6 +528,15 @@ bool TunnelDecapOrch::removeDecapTunnel(string key)
         SWSS_LOG_ERROR("Failed to remove tunnel: %lu", tunnel_info->tunnel_id);
         return false;
     }
+
+    // delete overlay loopback interface
+    status = sai_router_intfs_api->remove_router_interface(tunnel_info->overlay_intf_id);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to remove tunnel overlay interface: %lu", tunnel_info->overlay_intf_id);
+        return false;
+    }
+
     tunnelTable.erase(key);
     return true;
 }
