@@ -1259,24 +1259,24 @@ bool PortsOrch::initPort(const string &alias, const set<int> &lane_set)
         }
         else
         {
-            Port p(alias, Port::PHY);
+            Port port(alias, Port::PHY);
 
-            p.m_index = static_cast<int32_t>(m_portList.size()); // TODO: Assume no deletion of physical port
-            p.m_port_id = id;
+            port.m_index = static_cast<int32_t>(m_portList.size()); // TODO: Assume no deletion of physical port
+            port.m_port_id = id;
 
             /* Initialize the port and create corresponding host interface */
-            if (initializePort(p))
+            if (initializePort(port))
             {
                 /* Add port to port list */
-                m_portList[alias] = p;
+                m_portList[alias] = port;
                 /* Add port name map to counter table */
-                FieldValueTuple tuple(p.m_alias, sai_serialize_object_id(p.m_port_id));
+                FieldValueTuple tuple(port.m_alias, sai_serialize_object_id(port.m_port_id));
                 vector<FieldValueTuple> fields;
                 fields.push_back(tuple);
                 m_counterTable->set("", fields);
 
                 /* Add port to flex_counter for updating stat counters  */
-                string key = getPortFlexCounterTableKey(sai_serialize_object_id(p.m_port_id));
+                string key = getPortFlexCounterTableKey(sai_serialize_object_id(port.m_port_id));
                 std::string delimiter = "";
                 std::ostringstream counters_stream;
                 for (const auto &id: portStatIds)
@@ -1290,10 +1290,13 @@ bool PortsOrch::initPort(const string &alias, const set<int> &lane_set)
 
                 m_flexCounterTable->set(key, fields);
 
-                PortUpdate update = {p, true };
+                PortUpdate update = {port, true };
                 notify(SUBJECT_TYPE_PORT_CHANGE, static_cast<void *>(&update));
 
                 SWSS_LOG_NOTICE("Initialized port %s", alias.c_str());
+
+                /* Update ports operational status */
+                refreshPortStatus(port);
             }
             else
             {
@@ -2273,30 +2276,9 @@ bool PortsOrch::initializePort(Port &p)
             {
                 adminStatus = fvValue(i);
             }
-            else if (fvField(i) == "oper_status")
-            {
-                operStatus = fvValue(i);
-            }
         }
     }
-    SWSS_LOG_DEBUG("initializePort %s with admin %s and oper %s", p.m_alias.c_str(), adminStatus.c_str(), operStatus.c_str());
-
-    /**
-     * Create database port oper status as DOWN if attr missing
-     * This status will be updated when receiving port_oper_status_notification.
-     */
-    if (operStatus != "up")
-    {
-        vector<FieldValueTuple> vector;
-        FieldValueTuple tuple("oper_status", "down");
-        vector.push_back(tuple);
-        m_portTable->set(p.m_alias, vector);
-        p.m_oper_status = SAI_PORT_OPER_STATUS_DOWN;
-    }
-    else
-    {
-        p.m_oper_status = SAI_PORT_OPER_STATUS_UP;
-    }
+    SWSS_LOG_DEBUG("initializePort %s with admin %s", p.m_alias.c_str(), adminStatus.c_str());
 
     /*
      * If oper_status is not empty, orchagent is doing warm start, restore hostif oper status.
@@ -2935,16 +2917,12 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
 
 void PortsOrch::updatePortOperStatus(Port &port, sai_port_oper_status_t status)
 {
-    SWSS_LOG_NOTICE("Port %s oper state set from %s to %s",
-            port.m_alias.c_str(), oper_status_strings.at(port.m_oper_status).c_str(),
-            oper_status_strings.at(status).c_str());
     if (status != port.m_oper_status)
     {
-        this->updateDbPortOperStatus(port.m_port_id, status);
-        if (status == SAI_PORT_OPER_STATUS_UP || port.m_oper_status == SAI_PORT_OPER_STATUS_UP)
-        {
-            this->setHostIntfsOperStatus(port.m_port_id, status == SAI_PORT_OPER_STATUS_UP);
-        }
+        SWSS_LOG_NOTICE("Port state changed for %s from %s to %s", port.m_alias.c_str(),
+                oper_status_strings.at(port.m_oper_status).c_str(), oper_status_strings.at(status).c_str());
+        updateDbPortOperStatus(port.m_port_id, status);
+        setHostIntfsOperStatus(port.m_port_id, status == SAI_PORT_OPER_STATUS_UP);
     }
 }
 
@@ -2959,27 +2937,34 @@ void PortsOrch::updatePortOperStatus(Port &port, sai_port_oper_status_t status)
  * Latest oper status for each port is retrieved via SAI_PORT_ATTR_OPER_STATUS sai API,
  * the hostif and db are updated accordingly.
  */
-void PortsOrch::refreshPortStatus()
+void PortsOrch::refreshPortStatusAll()
 {
     SWSS_LOG_ENTER();
 
     for (auto &it: m_portList)
     {
-        auto &p = it.second;
-        if (p.m_type == Port::PHY)
-        {
-            sai_attribute_t attr;
-            attr.id = SAI_PORT_ATTR_OPER_STATUS;
+        auto &port = it.second;
+        refreshPortStatus(port);
+    }
+}
 
-            sai_status_t ret = sai_port_api->get_port_attribute(p.m_port_id, 1, &attr);
-            if (ret != SAI_STATUS_SUCCESS)
-            {
-                SWSS_LOG_ERROR("Failed to get oper status for %s", p.m_alias.c_str());
-                throw "PortsOrch get port oper status failure";
-            }
-            sai_port_oper_status_t status = (sai_port_oper_status_t)attr.value.u32;
-            SWSS_LOG_INFO("%s oper status is %s", p.m_alias.c_str(), oper_status_strings.at(status).c_str());
-            updatePortOperStatus(p, status);
+void PortsOrch::refreshPortStatus(Port& port)
+{
+    SWSS_LOG_ENTER();
+
+    if (port.m_type == Port::PHY)
+    {
+        sai_attribute_t attr;
+        attr.id = SAI_PORT_ATTR_OPER_STATUS;
+
+        sai_status_t ret = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
+        if (ret != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR("Failed to get oper status for %s", port.m_alias.c_str());
+            throw "PortsOrch get port oper status failure";
         }
+        sai_port_oper_status_t status = (sai_port_oper_status_t)attr.value.u32;
+        SWSS_LOG_INFO("%s oper status is %s", port.m_alias.c_str(), oper_status_strings.at(status).c_str());
+        updatePortOperStatus(port, status);
     }
 }

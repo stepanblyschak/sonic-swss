@@ -447,9 +447,6 @@ bool OrchDaemon::warmRestoreAndSyncUp()
 
     syncd_apply_view();
 
-    /* Start dynamic state sync up */
-    gPortsOrch->refreshPortStatus();
-
     /*
      * Note. Arp sync up is handled in neighsyncd.
      * The "RECONCILED" state of orchagent doesn't mean the state related to neighbor is up to date.

@@ -76,7 +76,7 @@ public:
     bool setPortPfc(sai_object_id_t portId, uint8_t pfc_bitmask);
 
     void generateQueueMap();
-    void refreshPortStatus();
+    void refreshPortStatusAll();
 private:
     unique_ptr<Table> m_counterTable;
     unique_ptr<Table> m_portTable;
@@ -169,7 +169,9 @@ private:
     bool setPortAutoNeg(sai_object_id_t id, int an);
     bool setPortFecMode(sai_object_id_t id, int fec);
 
-    void updatePortOperStatus(Port &port, sai_port_oper_status_t status);
+    void updatePortOperStatus(Port& port, sai_port_oper_status_t status);
+
+    void refreshPortStatus(Port& port);
 };
 #endif /* SWSS_PORTSORCH_H */
 
