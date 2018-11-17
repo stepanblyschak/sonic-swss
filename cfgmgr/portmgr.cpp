@@ -131,7 +131,7 @@ void PortMgr::doTask(Consumer &consumer)
             if (!admin_status.empty())
             {
                 setPortAdminStatus(alias, admin_status == "up");
-                SWSS_LOG_NOTICE("Configure %s %s", alias.c_str(), admin_status.c_str());
+                SWSS_LOG_NOTICE("Configure %s admin status to %s", alias.c_str(), admin_status.c_str());
             }
         }
 
