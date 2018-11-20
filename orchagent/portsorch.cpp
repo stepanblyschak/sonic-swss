@@ -195,7 +195,7 @@ PortsOrch::PortsOrch(DBConnector *db, vector<table_name_with_pri_t> &tableNames)
     if (status != SAI_STATUS_SUCCESS)
     {
         SWSS_LOG_ERROR("Failed to get port list, rv:%d", status);
-        throw "PortsOrch initialization failure";
+        throw runtime_error("PortsOrch initialization failure");
     }
 
     /* Get port hardware lane info */
@@ -210,7 +210,7 @@ PortsOrch::PortsOrch(DBConnector *db, vector<table_name_with_pri_t> &tableNames)
         if (status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR("Failed to get hardware lane list pid:%lx", port_list[i]);
-            throw "PortsOrch initialization failure";
+            throw runtime_error("PortsOrch initialization failure");
         }
 
         set<int> tmp_lane_set;
@@ -239,7 +239,7 @@ PortsOrch::PortsOrch(DBConnector *db, vector<table_name_with_pri_t> &tableNames)
     if (status != SAI_STATUS_SUCCESS)
     {
         SWSS_LOG_ERROR("Failed to get default 1Q bridge and/or default VLAN, rv:%d", status);
-        throw "PortsOrch initialization failure";
+        throw runtime_error("PortsOrch initialization failure");
     }
 
     m_default1QBridge = attrs[0].value.oid;
@@ -269,7 +269,7 @@ void PortsOrch::removeDefaultVlanMembers()
     if (status != SAI_STATUS_SUCCESS)
     {
         SWSS_LOG_ERROR("Failed to get VLAN member list in default VLAN, rv:%d", status);
-        throw "PortsOrch initialization failure";
+        throw runtime_error("PortsOrch initialization failure");
     }
 
     /* Remove VLAN members in default VLAN */
@@ -279,7 +279,7 @@ void PortsOrch::removeDefaultVlanMembers()
         if (status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR("Failed to remove VLAN member, rv:%d", status);
-            throw "PortsOrch initialization failure";
+            throw runtime_error("PortsOrch initialization failure");
         }
     }
 
@@ -303,7 +303,7 @@ void PortsOrch::removeDefaultBridgePorts()
     if (status != SAI_STATUS_SUCCESS)
     {
         SWSS_LOG_ERROR("Failed to get bridge port list in default 1Q bridge, rv:%d", status);
-        throw "PortsOrch initialization failure";
+        throw runtime_error("PortsOrch initialization failure");
     }
 
     auto bridge_port_count = attr.value.objlist.count;
@@ -318,7 +318,7 @@ void PortsOrch::removeDefaultBridgePorts()
         if (status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR("Failed to get bridge port type, rv:%d", status);
-            throw "PortsOrch initialization failure";
+            throw runtime_error("PortsOrch initialization failure");
         }
         if (attr.value.s32 == SAI_BRIDGE_PORT_TYPE_PORT)
         {
@@ -326,7 +326,7 @@ void PortsOrch::removeDefaultBridgePorts()
             if (status != SAI_STATUS_SUCCESS)
             {
                 SWSS_LOG_ERROR("Failed to remove bridge port, rv:%d", status);
-                throw "PortsOrch initialization failure";
+                throw runtime_error("PortsOrch initialization failure");
             }
         }
     }
@@ -2949,7 +2949,7 @@ void PortsOrch::refreshPortStatus()
         sai_port_oper_status_t status;
         if (!getPortOperStatus(port, status))
         {
-            throw "PortsOrch get port oper status failure";
+            throw runtime_error("PortsOrch get port oper status failure");
         }
 
         SWSS_LOG_INFO("%s oper status is %s", port.m_alias.c_str(), oper_status_strings.at(status).c_str());
