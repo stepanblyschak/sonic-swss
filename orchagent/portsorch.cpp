@@ -1397,6 +1397,31 @@ void PortsOrch::doPortTask(Consumer &consumer)
                 SWSS_LOG_INFO("Get PortInitDone notification from portsyncd.");
             }
 
+            /**
+             * Initialize database port oper status.
+             * From this point port_state_change notifications can be processed.
+             * This status will be updated when receiving port_oper_status_notification.
+             */
+            for (auto& it: m_portList)
+            {
+                Port& port = it.second;
+                sai_port_oper_status_t status;
+                if (!getPortOperStatus(port, status))
+                {
+                    SWSS_LOG_ERROR("Failed to get operational status for port %s",
+                            port.m_alias.c_str());
+                    continue;
+                }
+
+                updateDbPortOperStatus(port, status);
+                if (!setHostIntfsOperStatus(port, status))
+                {
+                    SWSS_LOG_ERROR("Failed to set operation status %s to host interface %s",
+                            oper_status_strings.at(status).c_str(), port.m_alias.c_str());
+                    continue;
+                }
+            }
+
             it = consumer.m_toSync.erase(it);
             return;
         }
@@ -2249,26 +2274,6 @@ bool PortsOrch::initializePort(Port &port)
         return false;
     }
 
-    /**
-     * Initialize database port oper status.
-     * This status will be updated when receiving port_oper_status_notification.
-     */
-    sai_port_oper_status_t status;
-    if (!getPortOperStatus(port, status))
-    {
-        SWSS_LOG_ERROR("Failed to get operational status for port %s",
-                port.m_alias.c_str());
-        return false;
-    }
-    
-    updateDbPortOperStatus(port, status);
-    if (!setHostIntfsOperStatus(port, status))
-    {
-        SWSS_LOG_ERROR("Failed to set operation status %s to host interface %s",
-                oper_status_strings.at(status).c_str(), port.m_alias.c_str());
-        return false;
-    }
-
     return true;
 }
 
@@ -2908,16 +2913,13 @@ void PortsOrch::updatePortOperStatus(Port &port, sai_port_oper_status_t status)
     {
         return ;
     }
-    
+
     updateDbPortOperStatus(port, status);
     bool up = status == SAI_PORT_OPER_STATUS_UP;
-    if (up)
+    setHostIntfsOperStatus(port, up);
+    if (!gNeighOrch->ifChangeInformNextHop(port.m_alias, up))
     {
-        setHostIntfsOperStatus(port, up);
-        if (!gNeighOrch->ifChangeInformNextHop(port.m_alias, up))
-        {
-            SWSS_LOG_WARN("Inform nexthop operation failed for interface %s", port.m_alias.c_str());
-        }
+        SWSS_LOG_WARN("Inform nexthop operation failed for interface %s", port.m_alias.c_str());
     }
 }
 
