@@ -100,7 +100,7 @@ void PortMgr::doTask(Consumer &consumer)
             bool configured = (m_portList.find(alias) != m_portList.end());
 
             /* If this is the first time we set port settings
-             * asign default admin status and mtu
+             * assign default admin status and mtu
              */
             if (!configured)
             {
