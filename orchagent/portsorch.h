@@ -184,6 +184,8 @@ private:
 
     bool getPortOperStatus(const Port& port, sai_port_oper_status_t& status) const;
     void updatePortOperStatus(Port &port, sai_port_oper_status_t status);
+
+    bool portStatusInitialSync();
 };
 #endif /* SWSS_PORTSORCH_H */
 

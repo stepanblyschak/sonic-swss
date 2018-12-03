@@ -1456,6 +1456,12 @@ void PortsOrch::doPortTask(Consumer &consumer)
              */
             if (!m_initDone)
             {
+
+                if (!portStatusInitialSync())
+                {
+                    throw runtime_error("Portsorch: failed to sync port oper state");
+                }
+
                 m_initDone = true;
                 SWSS_LOG_INFO("Get PortInitDone notification from portsyncd.");
             }
@@ -2342,51 +2348,6 @@ bool PortsOrch::initializePort(Port &port)
         return false;
     }
 
-    /* Check warm start states */
-    vector<FieldValueTuple> tuples;
-    bool exist = m_portTable->get(port.m_alias, tuples);
-    string operStatus;
-    if (exist)
-    {
-        for (auto i : tuples)
-        {
-            if (fvField(i) == "oper_status")
-            {
-                operStatus = fvValue(i);
-            }
-        }
-    }
-    SWSS_LOG_DEBUG("initializePort %s with oper %s", port.m_alias.c_str(), operStatus.c_str());
-
-    /**
-     * Create database port oper status as DOWN if attr missing
-     * This status will be updated upon receiving port_oper_status_notification.
-     */
-    if (operStatus == "up")
-    {
-        port.m_oper_status = SAI_PORT_OPER_STATUS_UP;
-    }
-    else if (operStatus.empty())
-    {
-        port.m_oper_status = SAI_PORT_OPER_STATUS_DOWN;
-        /* Fill oper_status in db with default value "down" */
-        m_portTable->hset(port.m_alias, "oper_status", "down");
-    }
-    else
-    {
-        port.m_oper_status = SAI_PORT_OPER_STATUS_DOWN;
-    }
-
-    /*
-     * always initialize Port SAI_HOSTIF_ATTR_OPER_STATUS based on oper_status value in appDB.
-     */
-    if (!setHostIntfsOperStatus(port, port.m_oper_status))
-    {
-        SWSS_LOG_WARN("Failed to set operation status %s to host interface %s",
-                      operStatus.c_str(), port.m_alias.c_str());
-        return false;
-    }
-
     return true;
 }
 
@@ -3177,3 +3138,74 @@ bool PortsOrch::getPortOperStatus(const Port& port, sai_port_oper_status_t& stat
     return true;
 }
 
+bool PortsOrch::portStatusInitialSync()
+{
+    for (auto& it: m_portList)
+    {
+        Port& port = it.second;
+
+        if (port.m_type != Port::PHY)
+        {
+            continue;
+        }
+
+        sai_port_oper_status_t status;
+
+        vector<FieldValueTuple> fvs;
+        string operStatus;
+
+        /* try to get oper_status from DB */
+        if (m_portTable->get(port.m_alias, fvs))
+        {
+            for (auto i: fvs)
+            {
+                if (fvField(i) == "oper_status")
+                {
+                    operStatus = fvValue(i);
+                }
+            }
+        }
+
+        /* if "oper_status" field exists in DB
+         * this is warm restart restoration;
+         * initialize port based on DB oper status
+         * to complete restoration
+         */
+        if (!operStatus.empty())
+        {
+            if (operStatus == "up")
+            {
+                status = SAI_PORT_OPER_STATUS_UP;
+            }
+            else
+            {
+                status = SAI_PORT_OPER_STATUS_DOWN;
+            }
+        }
+        /* otherwise, DB oper status is empty, orchagent is
+         * doing cold restart, need to sync operational status with
+         * HW
+         */
+        else
+        {
+            if (!getPortOperStatus(port, status))
+            {
+                SWSS_LOG_ERROR("Failed to get operational status for port %s",
+                        port.m_alias.c_str());
+                return false;
+            }
+
+            updateDbPortOperStatus(port, status);
+        }
+
+        port.m_oper_status = status;
+
+        if (!setHostIntfsOperStatus(port, status))
+        {
+            SWSS_LOG_ERROR("Failed to set operation status %s to host interface %s",
+                   oper_status_strings.at(status).c_str(), port.m_alias.c_str());
+            return false;
+        }
+    }
+    return true;
+}
