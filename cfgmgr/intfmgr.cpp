@@ -215,6 +215,7 @@ void IntfMgr::doTask(Consumer &consumer)
         {
             if (!doIntfGeneralTask(keys, data, op))
             {
+                it++;
                 continue;
             }
         }
@@ -222,6 +223,7 @@ void IntfMgr::doTask(Consumer &consumer)
         {
             if (!doIntfAddrTask(keys, data, op))
             {
+                it++;
                 continue;
             }
         }
