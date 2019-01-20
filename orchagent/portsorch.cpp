@@ -1674,7 +1674,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                  *
                  * 1. Get supported speed list and validate if the target speed is within the list
                  * 2. Get the current port speed and check if it is the same as the target speed
-                 * 3. Set port admin status to DOWN before changing the speed
+                 * 3. Set port admin status to DOWN before changing the speed if port is admin UP
                  * 4. Set port speed
                  */
                 if (speed != 0 && speed != p.m_speed)
@@ -1704,22 +1704,24 @@ void PortsOrch::doPortTask(Consumer &consumer)
                             continue;
                         }
 
-                        if (getPortSpeed(p.m_port_id, current_speed))
+                        if (!getPortSpeed(p.m_port_id, current_speed))
                         {
-                            if (speed != current_speed)
+                            SWSS_LOG_ERROR("Failed to get current speed for port %s", alias.c_str());
+                            it++;
+                            continue;
+                        }
+
+                        if (speed != current_speed)
+                        {
+                            bool old_admin_state_up = (p.m_admin_state == true);
+
+                            /* if port is up, set it down before applying speed */
+                            if (old_admin_state_up)
                             {
                                 if (setPortAdminStatus(p.m_port_id, false))
                                 {
-                                    if (setPortSpeed(p.m_port_id, speed))
-                                    {
-                                        SWSS_LOG_NOTICE("Set port %s speed to %u", alias.c_str(), speed);
-                                    }
-                                    else
-                                    {
-                                        SWSS_LOG_ERROR("Failed to set port %s speed to %u", alias.c_str(), speed);
-                                        it++;
-                                        continue;
-                                    }
+                                    p.m_admin_state = false;
+                                    m_portList[alias] = p;
                                 }
                                 else
                                 {
@@ -1728,12 +1730,34 @@ void PortsOrch::doPortTask(Consumer &consumer)
                                     continue;
                                 }
                             }
-                        }
-                        else
-                        {
-                            SWSS_LOG_ERROR("Failed to get current speed for port %s", alias.c_str());
-                            it++;
-                            continue;
+
+                            if (setPortSpeed(p.m_port_id, speed))
+                            {
+                                SWSS_LOG_NOTICE("Set port %s speed to %u", alias.c_str(), speed);
+                                p.m_speed = speed;
+                            }
+                            else
+                            {
+                                SWSS_LOG_ERROR("Failed to set port %s speed to %u", alias.c_str(), speed);
+                                it++;
+                                continue;
+                            }
+
+                            /* if port was up, set it up back */
+                            if (old_admin_state_up)
+                            {
+                                if (setPortAdminStatus(p.m_port_id, true))
+                                {
+                                    p.m_admin_state = true;
+                                    m_portList[alias] = p;
+                                }
+                                else
+                                {
+                                    SWSS_LOG_ERROR("Failed to set port admin status UP after speed");
+                                    it++;
+                                    continue;
+                                }
+                            }
                         }
                     }
                     m_portList[alias].m_speed = speed;
@@ -1759,10 +1783,12 @@ void PortsOrch::doPortTask(Consumer &consumer)
                     }
                 }
 
-                if (!admin_status.empty())
+                if (!admin_status.empty() && p.m_admin_state != (admin_status == "up"))
                 {
                     if (setPortAdminStatus(p.m_port_id, admin_status == "up"))
                     {
+                        p.m_admin_state = admin_status == "up";
+                        m_portList[alias] = p;
                         SWSS_LOG_NOTICE("Set port %s admin status to %s", alias.c_str(), admin_status.c_str());
                     }
                     else
