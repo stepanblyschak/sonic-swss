@@ -111,6 +111,7 @@ typedef enum
 
 typedef map<string, acl_table_type_t> acl_table_type_lookup_t;
 typedef map<string, sai_acl_entry_attr_t> acl_rule_attr_lookup_t;
+typedef map<string, sai_acl_entry_attr_t> acl_mirror_action_stage_lookup_t;
 typedef map<string, sai_acl_ip_type_t> acl_ip_type_lookup_t;
 typedef map<string, sai_acl_dtel_flow_op_t> acl_dtel_flow_op_type_lookup_t;
 typedef tuple<sai_acl_range_type_t, int, int> acl_range_properties_t;
@@ -273,6 +274,7 @@ public:
 
 protected:
     bool m_state;
+    string m_mirrorStage;
     string m_sessionName;
     AclRuleCounters counters;
     MirrorOrch *m_pMirrorOrch;

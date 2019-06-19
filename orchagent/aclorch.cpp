@@ -98,8 +98,14 @@ static acl_table_type_lookup_t aclTableTypeLookUp =
 
 static acl_stage_type_lookup_t aclStageLookUp =
 {
-    {TABLE_INGRESS, ACL_STAGE_INGRESS },
-    {TABLE_EGRESS,  ACL_STAGE_EGRESS }
+    {STAGE_INGRESS, ACL_STAGE_INGRESS },
+    {STAGE_EGRESS,  ACL_STAGE_EGRESS }
+};
+
+static acl_mirror_action_stage_lookup_t aclMirrorStageLookup =
+{
+    {STAGE_INGRESS, SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS},
+    {STAGE_EGRESS,  SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_EGRESS},
 };
 
 static acl_ip_type_lookup_t aclIpTypeLookup =
@@ -956,17 +962,37 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
 {
     SWSS_LOG_ENTER();
 
+    string         stage = STAGE_INGRESS;
+    vector<string> attr_values;
+
     if (attr_name != ACTION_MIRROR_ACTION)
     {
         return false;
     }
 
-    if (!m_pMirrorOrch->sessionExists(attr_value))
+    split(attr_value, attr_values, ':');
+    if (attr_values.size() == 2)
     {
-        return false;
+        stage = to_upper(attr_values[0]);
+        // strip stage value
+        attr_value = attr_values[1];
     }
 
     m_sessionName = attr_value;
+
+    if (!m_pMirrorOrch->sessionExists(m_sessionName))
+    {
+        SWSS_LOG_ERROR("Mirror rule reference mirror session that does not exists %s", m_sessionName.c_str());
+        return false;
+    }
+
+    if (aclMirrorStageLookup.find(stage) == aclMirrorStageLookup.end())
+    {
+        SWSS_LOG_ERROR("Invalid stage parameter in mirror rule: %s", stage.c_str());
+        return false;
+    }
+
+    m_mirrorStage = stage;
 
     return true;
 }
@@ -1046,9 +1072,9 @@ bool AclRuleMirror::create()
 {
     SWSS_LOG_ENTER();
 
+    bool                  state = false;
+    sai_object_id_t       oid   = SAI_NULL_OBJECT_ID;
     sai_attribute_value_t value;
-    bool state = false;
-    sai_object_id_t oid = SAI_NULL_OBJECT_ID;
 
     if (!m_pMirrorOrch->getSessionStatus(m_sessionName, state))
     {
@@ -1077,7 +1103,7 @@ bool AclRuleMirror::create()
     value.aclaction.parameter.objlist.count = 1;
 
     m_actions.clear();
-    m_actions[SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS] = value;
+    m_actions[aclMirrorStageLookup[m_mirrorStage]] = value;
 
     if (!AclRule::create())
     {
