@@ -9,6 +9,7 @@
 #include "tokenize.h"
 #include "timer.h"
 #include "crmorch.h"
+#include "sai_serialize.h"
 
 using namespace std;
 using namespace swss;
@@ -384,6 +385,20 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
     return true;
 }
 
+bool AclRule::validateAddAction(string attr_name, string attr_value)
+{
+    for (const auto& it: m_actions)
+    {
+        if (!AclRule::isActionSupported(it.first))
+        {
+            SWSS_LOG_ERROR("Action %s:%s is not supported by ASIC",
+                           attr_name.c_str(), attr_value.c_str());
+            return false;
+        }
+    }
+    return true;
+}
+
 bool AclRule::processIpType(string type, sai_uint32_t &ip_type)
 {
     SWSS_LOG_ENTER();
@@ -530,6 +545,17 @@ void AclRule::decreaseNextHopRefCount()
     }
 
     return;
+}
+
+bool AclRule::isActionSupported(sai_acl_entry_attr_t action) const
+{
+    auto action_type = AclOrch::getAclActionFromAclEntry(action);
+    const auto* pTable = m_pAclOrch->getTableByOid(m_tableOid);
+    if (pTable == nullptr)
+    {
+        SWSS_LOG_THROW("ACL table does not exist for oid %lu", m_tableOid);
+    }
+    return m_pAclOrch->isAclActionSupported(pTable->stage, action_type);
 }
 
 bool AclRule::remove()
@@ -774,7 +800,7 @@ bool AclRuleL3::validateAddAction(string attr_name, string _attr_value)
 
     m_actions[aclL3ActionLookup[attr_value]] = value;
 
-    return true;
+    return AclRule::validateAddAction(attr_name, attr_value);
 }
 
 // This method should return sai attribute id of the redirect destination
@@ -1010,10 +1036,9 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
 
     m_mirrorStage = stage;
 
-    m_actions.clear();
     m_actions[aclMirrorStageLookup[m_mirrorStage]] = value;
 
-    return true;
+    return AclRule::validateAddAction(attr_name, attr_value);
 }
 
 bool AclRuleMirror::validateAddMatch(string attr_name, string attr_value)
@@ -1682,7 +1707,7 @@ bool AclRuleDTelFlowWatchListEntry::validateAddAction(string attr_name, string a
 
     m_actions[aclDTelActionLookup[attr_name]] = value;
 
-    return true;
+    return AclRule::validateAddAction(attr_name, attr_value);
 }
 
 bool AclRuleDTelFlowWatchListEntry::validate()
@@ -1840,7 +1865,7 @@ bool AclRuleDTelDropWatchListEntry::validateAddAction(string attr_name, string a
 
     m_actions[aclDTelActionLookup[attr_name]] = value;
 
-    return true;
+    return AclRule::validateAddAction(attr_name, attr_value);
 }
 
 bool AclRuleDTelDropWatchListEntry::validate()
@@ -2069,6 +2094,8 @@ void AclOrch::init(vector<TableConnector>& connectors, PortsOrch *portOrch, Mirr
         throw "AclOrch initialization failure";
     }
 
+    queryAclActionCapability();
+
     // Attach observers
     m_mirrorOrch->attach(this);
     gPortsOrch->attach(this);
@@ -2081,6 +2108,64 @@ void AclOrch::init(vector<TableConnector>& connectors, PortsOrch *portOrch, Mirr
     Orch::addExecutor(executor);
     timer->start();
 }
+
+void AclOrch::queryAclActionCapability()
+{
+    SWSS_LOG_ENTER();
+
+    sai_status_t    status {SAI_STATUS_FAILURE};
+    sai_attribute_t attr;
+    vector<int32_t> action_list;
+
+    attr.id = SAI_SWITCH_ATTR_MAX_ACL_ACTION_COUNT;
+    status = sai_switch_api->get_switch_attribute(gSwitchId, 1, &attr);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_THROW("AclOrch initialization failed: "
+                       "failed to query maximum ACL action count");
+    }
+
+    const auto max_action_count = attr.value.u32;
+
+    for (auto stage_attr: {SAI_SWITCH_ATTR_ACL_STAGE_INGRESS, SAI_SWITCH_ATTR_ACL_STAGE_EGRESS})
+    {
+        action_list.resize(static_cast<size_t>(max_action_count));
+
+        attr.id = stage_attr;
+        attr.value.aclcapability.action_list.list  = action_list.data();
+        attr.value.aclcapability.action_list.count = max_action_count;
+
+        status = sai_switch_api->get_switch_attribute(gSwitchId, 1, &attr);
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_THROW("AclOrch initialization failed: "
+                           "failed to query supported %s ACL actions",
+                           (attr.id == SAI_SWITCH_ATTR_ACL_STAGE_INGRESS ? "ingress" : "egress"));
+        }
+
+        SWSS_LOG_INFO("Supported %s action count %d:",
+                      (attr.id == SAI_SWITCH_ATTR_ACL_STAGE_INGRESS ? "ingress" : "egress"),
+                      attr.value.aclcapability.action_list.count);
+
+        for (size_t i = 0; i < static_cast<size_t>(attr.value.aclcapability.action_list.count); i++)
+        {
+            auto action = static_cast<sai_acl_action_type_t>(action_list[i]);
+            auto stage = (attr.id == SAI_SWITCH_ATTR_ACL_STAGE_INGRESS ? ACL_STAGE_INGRESS : ACL_STAGE_EGRESS);
+            m_aclCapabilities[stage].insert(action);
+            SWSS_LOG_INFO("    %s", sai_serialize_enum(action, &sai_metadata_enum_sai_acl_action_type_t).c_str());
+        }
+    }
+}
+
+sai_acl_action_type_t AclOrch::getAclActionFromAclEntry(sai_acl_entry_attr_t attr)
+{
+    if (attr < SAI_ACL_ENTRY_ATTR_ACTION_START || attr > SAI_ACL_ENTRY_ATTR_ACTION_END)
+    {
+        SWSS_LOG_THROW("Invalid ACL entry attribute passed in: %d", attr);
+    }
+
+    return static_cast<sai_acl_action_type_t>(attr - SAI_ACL_ENTRY_ATTR_ACTION_START);
+};
 
 AclOrch::AclOrch(vector<TableConnector>& connectors, TableConnector switchTable,
         PortsOrch *portOrch, MirrorOrch *mirrorOrch, NeighOrch *neighOrch, RouteOrch *routeOrch, DTelOrch *dtelOrch) :
@@ -2332,6 +2417,16 @@ bool AclOrch::removeAclRule(string table_id, string rule_id)
 bool AclOrch::isCombinedMirrorV6Table()
 {
     return m_isCombinedMirrorV6Table;
+}
+
+bool AclOrch::isAclActionSupported(acl_stage_type_t stage, sai_acl_action_type_t action) const
+{
+    const auto& it = m_aclCapabilities.find(stage);
+    if (it == m_aclCapabilities.cend())
+    {
+        return false;
+    }
+    return it->second.find(action) != it->second.cend();
 }
 
 void AclOrch::doAclTableTask(Consumer &consumer)
@@ -2670,6 +2765,16 @@ sai_object_id_t AclOrch::getTableById(string table_id)
     }
 
     return SAI_NULL_OBJECT_ID;
+}
+
+const AclTable *AclOrch::getTableByOid(sai_object_id_t oid) const
+{
+   const auto& it = m_AclTables.find(oid);
+   if (it == m_AclTables.cend())
+   {
+       return nullptr;
+   }
+   return &it->second;
 }
 
 bool AclOrch::createBindAclTable(AclTable &aclTable, sai_object_id_t &table_oid)
