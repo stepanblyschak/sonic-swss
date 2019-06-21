@@ -272,10 +272,12 @@ public:
     AclRuleCounters getCounters();
 
 protected:
-    bool m_state;
+    bool m_state {false};
+    string m_mirrorStage;
     string m_sessionName;
+    sai_object_id_t m_mirrorSessionOid {SAI_NULL_OBJECT_ID};
     AclRuleCounters counters;
-    MirrorOrch *m_pMirrorOrch;
+    MirrorOrch *m_pMirrorOrch {nullptr};
 };
 
 class AclRuleDTelFlowWatchListEntry: public AclRule
