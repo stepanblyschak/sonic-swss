@@ -2116,6 +2116,7 @@ void AclOrch::queryAclActionCapability()
     sai_status_t    status {SAI_STATUS_FAILURE};
     sai_attribute_t attr;
     vector<int32_t> action_list;
+    vector<FieldValueTuple> fvVector;
 
     attr.id = SAI_SWITCH_ATTR_MAX_ACL_ACTION_COUNT;
     status = sai_switch_api->get_switch_attribute(gSwitchId, 1, &attr);
@@ -2129,6 +2130,8 @@ void AclOrch::queryAclActionCapability()
 
     for (auto stage_attr: {SAI_SWITCH_ATTR_ACL_STAGE_INGRESS, SAI_SWITCH_ATTR_ACL_STAGE_EGRESS})
     {
+        auto stage = (stage_attr == SAI_SWITCH_ATTR_ACL_STAGE_INGRESS ? ACL_STAGE_INGRESS : ACL_STAGE_EGRESS);
+        auto stage_str = (stage_attr == SAI_SWITCH_ATTR_ACL_STAGE_INGRESS ? STAGE_INGRESS : STAGE_EGRESS);
         action_list.resize(static_cast<size_t>(max_action_count));
 
         attr.id = stage_attr;
@@ -2139,21 +2142,64 @@ void AclOrch::queryAclActionCapability()
         if (status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_THROW("AclOrch initialization failed: "
-                           "failed to query supported %s ACL actions",
-                           (attr.id == SAI_SWITCH_ATTR_ACL_STAGE_INGRESS ? "ingress" : "egress"));
+                           "failed to query supported %s ACL actions", stage_str);
         }
 
-        SWSS_LOG_INFO("Supported %s action count %d:",
-                      (attr.id == SAI_SWITCH_ATTR_ACL_STAGE_INGRESS ? "ingress" : "egress"),
+        SWSS_LOG_INFO("Supported %s action count %d:", stage_str,
                       attr.value.aclcapability.action_list.count);
 
         for (size_t i = 0; i < static_cast<size_t>(attr.value.aclcapability.action_list.count); i++)
         {
             auto action = static_cast<sai_acl_action_type_t>(action_list[i]);
-            auto stage = (attr.id == SAI_SWITCH_ATTR_ACL_STAGE_INGRESS ? ACL_STAGE_INGRESS : ACL_STAGE_EGRESS);
             m_aclCapabilities[stage].insert(action);
             SWSS_LOG_INFO("    %s", sai_serialize_enum(action, &sai_metadata_enum_sai_acl_action_type_t).c_str());
         }
+
+        // put capabilities in state DB
+
+        string delimiter;
+        ostringstream acl_action_value_stream;
+        auto& acl_action_set = m_aclCapabilities[stage];
+        auto get_table_field = [stage_str](const std::string& action_name) {
+            return std::string("ACL_ACTION") + "|" + stage_str + "|" + action_name;
+        };
+
+        for (const auto& it: aclL3ActionLookup)
+        {
+            auto saiAction = getAclActionFromAclEntry(it.second);
+            if (acl_action_set.find(saiAction) != acl_action_set.cend())
+            {
+                acl_action_value_stream << delimiter << it.first;
+                delimiter = comma;
+            }
+        }
+        fvVector.emplace_back(get_table_field(ACTION_PACKET_ACTION), acl_action_value_stream.str());
+        acl_action_value_stream.str(std::string());
+        delimiter.clear();
+
+        for (const auto& it: aclMirrorStageLookup)
+        {
+            auto saiAction = getAclActionFromAclEntry(it.second);
+            if (acl_action_set.find(saiAction) != acl_action_set.cend())
+            {
+                acl_action_value_stream << delimiter << it.first;
+                delimiter = comma;
+            }
+        }
+        fvVector.emplace_back(get_table_field(ACTION_MIRROR_ACTION), acl_action_value_stream.str());
+        acl_action_value_stream.str(std::string());
+        delimiter.clear();
+
+        for (const auto& it: aclDTelActionLookup)
+        {
+            auto saiAction = getAclActionFromAclEntry(it.second);
+            if (acl_action_set.find(saiAction) != acl_action_set.cend())
+            {
+                fvVector.emplace_back(get_table_field(it.first), string());
+            }
+        }
+
+        m_switchTable.set("switch", fvVector);
     }
 }
 
