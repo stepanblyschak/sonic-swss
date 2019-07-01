@@ -459,7 +459,8 @@ Stores rules associated with a specific ACL table on the switch.
                                                : next-hop ip address             Example: "10.0.0.1"
                                                : next-hop group set of addresses Example: "10.0.0.1,10.0.0.3"
 
-    mirror_action = 1*255VCHAR                 ; refer to the mirror session
+    mirror_action = "ingress:"/"egress:"1*255VCHAR
+                                               ; refer to the mirror session
 
     ether_type    = h16                        ; Ethernet type field
 
