@@ -998,6 +998,9 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
     }
 
     split(attr_value, attr_values, ':');
+    // expect format "stage:mirror_session_name"
+    // or just "mirror_session_name" and stage
+    // is ingress implicitely
     if (attr_values.size() > 2)
     {
         SWSS_LOG_ERROR("Invalid mirror rule action %s:%s",
@@ -1021,7 +1024,7 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
 
     if (!m_pMirrorOrch->getSessionOid(m_sessionName, m_mirrorSessionOid))
     {
-        throw runtime_error("Failed to get mirror session OID");
+        SWSS_LOG_THROW("Failed to get mirror session OID for session %s", m_sessionName.c_str());
     }
 
     value.aclaction.enable = true;
@@ -1120,14 +1123,14 @@ bool AclRuleMirror::create()
 
     if (!m_pMirrorOrch->getSessionStatus(m_sessionName, state))
     {
-        throw runtime_error("Failed to get mirror session state");
+        SWSS_LOG_THROW("Failed to get mirror session state for session %s", m_sessionName.c_str());
     }
 
     // Increase session reference count regardless of state to deny
     // attempt to remove mirror session with attached ACL rules.
     if (!m_pMirrorOrch->increaseRefCount(m_sessionName))
     {
-        throw runtime_error("Failed to increase mirror session reference count");
+        SWSS_LOG_THROW("Failed to increase mirror session reference count for session %s", m_sessionName.c_str());
     }
 
     if (!state)
@@ -2157,45 +2160,54 @@ void AclOrch::queryAclActionCapability()
 
         // put capabilities in state DB
 
-        string delimiter;
-        ostringstream acl_action_value_stream;
-        auto& acl_action_set = m_aclCapabilities[stage];
         auto get_table_field = [stage_str](const std::string& action_name) {
             return std::string("ACL_ACTION") + "|" + stage_str + "|" + action_name;
         };
+        auto& acl_action_set = m_aclCapabilities[stage];
 
-        for (const auto& it: aclL3ActionLookup)
+        // PACKET_ACTION
         {
-            auto saiAction = getAclActionFromAclEntry(it.second);
-            if (acl_action_set.find(saiAction) != acl_action_set.cend())
+            string delimiter;
+            ostringstream acl_action_value_stream;
+
+            for (const auto& it: aclL3ActionLookup)
             {
-                acl_action_value_stream << delimiter << it.first;
-                delimiter = comma;
+                auto saiAction = getAclActionFromAclEntry(it.second);
+                if (acl_action_set.find(saiAction) != acl_action_set.cend())
+                {
+                    acl_action_value_stream << delimiter << it.first;
+                    delimiter = comma;
+                }
             }
+            fvVector.emplace_back(get_table_field(ACTION_PACKET_ACTION), acl_action_value_stream.str());
         }
-        fvVector.emplace_back(get_table_field(ACTION_PACKET_ACTION), acl_action_value_stream.str());
-        acl_action_value_stream.str(std::string());
-        delimiter.clear();
 
-        for (const auto& it: aclMirrorStageLookup)
+        // MIRROR_ACTION
         {
-            auto saiAction = getAclActionFromAclEntry(it.second);
-            if (acl_action_set.find(saiAction) != acl_action_set.cend())
+            string delimiter;
+            ostringstream acl_action_value_stream;
+
+            for (const auto& it: aclMirrorStageLookup)
             {
-                acl_action_value_stream << delimiter << it.first;
-                delimiter = comma;
+                auto saiAction = getAclActionFromAclEntry(it.second);
+                if (acl_action_set.find(saiAction) != acl_action_set.cend())
+                {
+                    acl_action_value_stream << delimiter << it.first;
+                    delimiter = comma;
+                }
             }
+            fvVector.emplace_back(get_table_field(ACTION_MIRROR_ACTION), acl_action_value_stream.str());
         }
-        fvVector.emplace_back(get_table_field(ACTION_MIRROR_ACTION), acl_action_value_stream.str());
-        acl_action_value_stream.str(std::string());
-        delimiter.clear();
 
-        for (const auto& it: aclDTelActionLookup)
+        // DTEL actions
         {
-            auto saiAction = getAclActionFromAclEntry(it.second);
-            if (acl_action_set.find(saiAction) != acl_action_set.cend())
+            for (const auto& it: aclDTelActionLookup)
             {
-                fvVector.emplace_back(get_table_field(it.first), string());
+                auto saiAction = getAclActionFromAclEntry(it.second);
+                if (acl_action_set.find(saiAction) != acl_action_set.cend())
+                {
+                    fvVector.emplace_back(get_table_field(it.first), string());
+                }
             }
         }
 
