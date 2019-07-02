@@ -1223,15 +1223,15 @@ class TestAclRuleValidation(BaseTestAcl):
 
     SWITCH_CAPABILITY_TABLE = "SWITCH_CAPABILITY"
 
-    def get_acl_actions_supported(self, stage, action_name):
+    def get_acl_actions_supported(self, stage):
         capability_table = swsscommon.Table(self.sdb, self.SWITCH_CAPABILITY_TABLE)
         keys = capability_table.getKeys()
         # one switch available
-        assert len(keys) == 1, str(keys)
+        assert len(keys) == 1
         status, fvs = capability_table.get(keys[0])
-        assert status == True, str(fvs)
+        assert status == True
 
-        field = "ACL_ACTION|{}|{}".format(stage.upper(), action_name.upper())
+        field = "ACL_ACTION|{}".format(stage.upper())
         fvs = dict(fvs)
 
         values_list = fvs.get(field, None)
@@ -1255,11 +1255,11 @@ class TestAclRuleValidation(BaseTestAcl):
         }
 
         for stage in stage_name_map:
-            action_values = self.get_acl_actions_supported(stage, "PACKET_ACTION")
+            action_values = self.get_acl_actions_supported(stage)
 
             # virtual switch supports all actions
             assert action_values is not None
-            assert "FORWARD" in action_values
+            assert "PACKET_ACTION" in action_values
 
             sai_acl_stage = stage_name_map[stage]
 
@@ -1278,11 +1278,11 @@ class TestAclRuleValidation(BaseTestAcl):
             # reinit ASIC DB validator object
             dvs.init_asicdb_validator()
 
-            action_values = self.get_acl_actions_supported(stage, "PACKET_ACTION")
-            # now, FORWARD is not supported
-            # and REDIRECT is supported
-            assert "FORWARD" not in action_values
-            assert "REDIRECT" in action_values
+            action_values = self.get_acl_actions_supported(stage)
+            # now, PACKET_ACTION is not supported
+            # and REDIRECT_ACTION is supported
+            assert "PACKET_ACTION" not in action_values
+            assert "REDIRECT_ACTION" in action_values
 
             # try to create a forward rule
 

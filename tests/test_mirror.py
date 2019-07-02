@@ -702,13 +702,17 @@ class TestMirror(object):
         time.sleep(1)
 
     def create_mirror_acl_dscp_rule(self, table, rule, dscp, session, stage=None):
-        action_value = session
+        action_name = "mirror_action"
+        action_name_map = {
+            "ingress": "MIRROR_INGRESS_ACTION",
+            "egress": "MIRROR_EGRESS_ACTION"
+        }
         if stage is not None: # else it should be treated as ingress by default in orchagent
             assert stage in ('ingress', 'egress'), "invalid stage input {}".format(stage)
-            action_value = "{stage}:{session}".format(stage=stage, session=session)
+            action_name = action_name_map[stage]
         tbl = swsscommon.Table(self.cdb, "ACL_RULE")
         fvs = swsscommon.FieldValuePairs([("priority", "1000"),
-                                          ("mirror_action", action_value),
+                                          (action_name, session),
                                           ("DSCP", dscp)])
         tbl.set(table + "|" + rule, fvs)
         time.sleep(1)

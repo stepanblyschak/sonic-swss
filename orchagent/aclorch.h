@@ -62,7 +62,10 @@
 #define MATCH_INNER_L4_DST_PORT "INNER_L4_DST_PORT"
 
 #define ACTION_PACKET_ACTION                "PACKET_ACTION"
+#define ACTION_REDIRECT_ACTION              "REDIRECT_ACTION"
 #define ACTION_MIRROR_ACTION                "MIRROR_ACTION"
+#define ACTION_MIRROR_INGRESS_ACTION        "MIRROR_INGRESS_ACTION"
+#define ACTION_MIRROR_EGRESS_ACTION         "MIRROR_EGRESS_ACTION"
 #define ACTION_DTEL_FLOW_OP                 "FLOW_OP"
 #define ACTION_DTEL_INT_SESSION             "INT_SESSION"
 #define ACTION_DTEL_DROP_REPORT_ENABLE      "DROP_REPORT_ENABLE"
@@ -278,7 +281,6 @@ public:
 
 protected:
     bool m_state {false};
-    string m_mirrorStage;
     string m_sessionName;
     sai_object_id_t m_mirrorSessionOid {SAI_NULL_OBJECT_ID};
     AclRuleCounters counters;

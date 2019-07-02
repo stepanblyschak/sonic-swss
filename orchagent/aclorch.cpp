@@ -61,14 +61,19 @@ acl_rule_attr_lookup_t aclMatchLookup =
     { MATCH_INNER_L4_DST_PORT, SAI_ACL_ENTRY_ATTR_FIELD_INNER_L4_DST_PORT }
 };
 
-acl_rule_attr_lookup_t aclL3ActionLookup =
+static acl_rule_attr_lookup_t aclL3ActionLookup =
 {
-    { PACKET_ACTION_FORWARD,                    SAI_ACL_ENTRY_ATTR_ACTION_PACKET_ACTION },
-    { PACKET_ACTION_DROP,                       SAI_ACL_ENTRY_ATTR_ACTION_PACKET_ACTION },
-    { PACKET_ACTION_REDIRECT,                   SAI_ACL_ENTRY_ATTR_ACTION_REDIRECT }
+    { ACTION_PACKET_ACTION,                    SAI_ACL_ENTRY_ATTR_ACTION_PACKET_ACTION },
+    { ACTION_REDIRECT_ACTION,                  SAI_ACL_ENTRY_ATTR_ACTION_REDIRECT },
 };
 
-acl_rule_attr_lookup_t aclDTelActionLookup =
+static acl_rule_attr_lookup_t aclMirrorStageLookup =
+{
+    {ACTION_MIRROR_INGRESS_ACTION, SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS},
+    {ACTION_MIRROR_EGRESS_ACTION,  SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_EGRESS},
+};
+
+static acl_rule_attr_lookup_t aclDTelActionLookup =
 {
     { ACTION_DTEL_FLOW_OP,                  SAI_ACL_ENTRY_ATTR_ACTION_ACL_DTEL_FLOW_OP },
     { ACTION_DTEL_INT_SESSION,              SAI_ACL_ENTRY_ATTR_ACTION_DTEL_INT_SESSION },
@@ -78,7 +83,7 @@ acl_rule_attr_lookup_t aclDTelActionLookup =
     { ACTION_DTEL_REPORT_ALL_PACKETS,       SAI_ACL_ENTRY_ATTR_ACTION_DTEL_REPORT_ALL_PACKETS }
 };
 
-acl_dtel_flow_op_type_lookup_t aclDTelFlowOpTypeLookup =
+static acl_dtel_flow_op_type_lookup_t aclDTelFlowOpTypeLookup =
 {
     { DTEL_FLOW_OP_NOP,                SAI_ACL_DTEL_FLOW_OP_NOP },
     { DTEL_FLOW_OP_POSTCARD,           SAI_ACL_DTEL_FLOW_OP_POSTCARD },
@@ -102,12 +107,6 @@ static acl_stage_type_lookup_t aclStageLookUp =
 {
     {STAGE_INGRESS, ACL_STAGE_INGRESS },
     {STAGE_EGRESS,  ACL_STAGE_EGRESS }
-};
-
-static acl_rule_attr_lookup_t aclMirrorStageLookup =
-{
-    {STAGE_INGRESS, SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS},
-    {STAGE_EGRESS,  SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_EGRESS},
 };
 
 static acl_ip_type_lookup_t aclIpTypeLookup =
@@ -616,12 +615,10 @@ shared_ptr<AclRule> AclRule::makeShared(acl_table_type_t type, AclOrch *acl, Mir
     {
         string attr_name = to_upper(fvField(itr));
         string attr_value = fvValue(itr);
-        if (attr_name == ACTION_PACKET_ACTION || attr_name == ACTION_MIRROR_ACTION ||
-            attr_name == ACTION_DTEL_FLOW_OP || attr_name == ACTION_DTEL_INT_SESSION ||
-            attr_name == ACTION_DTEL_DROP_REPORT_ENABLE ||
-            attr_name == ACTION_DTEL_TAIL_DROP_REPORT_ENABLE ||
-            attr_name == ACTION_DTEL_FLOW_SAMPLE_PERCENT ||
-            attr_name == ACTION_DTEL_REPORT_ALL_PACKETS)
+        if (aclL3ActionLookup.find(attr_name) != aclL3ActionLookup.cend() ||
+            aclMirrorStageLookup.find(attr_name) != aclMirrorStageLookup.cend() ||
+            attr_name == ACTION_MIRROR_ACTION ||
+            aclDTelActionLookup.find(attr_name) != aclDTelActionLookup.cend())
         {
             action_found = true;
             action = attr_name;
@@ -646,7 +643,8 @@ shared_ptr<AclRule> AclRule::makeShared(acl_table_type_t type, AclOrch *acl, Mir
     }
 
     /* Mirror rules can exist in both tables */
-    if (action == ACTION_MIRROR_ACTION)
+    if (aclMirrorStageLookup.find(action) != aclMirrorStageLookup.cend() ||
+        action == ACTION_MIRROR_ACTION /* implicitly ingress in old schema */)
     {
         return make_shared<AclRuleMirror>(acl, mirror, rule, table, type);
     }
@@ -768,24 +766,41 @@ bool AclRuleL3::validateAddAction(string attr_name, string _attr_value)
     string attr_value = to_upper(_attr_value);
     sai_attribute_value_t value;
 
-    if (attr_name != ACTION_PACKET_ACTION)
-    {
-        return false;
-    }
+    auto action_str = attr_name;
 
-    if (attr_value == PACKET_ACTION_FORWARD)
+    if (attr_name == ACTION_PACKET_ACTION)
     {
-        value.aclaction.parameter.s32 = SAI_PACKET_ACTION_FORWARD;
-    }
-    else if (attr_value == PACKET_ACTION_DROP)
-    {
-        value.aclaction.parameter.s32 = SAI_PACKET_ACTION_DROP;
-    }
-    else if (attr_value.find(PACKET_ACTION_REDIRECT) != string::npos)
-    {
-        // resize attr_value to remove argument, _attr_value still has the argument
-        attr_value.resize(string(PACKET_ACTION_REDIRECT).length());
+        if (attr_value == PACKET_ACTION_FORWARD)
+        {
+            value.aclaction.parameter.s32 = SAI_PACKET_ACTION_FORWARD;
+        }
+        else if (attr_value == PACKET_ACTION_DROP)
+        {
+            value.aclaction.parameter.s32 = SAI_PACKET_ACTION_DROP;
+        }
+        else if (attr_value.find(PACKET_ACTION_REDIRECT) != string::npos)
+        {
+            // handle PACKET_ACTION_REDIRECT in ACTION_PACKET_ACTION for backward compatibility
 
+            // resize attr_value to remove argument, _attr_value still has the argument
+            attr_value.resize(string(PACKET_ACTION_REDIRECT).length());
+
+            sai_object_id_t param_id = getRedirectObjectId(_attr_value);
+            if (param_id == SAI_NULL_OBJECT_ID)
+            {
+                return false;
+            }
+            value.aclaction.parameter.oid = param_id;
+
+            action_str = ACTION_REDIRECT_ACTION;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else if (attr_name == ACTION_REDIRECT_ACTION)
+    {
         sai_object_id_t param_id = getRedirectObjectId(_attr_value);
         if (param_id == SAI_NULL_OBJECT_ID)
         {
@@ -797,9 +812,10 @@ bool AclRuleL3::validateAddAction(string attr_name, string _attr_value)
     {
         return false;
     }
+
     value.aclaction.enable = true;
 
-    m_actions[aclL3ActionLookup[attr_value]] = value;
+    m_actions[aclL3ActionLookup[action_str]] = value;
 
     return AclRule::validateAddAction(attr_name, attr_value);
 }
@@ -990,29 +1006,19 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
     SWSS_LOG_ENTER();
 
     sai_attribute_value_t value;
-    string                stage = STAGE_INGRESS;
-    vector<string>        attr_values;
+    sai_acl_entry_attr_t action;
 
-    if (attr_name != ACTION_MIRROR_ACTION)
+    if (attr_name == ACTION_MIRROR_ACTION)
+    {
+        action = SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS;
+    }
+    else if (aclMirrorStageLookup.find(attr_name) != aclMirrorStageLookup.cend())
+    {
+        action = aclMirrorStageLookup[attr_name];
+    }
+    else
     {
         return false;
-    }
-
-    split(attr_value, attr_values, ':');
-    // expect format "stage:mirror_session_name"
-    // or just "mirror_session_name" and stage
-    // is ingress implicitely
-    if (attr_values.size() > 2)
-    {
-        SWSS_LOG_ERROR("Invalid mirror rule action %s:%s",
-                       attr_name.c_str(), attr_value.c_str());
-        return false;
-    }
-    else if (attr_values.size() == 2)
-    {
-        stage = to_upper(attr_values[0]);
-        // strip stage value
-        attr_value = attr_values[1];
     }
 
     m_sessionName = attr_value;
@@ -1032,15 +1038,7 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
     value.aclaction.parameter.objlist.list = &m_mirrorSessionOid;
     value.aclaction.parameter.objlist.count = 1;
 
-    if (aclMirrorStageLookup.find(stage) == aclMirrorStageLookup.end())
-    {
-        SWSS_LOG_ERROR("Invalid stage parameter in mirror rule: %s", stage.c_str());
-        return false;
-    }
-
-    m_mirrorStage = stage;
-
-    m_actions[aclMirrorStageLookup[m_mirrorStage]] = value;
+    m_actions[action] = value;
 
     return AclRule::validateAddAction(attr_name, attr_value);
 }
@@ -2170,55 +2168,26 @@ void AclOrch::queryAclActionCapability()
 
         // put capabilities in state DB
 
-        auto get_table_field = [stage_str](const std::string& action_name) {
-            return std::string("ACL_ACTION") + "|" + stage_str + "|" + action_name;
-        };
+        auto field = std::string("ACL_ACTION") + '|' + stage_str;
         auto& acl_action_set = m_aclCapabilities[stage];
 
-        // PACKET_ACTION
         {
             string delimiter;
             ostringstream acl_action_value_stream;
 
-            for (const auto& it: aclL3ActionLookup)
+            for (const auto& action_map: {aclL3ActionLookup, aclMirrorStageLookup, aclDTelActionLookup})
             {
-                auto saiAction = getAclActionFromAclEntry(it.second);
-                if (acl_action_set.find(saiAction) != acl_action_set.cend())
+                for (const auto& it: action_map)
                 {
-                    acl_action_value_stream << delimiter << it.first;
-                    delimiter = comma;
+                    auto saiAction = getAclActionFromAclEntry(it.second);
+                    if (acl_action_set.find(saiAction) != acl_action_set.cend())
+                    {
+                        acl_action_value_stream << delimiter << it.first;
+                        delimiter = comma;
+                    }
                 }
             }
-            fvVector.emplace_back(get_table_field(ACTION_PACKET_ACTION), acl_action_value_stream.str());
-        }
-
-        // MIRROR_ACTION
-        {
-            string delimiter;
-            ostringstream acl_action_value_stream;
-
-            for (const auto& it: aclMirrorStageLookup)
-            {
-                auto saiAction = getAclActionFromAclEntry(it.second);
-                if (acl_action_set.find(saiAction) != acl_action_set.cend())
-                {
-                    acl_action_value_stream << delimiter << it.first;
-                    delimiter = comma;
-                }
-            }
-            fvVector.emplace_back(get_table_field(ACTION_MIRROR_ACTION), acl_action_value_stream.str());
-        }
-
-        // DTEL actions
-        {
-            for (const auto& it: aclDTelActionLookup)
-            {
-                auto saiAction = getAclActionFromAclEntry(it.second);
-                if (acl_action_set.find(saiAction) != acl_action_set.cend())
-                {
-                    fvVector.emplace_back(get_table_field(it.first), string());
-                }
-            }
+            fvVector.emplace_back(field, acl_action_value_stream.str());
         }
 
         m_switchTable.set("switch", fvVector);
