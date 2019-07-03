@@ -2168,7 +2168,7 @@ void AclOrch::queryAclActionCapability()
 
         // put capabilities in state DB
 
-        auto field = std::string("ACL_ACTION") + '|' + stage_str;
+        auto field = std::string("ACL_ACTIONS") + '|' + stage_str;
         auto& acl_action_set = m_aclCapabilities[stage];
 
         string delimiter;
