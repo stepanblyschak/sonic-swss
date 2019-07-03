@@ -2161,25 +2161,23 @@ void AclOrch::queryAclActionCapability()
         auto field = std::string("ACL_ACTION") + '|' + stage_str;
         auto& acl_action_set = m_aclCapabilities[stage];
 
-        {
-            string delimiter;
-            ostringstream acl_action_value_stream;
+        string delimiter;
+        ostringstream acl_action_value_stream;
 
-            for (const auto& action_map: {aclL3ActionLookup, aclMirrorStageLookup, aclDTelActionLookup})
+        for (const auto& action_map: {aclL3ActionLookup, aclMirrorStageLookup, aclDTelActionLookup})
+        {
+            for (const auto& it: action_map)
             {
-                for (const auto& it: action_map)
+                auto saiAction = getAclActionFromAclEntry(it.second);
+                if (acl_action_set.find(saiAction) != acl_action_set.cend())
                 {
-                    auto saiAction = getAclActionFromAclEntry(it.second);
-                    if (acl_action_set.find(saiAction) != acl_action_set.cend())
-                    {
-                        acl_action_value_stream << delimiter << it.first;
-                        delimiter = comma;
-                    }
+                    acl_action_value_stream << delimiter << it.first;
+                    delimiter = comma;
                 }
             }
-            fvVector.emplace_back(field, acl_action_value_stream.str());
         }
 
+        fvVector.emplace_back(field, acl_action_value_stream.str());
         m_switchTable.set("switch", fvVector);
     }
 }
