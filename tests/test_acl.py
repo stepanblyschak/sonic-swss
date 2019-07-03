@@ -1231,7 +1231,7 @@ class TestAclRuleValidation(BaseTestAcl):
         status, fvs = capability_table.get(keys[0])
         assert status == True
 
-        field = "ACL_ACTION|{}".format(stage.upper())
+        field = "ACL_ACTIONS|{}".format(stage.upper())
         fvs = dict(fvs)
 
         values_list = fvs.get(field, None)
