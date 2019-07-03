@@ -69,8 +69,8 @@ static acl_rule_attr_lookup_t aclL3ActionLookup =
 
 static acl_rule_attr_lookup_t aclMirrorStageLookup =
 {
-    {ACTION_MIRROR_INGRESS_ACTION, SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS},
-    {ACTION_MIRROR_EGRESS_ACTION,  SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_EGRESS},
+    { ACTION_MIRROR_INGRESS_ACTION, SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS},
+    { ACTION_MIRROR_EGRESS_ACTION,  SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_EGRESS},
 };
 
 static acl_rule_attr_lookup_t aclDTelActionLookup =
@@ -81,6 +81,12 @@ static acl_rule_attr_lookup_t aclDTelActionLookup =
     { ACTION_DTEL_TAIL_DROP_REPORT_ENABLE,  SAI_ACL_ENTRY_ATTR_ACTION_DTEL_TAIL_DROP_REPORT_ENABLE },
     { ACTION_DTEL_FLOW_SAMPLE_PERCENT,      SAI_ACL_ENTRY_ATTR_ACTION_DTEL_FLOW_SAMPLE_PERCENT },
     { ACTION_DTEL_REPORT_ALL_PACKETS,       SAI_ACL_ENTRY_ATTR_ACTION_DTEL_REPORT_ALL_PACKETS }
+};
+
+static acl_packet_action_lookup_t aclPacketActionLookup =
+{
+    { PACKET_ACTION_FORWARD, SAI_PACKET_ACTION_FORWARD },
+    { PACKET_ACTION_DROP,    SAI_PACKET_ACTION_DROP },
 };
 
 static acl_dtel_flow_op_type_lookup_t aclDTelFlowOpTypeLookup =
@@ -770,18 +776,14 @@ bool AclRuleL3::validateAddAction(string attr_name, string _attr_value)
 
     if (attr_name == ACTION_PACKET_ACTION)
     {
-        if (attr_value == PACKET_ACTION_FORWARD)
+        const auto it = aclPacketActionLookup.find(attr_value);
+        if (it != aclPacketActionLookup.cend())
         {
-            value.aclaction.parameter.s32 = SAI_PACKET_ACTION_FORWARD;
+            value.aclaction.parameter.s32 = it->second;
         }
-        else if (attr_value == PACKET_ACTION_DROP)
-        {
-            value.aclaction.parameter.s32 = SAI_PACKET_ACTION_DROP;
-        }
+        // handle PACKET_ACTION_REDIRECT in ACTION_PACKET_ACTION for backward compatibility
         else if (attr_value.find(PACKET_ACTION_REDIRECT) != string::npos)
         {
-            // handle PACKET_ACTION_REDIRECT in ACTION_PACKET_ACTION for backward compatibility
-
             // resize attr_value to remove argument, _attr_value still has the argument
             attr_value.resize(string(PACKET_ACTION_REDIRECT).length());
 
@@ -1008,13 +1010,15 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
     sai_attribute_value_t value;
     sai_acl_entry_attr_t action;
 
-    if (attr_name == ACTION_MIRROR_ACTION)
+    const auto it = aclMirrorStageLookup.find(attr_name);
+    if (it != aclMirrorStageLookup.cend())
+    {
+        action = it->second;
+    }
+    // handle ACTION_MIRROR_ACTION as ingress by default for backward compatibility
+    else if (attr_name == ACTION_MIRROR_ACTION)
     {
         action = SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS;
-    }
-    else if (aclMirrorStageLookup.find(attr_name) != aclMirrorStageLookup.cend())
-    {
-        action = aclMirrorStageLookup[attr_name];
     }
     else
     {
