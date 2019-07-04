@@ -282,7 +282,6 @@ public:
 protected:
     bool m_state {false};
     string m_sessionName;
-    sai_object_id_t m_mirrorSessionOid {SAI_NULL_OBJECT_ID};
     AclRuleCounters counters;
     MirrorOrch *m_pMirrorOrch {nullptr};
 };
