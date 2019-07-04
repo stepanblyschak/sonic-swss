@@ -401,6 +401,26 @@ bool AclRule::validateAddAction(string attr_name, string attr_value)
                            attr_name.c_str(), attr_value.c_str());
             return false;
         }
+
+        // check if ACL action attribute entry parameter is an enum value
+        const auto* meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, it.first);
+        if (meta == nullptr)
+        {
+            SWSS_LOG_THROW("Metadata null pointer returned by sai_metadata_get_attr_metadata for action %s",
+                           attr_name.c_str());
+        }
+        if (meta->isenum)
+        {
+            // if ACL action attribute requiers enum value check if value is supported by the ASIC
+            if (!m_pAclOrch->isAclActionEnumValueSupported(AclOrch::getAclActionFromAclEntry(it.first),
+                                                           it.second.aclaction.parameter))
+            {
+                SWSS_LOG_ERROR("Action %s:%s is not supported by ASIC",
+                               attr_name.c_str(), attr_value.c_str());
+                return false;
+            }
+        }
+
     }
     return true;
 }
@@ -2194,6 +2214,99 @@ void AclOrch::queryAclActionCapability()
         fvVector.emplace_back(field, acl_action_value_stream.str());
         m_switchTable.set("switch", fvVector);
     }
+
+    /* For those ACL action entry attributes for which acl parameter is enumeration (metadata->isenum == true)
+     * we can query enum values which are implemented by vendor SAI.
+     * For this purpose we may want to use "sai_query_attribute_enum_values_capability"
+     * from SAI object API call (saiobject.h).
+     * However, right now libsairedis does not support SAI object API, so we will just
+     * put all values as supported for now.
+     */
+
+    queryAclActionAttrEnumValues(ACTION_PACKET_ACTION,
+                                 aclL3ActionLookup,
+                                 aclPacketActionLookup);
+    queryAclActionAttrEnumValues(ACTION_DTEL_FLOW_OP,
+                                 aclDTelActionLookup,
+                                 aclDTelFlowOpTypeLookup);
+}
+
+template<typename AclActionAttrLookupT>
+void AclOrch::queryAclActionAttrEnumValues(const string &action_name,
+                                           const acl_rule_attr_lookup_t& ruleAttrLookupMap,
+                                           const AclActionAttrLookupT lookupMap)
+{
+    vector<FieldValueTuple> fvVector;
+    auto acl_attr = ruleAttrLookupMap.at(action_name);
+    auto acl_action = getAclActionFromAclEntry(acl_attr);
+
+    /* if the action is not supported then no need to do secondary query for
+     * supported values
+     */
+    if (isAclActionSupported(ACL_STAGE_INGRESS, acl_action) ||
+        isAclActionSupported(ACL_STAGE_EGRESS, acl_action))
+    {
+        string delimiter;
+        ostringstream acl_action_value_stream;
+        auto field = std::string("ACL_ACTION") + '|' + action_name;
+
+        const auto* meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, acl_attr);
+        if (meta == nullptr)
+        {
+            SWSS_LOG_THROW("Metadata null pointer returned by sai_metadata_get_attr_metadata for action %s",
+                           action_name.c_str());
+        }
+
+        if (!meta->isenum)
+        {
+            SWSS_LOG_THROW("%s is not an enum", action_name.c_str());
+        }
+
+        // TODO: once sai object api is available make this code compile
+#if 0
+        vector<int32_t> values_list(meta->enummetadata->valuescount);
+        sai_s32_list_t values;
+        values.count = static_cast<uint32_t>(values_list.size());
+        values.list = values_list.data();
+
+        auto status = sai_query_attribute_enum_values_capability(gSwitchId,
+                                                                 SAI_OBJECT_TYPE_ACL_ENTRY,
+                                                                 acl_attr,
+                                                                 &values);
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_THROW("sai_query_attribute_enum_values_capability failed for %s",
+                           action_name.c_str());
+        }
+
+        for (size_t i = 0; i < values.count; i++)
+        {
+            m_aclEnumActionCapabilities[acl_action].insert(values.list[i]);
+        }
+#else
+        /* assume all enum values are supported untill sai object api is available */
+        for (size_t i = 0; i < meta->enummetadata->valuescount; i++)
+        {
+            m_aclEnumActionCapabilities[acl_action].insert(meta->enummetadata->values[i]);
+        }
+#endif
+
+        // put supported values in DB
+        for (const auto& it: lookupMap)
+        {
+            const auto foundIt = m_aclEnumActionCapabilities[acl_action].find(it.second);
+            if (foundIt == m_aclEnumActionCapabilities[acl_action].cend())
+            {
+                continue;
+            }
+            acl_action_value_stream << delimiter << it.first;
+            delimiter = comma;
+        }
+
+        fvVector.emplace_back(field, acl_action_value_stream.str());
+    }
+
+    m_switchTable.set("switch", fvVector);
 }
 
 sai_acl_action_type_t AclOrch::getAclActionFromAclEntry(sai_acl_entry_attr_t attr)
@@ -2466,6 +2579,16 @@ bool AclOrch::isAclActionSupported(acl_stage_type_t stage, sai_acl_action_type_t
         return false;
     }
     return it->second.find(action) != it->second.cend();
+}
+
+bool AclOrch::isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const
+{
+    const auto& it = m_aclEnumActionCapabilities.find(action);
+    if (it == m_aclEnumActionCapabilities.cend())
+    {
+        return false;
+    }
+    return it->second.find(param.s32) != it->second.cend();
 }
 
 void AclOrch::doAclTableTask(Consumer &consumer)
