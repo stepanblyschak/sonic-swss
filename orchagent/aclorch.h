@@ -119,6 +119,7 @@ typedef map<string, sai_acl_dtel_flow_op_t> acl_dtel_flow_op_type_lookup_t;
 typedef map<string, sai_packet_action_t> acl_packet_action_lookup_t;
 typedef tuple<sai_acl_range_type_t, int, int> acl_range_properties_t;
 typedef map<acl_stage_type_t, set<sai_acl_action_type_t>> acl_capabilities_t;
+typedef map<sai_acl_action_type_t, set<int32_t>> acl_action_enum_values_capabilities_t;
 
 class AclOrch;
 
@@ -168,8 +169,6 @@ struct AclRuleCounters
         return *this;
     }
 };
-
-class AclTable;
 
 class AclRule
 {
@@ -418,6 +417,7 @@ public:
 
     bool isCombinedMirrorV6Table();
     bool isAclActionSupported(acl_stage_type_t stage, sai_acl_action_type_t action) const;
+    bool isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const;
 
     bool m_isCombinedMirrorV6Table = true;
     map<acl_table_type_t, bool> m_mirrorTableCapabilities;
@@ -433,6 +433,11 @@ private:
 
     void queryMirrorTableCapability();
     void queryAclActionCapability();
+
+    template<typename AclActionAttrLookupT>
+    void queryAclActionAttrEnumValues(const string& action_name,
+                                      const acl_rule_attr_lookup_t& ruleAttrLookupMap,
+                                      const AclActionAttrLookupT lookupMap);
 
     static void collectCountersThread(AclOrch *pAclOrch);
 
@@ -461,6 +466,7 @@ private:
     string m_mirrorV6TableId;
 
     acl_capabilities_t m_aclCapabilities;
+    acl_action_enum_values_capabilities_t m_aclEnumActionCapabilities;
 };
 
 #endif /* SWSS_ACLORCH_H */
