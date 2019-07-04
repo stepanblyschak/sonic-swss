@@ -1026,7 +1026,6 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
 {
     SWSS_LOG_ENTER();
 
-    sai_attribute_value_t value;
     sai_acl_entry_attr_t action;
 
     const auto it = aclMirrorStageLookup.find(attr_name);
@@ -1052,16 +1051,8 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
         return false;
     }
 
-    if (!m_pMirrorOrch->getSessionOid(m_sessionName, m_mirrorSessionOid))
-    {
-        SWSS_LOG_THROW("Failed to get mirror session OID for session %s", m_sessionName.c_str());
-    }
-
-    value.aclaction.enable = true;
-    value.aclaction.parameter.objlist.list = &m_mirrorSessionOid;
-    value.aclaction.parameter.objlist.count = 1;
-
-    m_actions[action] = value;
+    // insert placeholder value, we'll set the session oid in AclRuleMirror::create()
+    m_actions[action] = sai_attribute_value_t{};
 
     return AclRule::validateAddAction(attr_name, attr_value);
 }
@@ -1141,6 +1132,7 @@ bool AclRuleMirror::create()
 {
     SWSS_LOG_ENTER();
 
+    sai_object_id_t oid = SAI_NULL_OBJECT_ID;
     bool state = false;
 
     if (!m_pMirrorOrch->getSessionStatus(m_sessionName, state))
@@ -1158,6 +1150,18 @@ bool AclRuleMirror::create()
     if (!state)
     {
         return true;
+    }
+
+    if (!m_pMirrorOrch->getSessionOid(m_sessionName, oid))
+    {
+        SWSS_LOG_THROW("Failed to get mirror session OID for session %s", m_sessionName.c_str());
+    }
+
+    for (auto& it: m_actions)
+    {
+        it.second.aclaction.enable = true;
+        it.second.aclaction.parameter.objlist.list = &oid;
+        it.second.aclaction.parameter.objlist.count = 1;
     }
 
     if (!AclRule::create())
