@@ -2263,7 +2263,7 @@ void AclOrch::queryAclActionAttrEnumValues(const string &action_name,
         }
 
         // TODO: once sai object api is available make this code compile
-#if 0
+#ifdef SAIREDIS_SUPPORT_OBJECT_API
         vector<int32_t> values_list(meta->enummetadata->valuescount);
         sai_s32_list_t values;
         values.count = static_cast<uint32_t>(values_list.size());
