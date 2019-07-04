@@ -1303,5 +1303,5 @@ class TestAclRuleValidation(BaseTestAcl):
 
             self.remove_acl_table(acl_table)
 
-            dvs.restart()
-            time.sleep(20)
+            dvs.runcmd("systemctl restart all")
+            time.sleep(5)
