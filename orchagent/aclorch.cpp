@@ -976,7 +976,6 @@ bool AclRuleMirror::validateAddMatch(string attr_name, string attr_value)
     if ((m_tableType == ACL_TABLE_L3 || m_tableType == ACL_TABLE_L3V6)
 	&& attr_name == MATCH_DSCP)
     {
-        SWSS_LOG_ERROR("DSCP match is not supported for the table of type L3");
         return false;
     }
 
@@ -984,8 +983,6 @@ bool AclRuleMirror::validateAddMatch(string attr_name, string attr_value)
                 aclMatchLookup.find(attr_name) != aclMatchLookup.end() &&
                 attr_name != MATCH_DSCP))
     {
-        SWSS_LOG_ERROR("%s match is not supported for the table of type MIRROR_DSCP",
-                attr_name.c_str());
         return false;
     }
 
@@ -1014,8 +1011,6 @@ bool AclRuleMirror::validateAddMatch(string attr_name, string attr_value)
             (attr_name == MATCH_SRC_IPV6 || attr_name == MATCH_DST_IPV6 ||
              attr_name == MATCH_ICMPV6_TYPE || attr_name == MATCH_ICMPV6_CODE))
     {
-        SWSS_LOG_ERROR("%s match is not supported for the table of type MIRROR",
-                attr_name.c_str());
         return false;
     }
 
@@ -1024,8 +1019,6 @@ bool AclRuleMirror::validateAddMatch(string attr_name, string attr_value)
              attr_name == MATCH_ICMP_TYPE || attr_name == MATCH_ICMP_CODE ||
              attr_name == MATCH_ETHER_TYPE))
     {
-        SWSS_LOG_ERROR("%s match is not supported for the table of type MIRRORv6",
-                attr_name.c_str());
         return false;
     }
 
