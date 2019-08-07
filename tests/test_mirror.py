@@ -115,7 +115,7 @@ class TestMirror(object):
            The session becomes inactive again till the end
         4. Remove miror session
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "TEST_SESSION"
 
@@ -246,7 +246,7 @@ class TestMirror(object):
         3. Remove FDB; remove neighbor; remove IP; remove VLAN
         4. Remove mirror session
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "TEST_SESSION"
 
@@ -383,7 +383,7 @@ class TestMirror(object):
         4. Remove mirror session
 
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "TEST_SESSION"
 
@@ -455,7 +455,7 @@ class TestMirror(object):
         7. Disable non-VLAN monitor port
         8. Remove mirror session
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "TEST_SESSION"
 
@@ -573,7 +573,7 @@ class TestMirror(object):
         7. Disable non-LAG monitor port
         8. Remove mirror session
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "TEST_SESSION"
 
@@ -726,7 +726,7 @@ class TestMirror(object):
         the mirror action stage (ingress, egress) and verifies ASIC db
         entry set with correct mirror action
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "MIRROR_SESSION"
         acl_table = "MIRROR_TABLE"
@@ -794,7 +794,7 @@ class TestMirror(object):
         This test tests ACL associated with mirror session with DSCP value
         The DSCP value is tested on both with mask and without mask
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "MIRROR_SESSION"
         acl_table = "MIRROR_TABLE"
