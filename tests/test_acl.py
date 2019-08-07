@@ -3,28 +3,29 @@ import time
 import re
 import json
 
-class TestAcl(object):
-    def setup_db(self, dvs):
-        self.pdb = swsscommon.DBConnector(0, dvs.redis_sock, 0)
-        self.adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
-        self.cdb = swsscommon.DBConnector(4, dvs.redis_sock, 0)
-        self.sdb = swsscommon.DBConnector(6, dvs.redis_sock, 0)
 
-    def create_acl_table(self, table, type, ports):
-        tbl = swsscommon.Table(self.cdb, "ACL_TABLE")
-        fvs = swsscommon.FieldValuePairs([("policy_desc", "test"),
-                                          ("type", type),
-                                          ("ports", ",".join(ports))])
+class BaseTestAcl(object):
+    """ base class with helpers for Test classes """
+    def create_acl_table(self, table, type, ports, stage=None):
+        tbl = swsscommon.Table(dvs.cdb, "ACL_TABLE")
+        table_props = [("policy_desc", "test"),
+                       ("type", type),
+                       ("ports", ",".join(ports))]
+
+        if stage is not None:
+            table_props += [("stage", stage)]
+
+        fvs = swsscommon.FieldValuePairs(table_props)
         tbl.set(table, fvs)
         time.sleep(1)
 
     def remove_acl_table(self, table):
-        tbl = swsscommon.Table(self.cdb, "ACL_TABLE")
+        tbl = swsscommon.Table(dvs.cdb, "ACL_TABLE")
         tbl._del(table)
         time.sleep(1)
 
     def get_acl_table_id(self, dvs):
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_TABLE")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_TABLE")
         keys = tbl.getKeys()
 
         for k in  dvs.asicdb.default_acl_tables:
@@ -124,8 +125,63 @@ class TestAcl(object):
         assert len(port_groups) == len(bind_ports)
         assert set(port_groups) == set(acl_table_groups)
 
+    def check_rule_existence(self, entry, rules, verifs):
+        """ helper function to verify if rule exists """
+
+        for rule in rules:
+           ruleD = dict(rule)
+           # find the rule to match with based on priority
+           if ruleD["PRIORITY"] == entry['SAI_ACL_ENTRY_ATTR_PRIORITY']:
+              ruleIndex = rules.index(rule)
+              # use verification dictionary to match entry to rule
+              for key in verifs[ruleIndex]:
+                 assert verifs[ruleIndex][key] == entry[key]
+              return True
+        return False
+
+    def create_acl_rule(self, table, rule, field, value):
+        tbl = swsscommon.Table(dvs.cdb, "ACL_RULE")
+        fvs = swsscommon.FieldValuePairs([("priority", "666"),
+                                          ("PACKET_ACTION", "FORWARD"),
+                                          (field, value)])
+        tbl.set(table + "|" + rule, fvs)
+        time.sleep(1)
+
+    def remove_acl_rule(self, table, rule):
+        tbl = swsscommon.Table(dvs.cdb, "ACL_RULE")
+        tbl._del(table + "|" + rule)
+        time.sleep(1)
+
+    def verify_acl_rule(self, dvs, field, value):
+        acl_table_id = self.get_acl_table_id(dvs)
+
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
+        acl_entries = [k for k in tbl.getKeys() if k not in dvs.asicdb.default_acl_entries]
+        assert len(acl_entries) == 1
+
+        (status, fvs) = tbl.get(acl_entries[0])
+        assert status == True
+        assert len(fvs) == 6
+        for fv in fvs:
+            if fv[0] == "SAI_ACL_ENTRY_ATTR_TABLE_ID":
+                assert fv[1] == acl_table_id
+            elif fv[0] == "SAI_ACL_ENTRY_ATTR_ADMIN_STATE":
+                assert fv[1] == "true"
+            elif fv[0] == "SAI_ACL_ENTRY_ATTR_PRIORITY":
+                assert fv[1] == "666"
+            elif fv[0] == "SAI_ACL_ENTRY_ATTR_ACTION_COUNTER":
+                assert True
+            elif fv[0] == "SAI_ACL_ENTRY_ATTR_ACTION_PACKET_ACTION":
+                assert fv[1] == "SAI_PACKET_ACTION_FORWARD"
+            elif fv[0] == field:
+                assert fv[1] == value
+            else:
+                assert False
+
+
+class TestAcl(BaseTestAcl):
     def test_AclTableCreation(self, dvs, testlog):
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -159,7 +215,7 @@ class TestAcl(object):
         hmset ACL_RULE|test|acl_test_rule priority 55 PACKET_ACTION FORWARD L4_SRC_PORT 65000
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -211,7 +267,7 @@ class TestAcl(object):
         hmset ACL_RULE|test|acl_test_rule priority 55 PACKET_ACTION FORWARD IN_PORTS Ethernet0,Ethernet4 OUT_PORTS Ethernet8,Ethernet12
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -269,7 +325,7 @@ class TestAcl(object):
 
     def test_AclTableDeletion(self, dvs, testlog):
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -286,7 +342,7 @@ class TestAcl(object):
 
     def test_V6AclTableCreation(self, dvs, testlog):
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -363,7 +419,7 @@ class TestAcl(object):
         hmset ACL_RULE|test-aclv6|test_rule1 priority 1000 PACKET_ACTION FORWARD IPv6Any
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -415,7 +471,7 @@ class TestAcl(object):
         hmset ACL_RULE|test-aclv6|test_rule2 priority 1002 PACKET_ACTION DROP IPv6Any
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -467,7 +523,7 @@ class TestAcl(object):
         hmset ACL_RULE|test-aclv6|test_rule3 priority 1003 PACKET_ACTION DROP IP_PROTOCOL 6
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -519,7 +575,7 @@ class TestAcl(object):
         hmset ACL_RULE|test-aclv6|test_rule4 priority 1004 PACKET_ACTION DROP SRC_IPV6 2777::0/64
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -571,7 +627,7 @@ class TestAcl(object):
         hmset ACL_RULE|test-aclv6|test_rule5 priority 1005 PACKET_ACTION DROP DST_IPV6 2002::2/128
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -623,7 +679,7 @@ class TestAcl(object):
         hmset ACL_RULE|test-aclv6|test_rule6 priority 1006 PACKET_ACTION DROP L4_SRC_PORT 65000
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -675,7 +731,7 @@ class TestAcl(object):
         hmset ACL_RULE|test-aclv6|test_rule7 priority 1007 PACKET_ACTION DROP L4_DST_PORT 65001
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -727,7 +783,7 @@ class TestAcl(object):
         hmset ACL_RULE|test-aclv6|test_rule8 priority 1008 PACKET_ACTION DROP TCP_FLAGS 0x7/0x3f
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -779,7 +835,7 @@ class TestAcl(object):
         hmset ACL_RULE|test-aclv6|test_rule9 priority 1009 PACKET_ACTION DROP L4_SRC_PORT_RANGE 1-100
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -845,7 +901,7 @@ class TestAcl(object):
         hmset ACL_RULE|test-aclv6|test_rule10 priority 1010 PACKET_ACTION DROP L4_DST_PORT_RANGE 101-200
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -908,7 +964,7 @@ class TestAcl(object):
 
     def test_V6AclTableDeletion(self, dvs, testlog):
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -923,23 +979,8 @@ class TestAcl(object):
         # only the default table was left
         assert len(keys) >= 1
 
-    #helper function to verify if rule exists
-    def check_rule_existence(self, entry, rules, verifs):
-        for rule in rules:
-           ruleD = dict(rule)
-           #find the rule to match with based on priority
-           if ruleD["PRIORITY"] == entry['SAI_ACL_ENTRY_ATTR_PRIORITY']:
-              ruleIndex = rules.index(rule)
-              #use verification dictionary to match entry to rule
-              for key in verifs[ruleIndex]:
-                 assert verifs[ruleIndex][key] == entry[key]
-              #found the rule
-              return True
-        #did not find the rule
-        return False
-
     def test_InsertAclRuleBetweenPriorities(self, dvs, testlog):
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -1038,7 +1079,7 @@ class TestAcl(object):
         assert len(keys) >= 1
 
     def test_RulesWithDiffMaskLengths(self, dvs, testlog):
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -1123,48 +1164,9 @@ class TestAcl(object):
         keys = atbl.getKeys()
         assert len(keys) >= 1
 
-    def create_acl_rule(self, table, rule, field, value):
-        tbl = swsscommon.Table(self.cdb, "ACL_RULE")
-        fvs = swsscommon.FieldValuePairs([("priority", "666"),
-                                          ("PACKET_ACTION", "FORWARD"),
-                                          (field, value)])
-        tbl.set(table + "|" + rule, fvs)
-        time.sleep(1)
-
-    def remove_acl_rule(self, table, rule):
-        tbl = swsscommon.Table(self.cdb, "ACL_RULE")
-        tbl._del(table + "|" + rule)
-        time.sleep(1)
-
-    def verify_acl_rule(self, dvs, field, value):
-        acl_table_id = self.get_acl_table_id(dvs)
-
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
-        acl_entries = [k for k in tbl.getKeys() if k not in dvs.asicdb.default_acl_entries]
-        assert len(acl_entries) == 1
-
-        (status, fvs) = tbl.get(acl_entries[0])
-        assert status == True
-        assert len(fvs) == 6
-        for fv in fvs:
-            if fv[0] == "SAI_ACL_ENTRY_ATTR_TABLE_ID":
-                assert fv[1] == acl_table_id
-            elif fv[0] == "SAI_ACL_ENTRY_ATTR_ADMIN_STATE":
-                assert fv[1] == "true"
-            elif fv[0] == "SAI_ACL_ENTRY_ATTR_PRIORITY":
-                assert fv[1] == "666"
-            elif fv[0] == "SAI_ACL_ENTRY_ATTR_ACTION_COUNTER":
-                assert True
-            elif fv[0] == "SAI_ACL_ENTRY_ATTR_ACTION_PACKET_ACTION":
-                assert fv[1] == "SAI_PACKET_ACTION_FORWARD"
-            elif fv[0] == field:
-                assert fv[1] == value
-            else:
-                assert False
-
 
     def test_AclRuleIcmp(self, dvs, testlog):
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         acl_table = "TEST_TABLE"
         acl_rule = "TEST_RULE"
@@ -1186,7 +1188,7 @@ class TestAcl(object):
         self.remove_acl_table(acl_table)
 
     def test_AclRuleIcmpV6(self, dvs, testlog):
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         acl_table = "TEST_TABLE"
         acl_rule = "TEST_RULE"
@@ -1206,3 +1208,96 @@ class TestAcl(object):
         self.remove_acl_rule(acl_table, acl_rule)
 
         self.remove_acl_table(acl_table)
+
+
+class TestAclRuleValidation(BaseTestAcl):
+    """ Test class for cases that check if orchagent corectly validates
+    ACL rules input
+    """
+
+    SWITCH_CAPABILITY_TABLE = "SWITCH_CAPABILITY"
+
+    def get_acl_actions_supported(self, stage):
+        capability_table = swsscommon.Table(dvs.sdb, self.SWITCH_CAPABILITY_TABLE)
+        keys = capability_table.getKeys()
+        # one switch available
+        assert len(keys) == 1
+        status, fvs = capability_table.get(keys[0])
+        assert status == True
+
+        field = "ACL_ACTIONS|{}".format(stage.upper())
+        fvs = dict(fvs)
+
+        values_list = fvs.get(field, None)
+
+        if values_list is not None:
+            values_list = values_list.split(",")
+
+        return values_list
+
+    def test_AclActionValidation(self, dvs, testlog):
+        """ The test overrides R/O SAI_SWITCH_ATTR_ACL_STAGE_INGRESS/EGRESS switch attributes
+        to check the case when orchagent refuses to process rules with action that is not supported
+        by the ASIC
+        """
+
+        dvs.setup_db()
+
+        stage_name_map = {
+            "ingress": "SAI_SWITCH_ATTR_ACL_STAGE_INGRESS",
+            "egress": "SAI_SWITCH_ATTR_ACL_STAGE_EGRESS",
+        }
+
+        for stage in stage_name_map:
+            action_values = self.get_acl_actions_supported(stage)
+
+            # virtual switch supports all actions
+            assert action_values is not None
+            assert "PACKET_ACTION" in action_values
+
+            sai_acl_stage = stage_name_map[stage]
+
+            # mock switch attribute in VS so only REDIRECT action is supported on this stage
+            dvs.setReadOnlyAttr("SAI_OBJECT_TYPE_SWITCH",
+                                sai_acl_stage,
+                                # FIXME: here should use sai_serialize_value() for acl_capability_t
+                                #        but it is not available in VS testing infrastructure
+                                "false:1:SAI_ACL_ACTION_TYPE_REDIRECT")
+
+            # restart SWSS so orchagent will query updated switch attributes
+            dvs.stop_swss()
+            dvs.start_swss()
+            # wait for daemons to start
+            time.sleep(2)
+            # reinit ASIC DB validator object
+            dvs.init_asicdb_validator()
+
+            action_values = self.get_acl_actions_supported(stage)
+            # now, PACKET_ACTION is not supported
+            # and REDIRECT_ACTION is supported
+            assert "PACKET_ACTION" not in action_values
+            assert "REDIRECT_ACTION" in action_values
+
+            # try to create a forward rule
+
+            acl_table = "TEST_TABLE"
+            acl_rule = "TEST_RULE"
+
+            bind_ports = ["Ethernet0", "Ethernet4"]
+
+            self.create_acl_table(acl_table, "L3", bind_ports, stage=stage)
+            self.create_acl_rule(acl_table, acl_rule, "ICMP_TYPE", "8")
+
+            atbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
+            keys = atbl.getKeys()
+
+            # verify there are no non-default ACL rules created
+            acl_entry = [k for k in keys if k not in dvs.asicdb.default_acl_entries]
+            assert len(acl_entry) == 0
+
+            self.remove_acl_table(acl_table)
+            # remove rules from CFG DB
+            self.remove_acl_rule(acl_table, acl_rule)
+
+            dvs.runcmd("supervisorctl restart all")
+            time.sleep(6)

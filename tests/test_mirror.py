@@ -9,12 +9,6 @@ from swsscommon import swsscommon
 
 
 class TestMirror(object):
-    def setup_db(self, dvs):
-        self.pdb = swsscommon.DBConnector(0, dvs.redis_sock, 0)
-        self.adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
-        self.cdb = swsscommon.DBConnector(4, dvs.redis_sock, 0)
-        self.sdb = swsscommon.DBConnector(6, dvs.redis_sock, 0)
-
     def set_interface_status(self, dvs, interface, admin_status):
         if interface.startswith("PortChannel"):
             tbl_name = "PORTCHANNEL"
@@ -22,7 +16,7 @@ class TestMirror(object):
             tbl_name = "VLAN"
         else:
             tbl_name = "PORT"
-        tbl = swsscommon.Table(self.cdb, tbl_name)
+        tbl = swsscommon.Table(dvs.cdb, tbl_name)
         fvs = swsscommon.FieldValuePairs([("admin_status", "up")])
         tbl.set(interface, fvs)
         time.sleep(1)
@@ -40,7 +34,7 @@ class TestMirror(object):
             tbl_name = "VLAN_INTERFACE"
         else:
             tbl_name = "INTERFACE"
-        tbl = swsscommon.Table(self.cdb, tbl_name)
+        tbl = swsscommon.Table(dvs.cdb, tbl_name)
         fvs = swsscommon.FieldValuePairs([("NULL", "NULL")])
         tbl.set(interface + "|" + ip, fvs)
         tbl.set(interface, fvs)
@@ -53,20 +47,20 @@ class TestMirror(object):
             tbl_name = "VLAN_INTERFACE"
         else:
             tbl_name = "INTERFACE"
-        tbl = swsscommon.Table(self.cdb, tbl_name)
+        tbl = swsscommon.Table(dvs.cdb, tbl_name)
         tbl._del(interface + "|" + ip)
         tbl._del(interface)
         time.sleep(1)
 
     def add_neighbor(self, interface, ip, mac):
-        tbl = swsscommon.ProducerStateTable(self.pdb, "NEIGH_TABLE")
+        tbl = swsscommon.ProducerStateTable(dvs.pdb, "NEIGH_TABLE")
         fvs = swsscommon.FieldValuePairs([("neigh", mac),
                                           ("family", "IPv4")])
         tbl.set(interface + ":" + ip, fvs)
         time.sleep(1)
 
     def remove_neighbor(self, interface, ip):
-        tbl = swsscommon.ProducerStateTable(self.pdb, "NEIGH_TABLE")
+        tbl = swsscommon.ProducerStateTable(dvs.pdb, "NEIGH_TABLE")
         tbl._del(interface + ":" + ip)
         time.sleep(1)
 
@@ -79,7 +73,7 @@ class TestMirror(object):
         time.sleep(1)
 
     def create_mirror_session(self, name, src, dst, gre, dscp, ttl, queue):
-        tbl = swsscommon.Table(self.cdb, "MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.cdb, "MIRROR_SESSION")
         fvs = swsscommon.FieldValuePairs([("src_ip", src),
                                           ("dst_ip", dst),
                                           ("gre_type", gre),
@@ -90,7 +84,7 @@ class TestMirror(object):
         time.sleep(1)
 
     def remove_mirror_session(self, name):
-        tbl = swsscommon.Table(self.cdb, "MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.cdb, "MIRROR_SESSION")
         tbl._del(name)
         time.sleep(1)
 
@@ -98,7 +92,7 @@ class TestMirror(object):
         return self.get_mirror_session_state(name)["status"]
 
     def get_mirror_session_state(self, name):
-        tbl = swsscommon.Table(self.sdb, "MIRROR_SESSION_TABLE")
+        tbl = swsscommon.Table(dvs.sdb, "MIRROR_SESSION_TABLE")
         (status, fvs) = tbl.get(name)
         assert status == True
         assert len(fvs) > 0
@@ -117,7 +111,7 @@ class TestMirror(object):
            The session becomes inactive again till the end
         4. Remove miror session
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "TEST_SESSION"
 
@@ -145,7 +139,7 @@ class TestMirror(object):
         assert self.get_mirror_session_state(session)["route_prefix"] == "2.2.2.2/32"
 
         # check asic database
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         mirror_entries = tbl.getKeys()
         assert len(mirror_entries) == 1
 
@@ -200,36 +194,36 @@ class TestMirror(object):
     def create_vlan(self, dvs, vlan):
         #dvs.runcmd("ip link del Bridge")
         #dvs.runcmd("ip link add Bridge up type bridge")
-        tbl = swsscommon.Table(self.cdb, "VLAN")
+        tbl = swsscommon.Table(dvs.cdb, "VLAN")
         fvs = swsscommon.FieldValuePairs([("vlanid", vlan)])
         tbl.set("Vlan" + vlan, fvs)
         time.sleep(1)
 
     def remove_vlan(self, vlan):
-        tbl = swsscommon.Table(self.cdb, "VLAN")
+        tbl = swsscommon.Table(dvs.cdb, "VLAN")
         tbl._del("Vlan" + vlan)
         time.sleep(1)
 
     def create_vlan_member(self, vlan, interface):
-        tbl = swsscommon.Table(self.cdb, "VLAN_MEMBER")
+        tbl = swsscommon.Table(dvs.cdb, "VLAN_MEMBER")
         fvs = swsscommon.FieldValuePairs([("tagging_mode", "untagged")])
         tbl.set("Vlan" + vlan + "|" + interface, fvs)
         time.sleep(1)
 
     def remove_vlan_member(self, vlan, interface):
-        tbl = swsscommon.Table(self.cdb, "VLAN_MEMBER")
+        tbl = swsscommon.Table(dvs.cdb, "VLAN_MEMBER")
         tbl._del("Vlan" + vlan + "|" + interface)
         time.sleep(1)
 
     def create_fdb(self, vlan, mac, interface):
-        tbl = swsscommon.ProducerStateTable(self.pdb, "FDB_TABLE")
+        tbl = swsscommon.ProducerStateTable(dvs.pdb, "FDB_TABLE")
         fvs = swsscommon.FieldValuePairs([("port", interface),
                                           ("type", "dynamic")])
         tbl.set("Vlan" + vlan + ":" + mac, fvs)
         time.sleep(1)
 
     def remove_fdb(self, vlan, mac):
-        tbl = swsscommon.ProducerStateTable(self.pdb, "FDB_TABLE")
+        tbl = swsscommon.ProducerStateTable(dvs.pdb, "FDB_TABLE")
         tbl._del("Vlan" + vlan + ":" + mac)
         time.sleep(1)
 
@@ -248,7 +242,7 @@ class TestMirror(object):
         3. Remove FDB; remove neighbor; remove IP; remove VLAN
         4. Remove mirror session
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "TEST_SESSION"
 
@@ -277,7 +271,7 @@ class TestMirror(object):
         assert self.get_mirror_session_state(session)["status"] == "active"
 
         # check asic database
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         mirror_entries = tbl.getKeys()
         assert len(mirror_entries) == 1
 
@@ -344,31 +338,31 @@ class TestMirror(object):
         self.remove_mirror_session(session)
 
     def create_port_channel(self, dvs, channel):
-        tbl = swsscommon.ProducerStateTable(self.pdb, "LAG_TABLE")
+        tbl = swsscommon.ProducerStateTable(dvs.pdb, "LAG_TABLE")
         fvs = swsscommon.FieldValuePairs([("admin", "up"), ("mtu", "9100")])
         tbl.set("PortChannel" + channel, fvs)
         dvs.runcmd("ip link add PortChannel" + channel + " type bond")
-        tbl = swsscommon.Table(self.sdb, "LAG_TABLE")
+        tbl = swsscommon.Table(dvs.sdb, "LAG_TABLE")
         fvs = swsscommon.FieldValuePairs([("state", "ok")])
         tbl.set("PortChannel" + channel, fvs)
         time.sleep(1)
 
     def remove_port_channel(self, dvs, channel):
-        tbl = swsscommon.ProducerStateTable(self.pdb, "LAG_TABLE")
+        tbl = swsscommon.ProducerStateTable(dvs.pdb, "LAG_TABLE")
         tbl._del("PortChannel" + channel)
         dvs.runcmd("ip link del PortChannel" + channel)
-        tbl = swsscommon.Table(self.sdb, "LAG_TABLE")
+        tbl = swsscommon.Table(dvs.sdb, "LAG_TABLE")
         tbl._del("PortChannel" + channel)
         time.sleep(1)
 
     def create_port_channel_member(self, channel, interface):
-        tbl = swsscommon.ProducerStateTable(self.pdb, "LAG_MEMBER_TABLE")
+        tbl = swsscommon.ProducerStateTable(dvs.pdb, "LAG_MEMBER_TABLE")
         fvs = swsscommon.FieldValuePairs([("status", "enabled")])
         tbl.set("PortChannel" + channel + ":" + interface, fvs)
         time.sleep(1)
 
     def remove_port_channel_member(self, channel, interface):
-        tbl = swsscommon.ProducerStateTable(self.pdb, "LAG_MEMBER_TABLE")
+        tbl = swsscommon.ProducerStateTable(dvs.pdb, "LAG_MEMBER_TABLE")
         tbl._del("PortChannel" + channel + ":" + interface)
         time.sleep(1)
 
@@ -385,7 +379,7 @@ class TestMirror(object):
         4. Remove mirror session
 
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "TEST_SESSION"
 
@@ -410,7 +404,7 @@ class TestMirror(object):
         assert self.get_mirror_session_state(session)["status"] == "active"
 
         # check asic database
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         assert len(tbl.getKeys()) == 1
 
         (status, fvs) = tbl.get(tbl.getKeys()[0])
@@ -457,7 +451,7 @@ class TestMirror(object):
         7. Disable non-VLAN monitor port
         8. Remove mirror session
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "TEST_SESSION"
 
@@ -473,7 +467,7 @@ class TestMirror(object):
         assert self.get_mirror_session_state(session)["status"] == "active"
 
         # check monitor port
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         assert len(tbl.getKeys()) == 1
         (status, fvs) = tbl.get(tbl.getKeys()[0])
         assert status == True
@@ -504,7 +498,7 @@ class TestMirror(object):
         assert self.get_mirror_session_state(session)["status"] == "active"
 
         # check monitor port
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         assert len(tbl.getKeys()) == 1
         (status, fvs) = tbl.get(tbl.getKeys()[0])
         assert status == True
@@ -536,7 +530,7 @@ class TestMirror(object):
         assert self.get_mirror_session_state(session)["status"] == "active"
 
         # check monitor port
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         assert len(tbl.getKeys()) == 1
         (status, fvs) = tbl.get(tbl.getKeys()[0])
         assert status == True
@@ -575,7 +569,7 @@ class TestMirror(object):
         7. Disable non-LAG monitor port
         8. Remove mirror session
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "TEST_SESSION"
 
@@ -591,7 +585,7 @@ class TestMirror(object):
         assert self.get_mirror_session_state(session)["status"] == "active"
 
         # check monitor port
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         assert len(tbl.getKeys()) == 1
         (status, fvs) = tbl.get(tbl.getKeys()[0])
         assert status == True
@@ -618,7 +612,7 @@ class TestMirror(object):
         assert self.get_mirror_session_state(session)["status"] == "active"
 
         # check monitor port
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         assert len(tbl.getKeys()) == 1
         (status, fvs) = tbl.get(tbl.getKeys()[0])
         assert status == True
@@ -639,7 +633,7 @@ class TestMirror(object):
         assert self.get_mirror_session_state(session)["status"] == "active"
 
         # check monitor port
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         assert len(tbl.getKeys()) == 1
         (status, fvs) = tbl.get(tbl.getKeys()[0])
         assert status == True
@@ -656,7 +650,7 @@ class TestMirror(object):
 
         port_oid = ""
         # check monitor port
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         assert len(tbl.getKeys()) == 1
         (status, fvs) = tbl.get(tbl.getKeys()[0])
         assert status == True
@@ -689,7 +683,7 @@ class TestMirror(object):
 
 
     def create_acl_table(self, table, interfaces):
-        tbl = swsscommon.Table(self.cdb, "ACL_TABLE")
+        tbl = swsscommon.Table(dvs.cdb, "ACL_TABLE")
         fvs = swsscommon.FieldValuePairs([("policy_desc", "mirror_test"),
                                           ("type", "mirror"),
                                           ("ports", ",".join(interfaces))])
@@ -697,30 +691,38 @@ class TestMirror(object):
         time.sleep(1)
 
     def remove_acl_table(self, table):
-        tbl = swsscommon.Table(self.cdb, "ACL_TABLE")
+        tbl = swsscommon.Table(dvs.cdb, "ACL_TABLE")
         tbl._del(table)
         time.sleep(1)
 
-    def create_mirror_acl_dscp_rule(self, table, rule, dscp, session):
-        tbl = swsscommon.Table(self.cdb, "ACL_RULE")
+    def create_mirror_acl_dscp_rule(self, table, rule, dscp, session, stage=None):
+        action_name = "mirror_action"
+        action_name_map = {
+            "ingress": "MIRROR_INGRESS_ACTION",
+            "egress": "MIRROR_EGRESS_ACTION"
+        }
+        if stage is not None: # else it should be treated as ingress by default in orchagent
+            assert stage in ('ingress', 'egress'), "invalid stage input {}".format(stage)
+            action_name = action_name_map[stage]
+        tbl = swsscommon.Table(dvs.cdb, "ACL_RULE")
         fvs = swsscommon.FieldValuePairs([("priority", "1000"),
-                                          ("mirror_action", session),
+                                          (action_name, session),
                                           ("DSCP", dscp)])
         tbl.set(table + "|" + rule, fvs)
         time.sleep(1)
 
     def remove_mirror_acl_dscp_rule(self, table, rule):
-        tbl = swsscommon.Table(self.cdb, "ACL_RULE")
+        tbl = swsscommon.Table(dvs.cdb, "ACL_RULE")
         tbl._del(table + "|" + rule)
         time.sleep(1)
 
-
-    def test_AclBindMirror(self, dvs, testlog):
+    def test_AclBindMirrorPerStage(self, dvs, testlog):
         """
-        This test tests ACL associated with mirror session with DSCP value
-        The DSCP value is tested on both with mask and without mask
+        This test configures mirror rules with specifying explicitely
+        the mirror action stage (ingress, egress) and verifies ASIC db
+        entry set with correct mirror action
         """
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         session = "MIRROR_SESSION"
         acl_table = "MIRROR_TABLE"
@@ -737,7 +739,75 @@ class TestMirror(object):
         assert self.get_mirror_session_state(session)["status"] == "active"
 
         # assert mirror session in asic database
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        assert len(tbl.getKeys()) == 1
+        mirror_session_oid = tbl.getKeys()[0]
+
+        # create acl table
+        self.create_acl_table(acl_table, ["Ethernet0", "Ethernet4"])
+
+        for stage, asic_attr in (("ingress", "SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS"),
+                                 ("egress", "SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_EGRESS")):
+            # create acl rule with dscp value 48
+            self.create_mirror_acl_dscp_rule(acl_table, acl_rule, "48", session, stage=stage)
+
+            # assert acl rule is created
+            tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
+            rule_entries = [k for k in tbl.getKeys() if k not in dvs.asicdb.default_acl_entries]
+            assert len(rule_entries) == 1
+
+            (status, fvs) = tbl.get(rule_entries[0])
+            assert status == True
+
+            asic_attr_found = False
+            for fv in fvs:
+                if fv[0] == asic_attr:
+                    asic_attr_found = True
+
+            assert asic_attr_found == True
+
+            # remove acl rule
+            self.remove_mirror_acl_dscp_rule(acl_table, acl_rule)
+
+        # remove acl table
+        self.remove_acl_table(acl_table)
+
+        # remove mirror session
+        self.remove_mirror_session(session)
+
+        # assert no mirror session in asic database
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        assert len(tbl.getKeys()) == 0
+
+        # remove route; remove neighbor; remove ip; bring down port
+        self.remove_route(dvs, "4.4.4.4")
+        self.remove_neighbor("Ethernet32", "20.0.0.1")
+        self.remove_ip_address("Ethernet32", "20.0.0.0/31")
+        self.set_interface_status(dvs, "Ethernet32", "down")
+
+    def test_AclBindMirror(self, dvs, testlog):
+        """
+        This test tests ACL associated with mirror session with DSCP value
+        The DSCP value is tested on both with mask and without mask
+        """
+        dvs.setup_db()
+
+        session = "MIRROR_SESSION"
+        acl_table = "MIRROR_TABLE"
+        acl_rule = "MIRROR_RULE"
+
+        # bring up port; assign ip; create neighbor; create route
+        self.set_interface_status(dvs, "Ethernet32", "up")
+        self.add_ip_address("Ethernet32", "20.0.0.0/31")
+        self.add_neighbor("Ethernet32", "20.0.0.1", "02:04:06:08:10:12")
+        self.add_route(dvs, "4.4.4.4", "20.0.0.1")
+
+        # create mirror session
+        self.create_mirror_session(session, "3.3.3.3", "4.4.4.4", "0x6558", "8", "100", "0")
+        assert self.get_mirror_session_state(session)["status"] == "active"
+
+        # assert mirror session in asic database
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         assert len(tbl.getKeys()) == 1
         mirror_session_oid = tbl.getKeys()[0]
 
@@ -748,7 +818,7 @@ class TestMirror(object):
         self.create_mirror_acl_dscp_rule(acl_table, acl_rule, "48", session)
 
         # assert acl rule is created
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
         rule_entries = [k for k in tbl.getKeys() if k not in dvs.asicdb.default_acl_entries]
         assert len(rule_entries) == 1
 
@@ -767,7 +837,7 @@ class TestMirror(object):
         self.create_mirror_acl_dscp_rule(acl_table, acl_rule, "16/16", session)
 
         # assert acl rule is created
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
         rule_entries = [k for k in tbl.getKeys() if k not in dvs.asicdb.default_acl_entries]
         assert len(rule_entries) == 1
 
@@ -789,7 +859,7 @@ class TestMirror(object):
         self.remove_mirror_session(session)
 
         # assert no mirror session in asic database
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_MIRROR_SESSION")
         assert len(tbl.getKeys()) == 0
 
         # remove route; remove neighbor; remove ip; bring down port
