@@ -7,7 +7,7 @@ import json
 class BaseTestAcl(object):
     """ base class with helpers for Test classes """
     def create_acl_table(self, table, type, ports, stage=None):
-        tbl = swsscommon.Table(self.cdb, "ACL_TABLE")
+        tbl = swsscommon.Table(dvs.cdb, "ACL_TABLE")
         table_props = [("policy_desc", "test"),
                        ("type", type),
                        ("ports", ",".join(ports))]
@@ -20,12 +20,12 @@ class BaseTestAcl(object):
         time.sleep(1)
 
     def remove_acl_table(self, table):
-        tbl = swsscommon.Table(self.cdb, "ACL_TABLE")
+        tbl = swsscommon.Table(dvs.cdb, "ACL_TABLE")
         tbl._del(table)
         time.sleep(1)
 
     def get_acl_table_id(self, dvs):
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_TABLE")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_TABLE")
         keys = tbl.getKeys()
 
         for k in  dvs.asicdb.default_acl_tables:
@@ -140,7 +140,7 @@ class BaseTestAcl(object):
         return False
 
     def create_acl_rule(self, table, rule, field, value):
-        tbl = swsscommon.Table(self.cdb, "ACL_RULE")
+        tbl = swsscommon.Table(dvs.cdb, "ACL_RULE")
         fvs = swsscommon.FieldValuePairs([("priority", "666"),
                                           ("PACKET_ACTION", "FORWARD"),
                                           (field, value)])
@@ -148,14 +148,14 @@ class BaseTestAcl(object):
         time.sleep(1)
 
     def remove_acl_rule(self, table, rule):
-        tbl = swsscommon.Table(self.cdb, "ACL_RULE")
+        tbl = swsscommon.Table(dvs.cdb, "ACL_RULE")
         tbl._del(table + "|" + rule)
         time.sleep(1)
 
     def verify_acl_rule(self, dvs, field, value):
         acl_table_id = self.get_acl_table_id(dvs)
 
-        tbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
+        tbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
         acl_entries = [k for k in tbl.getKeys() if k not in dvs.asicdb.default_acl_entries]
         assert len(acl_entries) == 1
 
@@ -1218,7 +1218,7 @@ class TestAclRuleValidation(BaseTestAcl):
     SWITCH_CAPABILITY_TABLE = "SWITCH_CAPABILITY"
 
     def get_acl_actions_supported(self, stage):
-        capability_table = swsscommon.Table(self.sdb, self.SWITCH_CAPABILITY_TABLE)
+        capability_table = swsscommon.Table(dvs.sdb, self.SWITCH_CAPABILITY_TABLE)
         keys = capability_table.getKeys()
         # one switch available
         assert len(keys) == 1
@@ -1288,7 +1288,7 @@ class TestAclRuleValidation(BaseTestAcl):
             self.create_acl_table(acl_table, "L3", bind_ports, stage=stage)
             self.create_acl_rule(acl_table, acl_rule, "ICMP_TYPE", "8")
 
-            atbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
+            atbl = swsscommon.Table(dvs.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
             keys = atbl.getKeys()
 
             # verify there are no non-default ACL rules created
@@ -1296,8 +1296,8 @@ class TestAclRuleValidation(BaseTestAcl):
             assert len(acl_entry) == 0
 
             self.remove_acl_table(acl_table)
-            # remove rules from APP DB
+            # remove rules from CFG DB
             self.remove_acl_rule(acl_table, acl_rule)
 
             dvs.runcmd("supervisorctl restart all")
-            time.sleep(5)
+            time.sleep(6)
