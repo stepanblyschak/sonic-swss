@@ -6,12 +6,6 @@ import json
 
 class BaseTestAcl(object):
     """ base class with helpers for Test classes """
-    def setup_db(self, dvs):
-        self.pdb = swsscommon.DBConnector(0, dvs.redis_sock, 0)
-        self.adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
-        self.cdb = swsscommon.DBConnector(4, dvs.redis_sock, 0)
-        self.sdb = swsscommon.DBConnector(6, dvs.redis_sock, 0)
-
     def create_acl_table(self, table, type, ports, stage=None):
         tbl = swsscommon.Table(self.cdb, "ACL_TABLE")
         table_props = [("policy_desc", "test"),
@@ -187,7 +181,7 @@ class BaseTestAcl(object):
 
 class TestAcl(BaseTestAcl):
     def test_AclTableCreation(self, dvs, testlog):
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -221,7 +215,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test|acl_test_rule priority 55 PACKET_ACTION FORWARD L4_SRC_PORT 65000
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -273,7 +267,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test|acl_test_rule priority 55 PACKET_ACTION FORWARD IN_PORTS Ethernet0,Ethernet4 OUT_PORTS Ethernet8,Ethernet12
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -331,7 +325,7 @@ class TestAcl(BaseTestAcl):
 
     def test_AclTableDeletion(self, dvs, testlog):
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -348,7 +342,7 @@ class TestAcl(BaseTestAcl):
 
     def test_V6AclTableCreation(self, dvs, testlog):
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -425,7 +419,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test-aclv6|test_rule1 priority 1000 PACKET_ACTION FORWARD IPv6Any
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -477,7 +471,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test-aclv6|test_rule2 priority 1002 PACKET_ACTION DROP IPv6Any
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -529,7 +523,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test-aclv6|test_rule3 priority 1003 PACKET_ACTION DROP IP_PROTOCOL 6
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -581,7 +575,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test-aclv6|test_rule4 priority 1004 PACKET_ACTION DROP SRC_IPV6 2777::0/64
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -633,7 +627,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test-aclv6|test_rule5 priority 1005 PACKET_ACTION DROP DST_IPV6 2002::2/128
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -685,7 +679,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test-aclv6|test_rule6 priority 1006 PACKET_ACTION DROP L4_SRC_PORT 65000
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -737,7 +731,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test-aclv6|test_rule7 priority 1007 PACKET_ACTION DROP L4_DST_PORT 65001
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -789,7 +783,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test-aclv6|test_rule8 priority 1008 PACKET_ACTION DROP TCP_FLAGS 0x7/0x3f
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -841,7 +835,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test-aclv6|test_rule9 priority 1009 PACKET_ACTION DROP L4_SRC_PORT_RANGE 1-100
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -907,7 +901,7 @@ class TestAcl(BaseTestAcl):
         hmset ACL_RULE|test-aclv6|test_rule10 priority 1010 PACKET_ACTION DROP L4_DST_PORT_RANGE 101-200
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -970,7 +964,7 @@ class TestAcl(BaseTestAcl):
 
     def test_V6AclTableDeletion(self, dvs, testlog):
 
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -986,7 +980,7 @@ class TestAcl(BaseTestAcl):
         assert len(keys) >= 1
 
     def test_InsertAclRuleBetweenPriorities(self, dvs, testlog):
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -1085,7 +1079,7 @@ class TestAcl(BaseTestAcl):
         assert len(keys) >= 1
 
     def test_RulesWithDiffMaskLengths(self, dvs, testlog):
-        self.setup_db(dvs)
+        dvs.setup_db()
         db = swsscommon.DBConnector(4, dvs.redis_sock, 0)
         adb = swsscommon.DBConnector(1, dvs.redis_sock, 0)
 
@@ -1172,7 +1166,7 @@ class TestAcl(BaseTestAcl):
 
 
     def test_AclRuleIcmp(self, dvs, testlog):
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         acl_table = "TEST_TABLE"
         acl_rule = "TEST_RULE"
@@ -1194,7 +1188,7 @@ class TestAcl(BaseTestAcl):
         self.remove_acl_table(acl_table)
 
     def test_AclRuleIcmpV6(self, dvs, testlog):
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         acl_table = "TEST_TABLE"
         acl_rule = "TEST_RULE"
@@ -1247,7 +1241,7 @@ class TestAclRuleValidation(BaseTestAcl):
         by the ASIC
         """
 
-        self.setup_db(dvs)
+        dvs.setup_db()
 
         stage_name_map = {
             "ingress": "SAI_SWITCH_ATTR_ACL_STAGE_INGRESS",
@@ -1297,11 +1291,13 @@ class TestAclRuleValidation(BaseTestAcl):
             atbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
             keys = atbl.getKeys()
 
-            # verify there are not non-default ACL rules created
+            # verify there are no non-default ACL rules created
             acl_entry = [k for k in keys if k not in dvs.asicdb.default_acl_entries]
             assert len(acl_entry) == 0
 
             self.remove_acl_table(acl_table)
+            # remove rules from APP DB
+            self.remove_acl_rule(acl_table, acl_rule)
 
-            dvs.runcmd("systemctl restart all")
+            dvs.runcmd("supervisorctl restart all")
             time.sleep(5)
