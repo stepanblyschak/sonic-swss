@@ -1297,11 +1297,13 @@ class TestAclRuleValidation(BaseTestAcl):
             atbl = swsscommon.Table(self.adb, "ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY")
             keys = atbl.getKeys()
 
-            # verify there are not non-default ACL rules created
+            # verify there are no non-default ACL rules created
             acl_entry = [k for k in keys if k not in dvs.asicdb.default_acl_entries]
             assert len(acl_entry) == 0
 
             self.remove_acl_table(acl_table)
+            # remove rules from CFG DB
+            self.remove_acl_rule(acl_table, acl_rule)
 
-            dvs.runcmd("systemctl restart all")
+            dvs.runcmd("supervisorctl restart all")
             time.sleep(5)
