@@ -410,7 +410,7 @@ bool AclRule::validateAddAction(string attr_name, string attr_value)
         }
         if (meta->isenum)
         {
-            // if ACL action attribute requiers enum value check if value is supported by the ASIC
+            // if ACL action attribute requires enum value check if value is supported by the ASIC
             if (!m_pAclOrch->isAclActionEnumValueSupported(AclOrch::getAclActionFromAclEntry(it.first),
                                                            it.second.aclaction.parameter))
             {
@@ -419,7 +419,6 @@ bool AclRule::validateAddAction(string attr_name, string attr_value)
                 return false;
             }
         }
-
     }
     return true;
 }
@@ -642,6 +641,7 @@ shared_ptr<AclRule> AclRule::makeShared(acl_table_type_t type, AclOrch *acl, Mir
         string attr_value = fvValue(itr);
         if (aclL3ActionLookup.find(attr_name) != aclL3ActionLookup.cend() ||
             aclMirrorStageLookup.find(attr_name) != aclMirrorStageLookup.cend() ||
+            /* handle "MIRROR_ACTION" key without mirror stage specified for backward compatibility */
             attr_name == ACTION_MIRROR_ACTION ||
             aclDTelActionLookup.find(attr_name) != aclDTelActionLookup.cend())
         {
@@ -2142,7 +2142,7 @@ void AclOrch::queryAclActionCapability()
 {
     SWSS_LOG_ENTER();
 
-    sai_status_t    status {SAI_STATUS_FAILURE};
+    sai_status_t status {SAI_STATUS_FAILURE};
     sai_attribute_t attr;
     vector<int32_t> action_list;
     vector<FieldValueTuple> fvVector;
