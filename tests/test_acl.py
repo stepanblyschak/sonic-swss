@@ -1305,5 +1305,7 @@ class TestAclRuleValidation(BaseTestAcl):
             # remove rules from CFG DB
             self.remove_acl_rule(acl_table, acl_rule)
 
-            dvs.runcmd("supervisorctl restart all")
+            dvs.runcmd("supervisorctl restart syncd")
+            dvs.stop_swss()
+            dvs.start_swss()
             time.sleep(5)
