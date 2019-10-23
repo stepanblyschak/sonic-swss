@@ -1689,13 +1689,6 @@ void PortsOrch::doPortTask(Consumer &consumer)
                 }
             }
 
-            if (!m_portConfigDone)
-            {
-                // Not yet receive PortConfigDone. Save it for future retry
-                it++;
-                continue;
-            }
-
             if (alias == "PortConfigDone")
             {
                 it = consumer.m_toSync.erase(it);
@@ -1713,6 +1706,14 @@ void PortsOrch::doPortTask(Consumer &consumer)
             {
                 m_pendingPortSet.erase(alias);
             }
+
+            if (!m_portConfigDone)
+            {
+                // Not yet receive PortConfigDone. Save it for future retry
+                it++;
+                continue;
+            }
+
 
             Port p;
             if (!getPort(alias, p))
