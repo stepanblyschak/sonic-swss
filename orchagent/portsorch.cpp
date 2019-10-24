@@ -1714,7 +1714,6 @@ void PortsOrch::doPortTask(Consumer &consumer)
                 continue;
             }
 
-
             Port p;
             if (!getPort(alias, p))
             {
