@@ -1471,6 +1471,16 @@ bool PortsOrch::bake()
         return false;
     }
 
+    for (const auto& alias: keys)
+    {
+        if (alias == "PortConfigDone" || alias == "PortInitDone")
+        {
+            continue;
+        }
+
+        m_pendingPortSet.emplace(alias);
+    }
+
     addExistingData(m_portTable.get());
     addExistingData(APP_LAG_TABLE_NAME);
     addExistingData(APP_LAG_MEMBER_TABLE_NAME);
@@ -1689,6 +1699,13 @@ void PortsOrch::doPortTask(Consumer &consumer)
                 }
             }
 
+            if (!m_portConfigDone)
+            {
+                // Not yet receive PortConfigDone. Save it for future retry
+                it++;
+                continue;
+            }
+
             if (alias == "PortConfigDone")
             {
                 it = consumer.m_toSync.erase(it);
@@ -1705,13 +1722,6 @@ void PortsOrch::doPortTask(Consumer &consumer)
             else
             {
                 m_pendingPortSet.erase(alias);
-            }
-
-            if (!m_portConfigDone)
-            {
-                // Not yet receive PortConfigDone. Save it for future retry
-                it++;
-                continue;
             }
 
             Port p;
