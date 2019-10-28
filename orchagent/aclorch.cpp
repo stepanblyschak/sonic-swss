@@ -2174,27 +2174,22 @@ void AclOrch::queryAclActionCapability()
                     SWSS_LOG_INFO("    %s", sai_serialize_enum(action, &sai_metadata_enum_sai_acl_action_type_t).c_str());
                 }
             }
-            else if (status == SAI_STATUS_NOT_IMPLEMENTED)
-            {
-                SWSS_LOG_WARN("Failed to query ACL %s action capabilities - "
-                        "API not implemented, using defaults",
-                        stage_str);
-                initDefaultAclActionCapabilities(stage);
-            }
             else
             {
-                SWSS_LOG_THROW("AclOrch initialization failed: "
-                               "failed to query supported %s ACL actions", stage_str);
+                SWSS_LOG_WARN("Failed to query ACL %s action capabilities - "
+                        "API assumed to be not implemented, using defaults",
+                        stage_str);
+                initDefaultAclActionCapabilities(stage);
             }
 
             // put capabilities in state DB
             putAclActionCapabilityInDB(stage);
         }
     }
-    else if (status == SAI_STATUS_NOT_IMPLEMENTED)
+    else
     {
         SWSS_LOG_WARN("Failed to query maximum ACL action count - "
-                "API not implemented, using defaults capabilities for both %s and %s",
+                "API assumed to be not implemented, using defaults capabilities for both %s and %s",
                 STAGE_INGRESS, STAGE_EGRESS);
         for (auto stage: {ACL_STAGE_INGRESS, ACL_STAGE_EGRESS})
         {
@@ -2202,12 +2197,6 @@ void AclOrch::queryAclActionCapability()
             putAclActionCapabilityInDB(stage);
         }
     }
-    else
-    {
-        SWSS_LOG_THROW("AclOrch initialization failed: "
-                       "failed to query maximum ACL action count");
-    }
-
 
     /* For those ACL action entry attributes for which acl parameter is enumeration (metadata->isenum == true)
      * we can query enum values which are implemented by vendor SAI.
