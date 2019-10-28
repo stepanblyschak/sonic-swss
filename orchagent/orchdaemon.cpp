@@ -490,20 +490,22 @@ bool OrchDaemon::warmRestoreAndSyncUp()
     }
 
     /*
-     * Three iterations are needed.
+     * Four iterations are needed.
      *
-     * First iteration: switchorch, Port init/hostif create part of portorch, buffers configuration
+     * First iteration: switchorch, Port init/hostif create part of portorch.
      *
-     * Second iteratoin: port speed/mtu/fec_mode/pfc_asym/admin_status config,
-     * other orch(s) which wait for port to become ready.
+     * Second iteratoin: gBufferOrch which requires port created,
+     *   then port speed/mtu/fec_mode/pfc_asym/admin_status config.
      *
-     * Third iteration: Drain remaining data that are out of order like LAG_MEMBER_TABLE and
+     * Third iteration: other orch(s) which wait for port init done.
+     *
+     * Fourth iteration: Drain remaining data that are out of order like LAG_MEMBER_TABLE and
      * VLAN_MEMBER_TABLE since they were checked before LAG_TABLE and VLAN_TABLE within gPortsOrch.
      */
 
-    for (auto it = 0; it < 3; it++)
+    for (auto it = 0; it < 4; it++)
     {
-        SWSS_LOG_NOTICE("The current iteration is %d", it);
+        SWSS_LOG_DEBUG("The current iteration is %d", it);
 
         for (Orch *o : m_orchList)
         {

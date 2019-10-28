@@ -127,7 +127,6 @@ private:
 
     NotificationConsumer* m_portStatusNotificationConsumer;
 
-    void doTask() override;
     void doTask(Consumer &consumer);
     void doPortTask(Consumer &consumer);
     void doVlanTask(Consumer &consumer);

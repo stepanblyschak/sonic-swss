@@ -2372,22 +2372,6 @@ void PortsOrch::doLagMemberTask(Consumer &consumer)
     }
 }
 
-void PortsOrch::doTask()
-{
-    auto portConsumer = getExecutor(APP_PORT_TABLE_NAME);
-    portConsumer->drain();
-
-    for (auto& it: m_consumerMap)
-    {
-        auto consumer = it.second.get();
-        if (consumer == portConsumer)
-        {
-            continue;
-        }
-        consumer->drain();
-    }
-}
-
 void PortsOrch::doTask(Consumer &consumer)
 {
     SWSS_LOG_ENTER();
