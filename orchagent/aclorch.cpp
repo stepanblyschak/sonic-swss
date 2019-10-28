@@ -2307,7 +2307,7 @@ void AclOrch::queryAclActionAttrEnumValues(const string &action_name,
                 m_aclEnumActionCapabilities[acl_action].insert(values.list[i]);
             }
         }
-        else if (status == SAI_STATUS_NOT_IMPLEMENTED)
+        else
         {
             SWSS_LOG_WARN("Failed to query enum values supported for ACL action %s - ",
                     "API is not implemented, assuming all values are supported for this action",
@@ -2317,11 +2317,6 @@ void AclOrch::queryAclActionAttrEnumValues(const string &action_name,
             {
                 m_aclEnumActionCapabilities[acl_action].insert(meta->enummetadata->values[i]);
             }
-        }
-        else
-        {
-            SWSS_LOG_THROW("sai_query_attribute_enum_values_capability failed for %s",
-                           action_name.c_str());
         }
 #else
         /* assume all enum values are supported untill sai object api is available */
