@@ -13,10 +13,14 @@ endif
 CFLAGS_GTEST =
 LDADD_GTEST = -L/usr/src/gtest
 
-tests_SOURCES = aclorch_ut.cpp saispy_ut.cpp \
+tests_SOURCES = aclorch_ut.cpp \
+                portsorch_ut.cpp \
+                saispy_ut.cpp \
+                ut_saihelper.cpp \
                 mock_orchagent_main.cpp \
                 mock_dbconnector.cpp \
                 mock_consumerstatetable.cpp \
+                mock_table.cpp \
                 mock_hiredis.cpp \
                 mock_redisreply.cpp \
                 $(top_srcdir)/orchagent/orchdaemon.cpp \
@@ -47,7 +51,8 @@ tests_SOURCES = aclorch_ut.cpp saispy_ut.cpp \
                 $(top_srcdir)/orchagent/dtelorch.cpp \
                 $(top_srcdir)/orchagent/flexcounterorch.cpp \
                 $(top_srcdir)/orchagent/watermarkorch.cpp \
-                $(top_srcdir)/orchagent/chassisorch.cpp
+                $(top_srcdir)/orchagent/chassisorch.cpp \
+                $(top_srcdir)/orchagent/sfloworch.cpp
 
 tests_CFLAGS = $(DBGFLAGS) $(AM_CFLAGS) $(CFLAGS_COMMON) $(CFLAGS_GTEST) $(CFLAGS_SAI)
 tests_CPPFLAGS = $(DBGFLAGS) $(AM_CFLAGS) $(CFLAGS_COMMON) $(CFLAGS_GTEST) $(CFLAGS_SAI) -I$(top_srcdir)/orchagent
