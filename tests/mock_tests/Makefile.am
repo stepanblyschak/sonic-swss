@@ -1,6 +1,8 @@
 CFLAGS_SAI = -I /usr/include/sai
 
-bin_PROGRAMS = tests
+TESTS = tests
+
+noinst_PROGRAMS = tests
 
 LDADD_SAI = -lsaimeta -lsaimetadata -lsaivs -lsairedis
 
