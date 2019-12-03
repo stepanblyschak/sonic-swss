@@ -31,17 +31,17 @@ class PfcWdActionHandler
                 uint8_t queueId, shared_ptr<Table> countersTable);
         virtual ~PfcWdActionHandler(void);
 
-        inline sai_object_id_t getPort(void)
+        inline sai_object_id_t getPort(void) const
         {
             return m_port;
         }
 
-        inline sai_object_id_t getQueue(void)
+        inline sai_object_id_t getQueue(void) const
         {
             return m_queue;
         }
 
-        inline sai_object_id_t getQueueId(void)
+        inline uint8_t getQueueId(void) const
         {
             return m_queueId;
         }
@@ -123,6 +123,8 @@ class PfcWdZeroBufferHandler: public PfcWdLossyHandler
         virtual ~PfcWdZeroBufferHandler(void);
 
     private:
+        void lockUnlockPriorityGroupAndPort(Port& port, bool lock) const;
+
         // Singletone class for keeping shared data - zero buffer profiles
         class ZeroBufferProfile
         {
