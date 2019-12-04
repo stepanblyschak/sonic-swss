@@ -2558,7 +2558,7 @@ void PortsOrch::doLagMemberTask(Consumer &consumer)
 
 void PortsOrch::doTask()
 {
-    auto tableOrder = {
+    constexpr auto tableOrder = {
         APP_PORT_TABLE_NAME,
         APP_LAG_TABLE_NAME,
         APP_LAG_MEMBER_TABLE_NAME,
@@ -2577,7 +2577,7 @@ void PortsOrch::doTask()
     {
         auto tableName = it.first;
         auto consumer = it.second.get();
-        if (find(tableOrder.begin(), tableOrder.end(), tableName) != tableOrder.end())
+        if (find(tableOrder.begin(), tableOrder.end(), tableName) == tableOrder.end())
         {
             consumer->drain();
         }
