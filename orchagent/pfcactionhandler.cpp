@@ -441,7 +441,7 @@ PfcWdZeroBufferHandler::PfcWdZeroBufferHandler(sai_object_id_t port,
         return;
     }
 
-    lockUnlockPriorityGroupAndPort(portInstance, true);
+    lockUnlockPriorityGroupAndQueue(portInstance, true);
 
     sai_attribute_t attr;
     attr.id = SAI_QUEUE_ATTR_BUFFER_PROFILE_ID;
@@ -536,10 +536,10 @@ PfcWdZeroBufferHandler::~PfcWdZeroBufferHandler(void)
         return;
     }
 
-    lockUnlockPriorityGroupAndPort(portInstance, false);
+    lockUnlockPriorityGroupAndQueue(portInstance, false);
 }
 
-void PfcWdZeroBufferHandler::lockUnlockPriorityGroupAndPort(Port& port, bool lock) const
+void PfcWdZeroBufferHandler::lockUnlockPriorityGroupAndQueue(Port& port, bool lock) const
 {
     // set lock bits on PG and queue
     port.m_priority_group_lock[static_cast<size_t>(getQueueId())] = lock;
