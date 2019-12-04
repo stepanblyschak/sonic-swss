@@ -518,15 +518,26 @@ namespace portsorch_test
             }
         );
 
-        vector<string> ts;
-
         static_cast<Orch *>(gPortsOrch)->doTask();
 
-        gPortsOrch->dumpPendingTasks(ts);
+        vector<string> ts;
 
-        ASSERT_TRUE(ts.empty());
+        // check LAG, VLAN tasks were proceesed
+        // port table may require one more doTask iteration
+        for (auto tableName: {
+                APP_LAG_TABLE_NAME,
+                APP_LAG_MEMBER_TABLE_NAME,
+                APP_VLAN_TABLE_NAME,
+                APP_VLAN_MEMBER_TABLE_NAME})
+        {
+            auto exec = gPortsOrch->getExecutor(tableName);
+            auto consumer = static_cast<Consumer*>(exec);
+            ts.clear();
+            consumer->dumpPendingTasks(ts);
+            ASSERT_TRUE(ts.empty());
+        }
+
         ASSERT_FALSE(bridgePortCalledBeforeLagMember); // bridge port created on lag before lag member was created
-
     }
 
 }
