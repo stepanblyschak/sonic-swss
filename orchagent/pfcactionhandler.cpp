@@ -542,7 +542,7 @@ PfcWdZeroBufferHandler::~PfcWdZeroBufferHandler(void)
 void PfcWdZeroBufferHandler::lockUnlockPriorityGroupAndPort(Port& port, bool lock) const
 {
     // set lock bits on PG and queue
-    port.m_priority_group_lock[static_cast<size_t>(getQueueId())] = false;
+    port.m_priority_group_lock[static_cast<size_t>(getQueueId())] = lock;
     for (size_t i = 0; i < port.m_queue_ids.size(); ++i)
     {
         if (port.m_queue_ids[i] == getQueue())
