@@ -94,10 +94,10 @@ public:
     uint8_t m_pfc_bitmask = 0;
     /*
      * Following two bit vectors are used to lock
-     * the PG/queue from beeing changed in BufferOrch.
+     * the PG/queue from being changed in BufferOrch.
      * The use case scenario is when PfcWdZeroBufferHandler
      * sets zero buffer profile it should protect PG/queue
-     * from beeing overriten in BufferOrch.
+     * from being overwritten in BufferOrch.
      */
     std::vector<bool> m_queue_lock;
     std::vector<bool> m_priority_group_lock;
