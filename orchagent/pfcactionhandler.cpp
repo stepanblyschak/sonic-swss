@@ -441,7 +441,7 @@ PfcWdZeroBufferHandler::PfcWdZeroBufferHandler(sai_object_id_t port,
         return;
     }
 
-    lockUnlockPriorityGroupAndQueue(portInstance, true);
+    setPriorityGroupAndQueueLockFlag(portInstance, true);
 
     sai_attribute_t attr;
     attr.id = SAI_QUEUE_ATTR_BUFFER_PROFILE_ID;
@@ -536,18 +536,18 @@ PfcWdZeroBufferHandler::~PfcWdZeroBufferHandler(void)
         return;
     }
 
-    lockUnlockPriorityGroupAndQueue(portInstance, false);
+    setPriorityGroupAndQueueLockFlag(portInstance, false);
 }
 
-void PfcWdZeroBufferHandler::lockUnlockPriorityGroupAndQueue(Port& port, bool lock) const
+void PfcWdZeroBufferHandler::setPriorityGroupAndQueueLockFlag(Port& port, bool isLocked) const
 {
     // set lock bits on PG and queue
-    port.m_priority_group_lock[static_cast<size_t>(getQueueId())] = lock;
+    port.m_priority_group_lock[static_cast<size_t>(getQueueId())] = isLocked;
     for (size_t i = 0; i < port.m_queue_ids.size(); ++i)
     {
         if (port.m_queue_ids[i] == getQueue())
         {
-            port.m_queue_lock[i] = lock;
+            port.m_queue_lock[i] = isLocked;
         }
     }
     gPortsOrch->setPort(port.m_alias, port);
