@@ -322,7 +322,39 @@ namespace portsorch_test
         Table profileTable = Table(m_config_db.get(), CFG_BUFFER_PROFILE_TABLE_NAME);
         Table poolTable = Table(m_config_db.get(), CFG_BUFFER_POOL_TABLE_NAME);
 
+        // Get SAI default ports to populate DB
+        auto ports = ut_helper::getInitialSaiPorts();
+
+        // Create dependencies ...
+
+        const int portsorch_base_pri = 40;
+
+        vector<table_name_with_pri_t> ports_tables = {
+            { APP_PORT_TABLE_NAME, portsorch_base_pri + 5 },
+            { APP_VLAN_TABLE_NAME, portsorch_base_pri + 2 },
+            { APP_VLAN_MEMBER_TABLE_NAME, portsorch_base_pri },
+            { APP_LAG_TABLE_NAME, portsorch_base_pri + 4 },
+            { APP_LAG_MEMBER_TABLE_NAME, portsorch_base_pri }
+        };
+
+        ASSERT_EQ(gPortsOrch, nullptr);
+        gPortsOrch = new PortsOrch(m_app_db.get(), ports_tables);
+        vector<string> buffer_tables = { CFG_BUFFER_POOL_TABLE_NAME,
+                                         CFG_BUFFER_PROFILE_TABLE_NAME,
+                                         CFG_BUFFER_QUEUE_TABLE_NAME,
+                                         CFG_BUFFER_PG_TABLE_NAME,
+                                         CFG_BUFFER_PORT_INGRESS_PROFILE_LIST_NAME,
+                                         CFG_BUFFER_PORT_EGRESS_PROFILE_LIST_NAME };
+
+        ASSERT_EQ(gBufferOrch, nullptr);
+        gBufferOrch = new BufferOrch(m_config_db.get(), buffer_tables);
+
         // Populate port table with SAI ports
+        for (const auto &it : ports)
+        {
+            portTable.set(it.first, it.second);
+        }
+
         // Set PortConfigDone, PortInitDone
         portTable.set("PortConfigDone", { { "count", to_string(ports.size()) } });
         portTable.set("PortInitDone", { { "lanes", "0" } });
