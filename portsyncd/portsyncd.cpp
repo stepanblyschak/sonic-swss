@@ -20,6 +20,8 @@
 using namespace std;
 using namespace swss;
 
+#define DEFAULT_SELECT_TIMEOUT 1000
+
 /*
  * This g_portSet contains all the front panel ports that the corresponding
  * host interfaces needed to be created. When this LinkSync class is
@@ -103,7 +105,7 @@ int main(int argc, char **argv)
         {
             Selectable *temps;
             int ret;
-            ret = s.select(&temps, 1);
+            ret = s.select(&temps, DEFAULT_SELECT_TIMEOUT);
 
             if (ret == Select::ERROR)
             {
