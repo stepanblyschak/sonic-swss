@@ -195,10 +195,10 @@ void IntfMgr::buildIntfReplayList(void)
 
     m_cfgLoopbackIntfTable.getKeys(intfList);
     std::copy( intfList.begin(), intfList.end(), std::inserter( m_pendingReplayIntfList, m_pendingReplayIntfList.end() ) );
-        
+
     m_cfgVlanIntfTable.getKeys(intfList);
     std::copy( intfList.begin(), intfList.end(), std::inserter( m_pendingReplayIntfList, m_pendingReplayIntfList.end() ) );
-        
+
     m_cfgLagIntfTable.getKeys(intfList);
     std::copy( intfList.begin(), intfList.end(), std::inserter( m_pendingReplayIntfList, m_pendingReplayIntfList.end() ) );
 
@@ -207,6 +207,7 @@ void IntfMgr::buildIntfReplayList(void)
 
 void IntfMgr::setWarmReplayDoneState()
 {
+    replayDone = true;
     WarmStart::setWarmStartState("intfmgrd", WarmStart::REPLAYED);
     // There is no operation to be performed for intfmgr reconcillation
     // Hence mark it reconciled right away
@@ -717,7 +718,6 @@ bool IntfMgr::doIntfAddrTask(const vector<string>& keys,
 void IntfMgr::doTask(Consumer &consumer)
 {
     SWSS_LOG_ENTER();
-    static bool replayDone = false;
 
     string table_name = consumer.getTableName();
 
@@ -773,10 +773,9 @@ void IntfMgr::doTask(Consumer &consumer)
 
         it = consumer.m_toSync.erase(it);
     }
-    
+
     if (!replayDone && WarmStart::isWarmStart() && m_pendingReplayIntfList.empty() )
     {
         setWarmReplayDoneState();
-        replayDone = true;
     }
 }
