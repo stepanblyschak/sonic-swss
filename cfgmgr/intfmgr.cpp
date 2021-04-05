@@ -44,6 +44,10 @@ IntfMgr::IntfMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *stateDb, c
     {
         //Build the interface list to be replayed to Kernel
         buildIntfReplayList();
+        if (m_pendingReplayIntfList.empty())
+        {
+            setWarmReplayDoneState();
+        }
     }
 }
 
@@ -199,6 +203,14 @@ void IntfMgr::buildIntfReplayList(void)
     std::copy( intfList.begin(), intfList.end(), std::inserter( m_pendingReplayIntfList, m_pendingReplayIntfList.end() ) );
 
     SWSS_LOG_INFO("Found %d Total Intfs to be replayed", (int)m_pendingReplayIntfList.size() );
+}
+
+void IntfMgr::setWarmReplayDoneState()
+{
+    WarmStart::setWarmStartState("intfmgrd", WarmStart::REPLAYED);
+    // There is no operation to be performed for intfmgr reconcillation
+    // Hence mark it reconciled right away
+    WarmStart::setWarmStartState("intfmgrd", WarmStart::RECONCILED);
 }
 
 bool IntfMgr::isIntfCreated(const string &alias)
@@ -752,10 +764,7 @@ void IntfMgr::doTask(Consumer &consumer)
     
     if (!replayDone && WarmStart::isWarmStart() && m_pendingReplayIntfList.empty() )
     {
+        setWarmReplayDoneState();
         replayDone = true;
-        WarmStart::setWarmStartState("intfmgrd", WarmStart::REPLAYED);
-        // There is no operation to be performed for intfmgr reconcillation
-        // Hence mark it reconciled right away
-        WarmStart::setWarmStartState("intfmgrd", WarmStart::RECONCILED);
     }
 }
