@@ -54,6 +54,8 @@ private:
 
     bool setIntfProxyArp(const std::string &alias, const std::string &proxy_arp);
     bool setIntfGratArp(const std::string &alias, const std::string &grat_arp);
+
+    bool replayDone {false};
 };
 
 }
