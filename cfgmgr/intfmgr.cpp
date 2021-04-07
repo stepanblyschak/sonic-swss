@@ -207,7 +207,7 @@ void IntfMgr::buildIntfReplayList(void)
 
 void IntfMgr::setWarmReplayDoneState()
 {
-    replayDone = true;
+    m_replayDone = true;
     WarmStart::setWarmStartState("intfmgrd", WarmStart::REPLAYED);
     // There is no operation to be performed for intfmgr reconcillation
     // Hence mark it reconciled right away
@@ -762,7 +762,7 @@ void IntfMgr::doTask(Consumer &consumer)
         it = consumer.m_toSync.erase(it);
     }
 
-    if (!replayDone && WarmStart::isWarmStart() && m_pendingReplayIntfList.empty() )
+    if (!m_replayDone && WarmStart::isWarmStart() && m_pendingReplayIntfList.empty() )
     {
         setWarmReplayDoneState();
     }
