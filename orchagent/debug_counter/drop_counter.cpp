@@ -357,13 +357,15 @@ unordered_set<string> DropCounter::getSupportedCounterTypes()
                                                       SAI_DEBUG_COUNTER_ATTR_TYPE);
     if (!meta)
     {
-        SWSS_LOG_THROW("SAI BUG: metadata null pointer returned by "
+        SWSS_LOG_ERROR("SAI BUG: metadata null pointer returned by "
                        "sai_metadata_get_attr_metadata for SAI_DEBUG_COUNTER_ATTR_TYPE");
+        return {};
     }
 
     if (!meta->isenum || !meta->enummetadata)
     {
-        SWSS_LOG_THROW("SAI BUG: SAI_DEBUG_COUNTER_ATTR_TYPE value type is not an enum");
+        SWSS_LOG_ERROR("SAI BUG: SAI_DEBUG_COUNTER_ATTR_TYPE value type is not an enum");
+        return {};
     }
 
     saiCounterTypes.assign(meta->enummetadata->valuescount, 0);
