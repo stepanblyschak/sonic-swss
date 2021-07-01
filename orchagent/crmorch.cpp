@@ -552,14 +552,14 @@ void CrmOrch::getResAvailableCounters()
 
             case CrmResourceType::CRM_MPLS_INSEG:
             {
-                sai_object_type_t objType = static_cast<sai_object_type_t>(crmResSaiAvailAttrMap.at(res.first));
+//                sai_object_type_t objType = static_cast<sai_object_type_t>(crmResSaiAvailAttrMap.at(res.first));
                 uint64_t availCount = 0;
-                sai_status_t status = sai_object_type_get_availability(gSwitchId, objType, 0, nullptr, &availCount);
-                if (status != SAI_STATUS_SUCCESS)
-                {
-                    SWSS_LOG_ERROR("Failed to get availability for object_type %u , rv:%d", objType, status);
-                    break;
-                }
+//                sai_status_t status = sai_object_type_get_availability(gSwitchId, objType, 0, nullptr, &availCount);
+//                if (status != SAI_STATUS_SUCCESS)
+//                {
+//                    SWSS_LOG_ERROR("Failed to get availability for object_type %u , rv:%d", objType, status);
+//                    break;
+//                }
 
                 res.second.countersMap[CRM_COUNTERS_TABLE_KEY].availableCounter = static_cast<uint32_t>(availCount);
 
