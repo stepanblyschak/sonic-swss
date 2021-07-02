@@ -429,6 +429,10 @@ namespace portsorch_test
         ts.clear();
     }
 
+    /* This test checks that a LAG member validation happens on orchagent level
+     * and no SAI call is executed in case a port requested to be a LAG member
+     * is already a LAG member.
+     */
     TEST_F(PortsOrchTest, LagMemberDoesNotCallSAIApiWhenPortIsAlreadyALagMember)
     {
         Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
