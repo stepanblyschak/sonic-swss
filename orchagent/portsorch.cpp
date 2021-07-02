@@ -3726,7 +3726,7 @@ void PortsOrch::doLagMemberTask(Consumer &consumer)
             {
                 if (port.m_lag_member_id != SAI_NULL_OBJECT_ID)
                 {
-                    SWSS_LOG_NOTICE("Port %s is already a LAG member", port.m_alias.c_str());
+                    SWSS_LOG_INFO("Port %s is already a LAG member", port.m_alias.c_str());
                     it++;
                     continue;
                 }
