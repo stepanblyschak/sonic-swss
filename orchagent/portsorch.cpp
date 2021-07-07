@@ -3682,7 +3682,7 @@ void PortsOrch::doLagMemberTask(Consumer &consumer)
             continue;
         }
 
-        /* Fast failure if a port type is not a valid type for beeing a LAG member port.
+        /* Fail if a port type is not a valid type for being a LAG member port.
          * Erase invalid entry, no need to retry in this case. */
         if (!isValidPortTypeForLagMember(port))
         {
