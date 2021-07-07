@@ -2241,11 +2241,6 @@ bool PortsOrch::initPort(const string &alias, const string &role, const int inde
 {
     SWSS_LOG_ENTER();
 
-    if (role == "Rec" || role == "Inb")
-    {
-        return doProcessRecircPort(alias, role, lane_set, SET_COMMAND);
-    }
-
     /* Determine if the lane combination exists in switch */
     if (m_portListLaneMap.find(lane_set) != m_portListLaneMap.end())
     {
@@ -2299,6 +2294,11 @@ bool PortsOrch::initPort(const string &alias, const string &role, const int inde
                 notify(SUBJECT_TYPE_PORT_CHANGE, static_cast<void *>(&update));
 
                 m_portList[alias].m_init = true;
+
+                if (role == "Rec" || role == "Inb")
+                {
+                    m_recircPortRole[alias] = role;
+                }
 
                 SWSS_LOG_NOTICE("Initialized port %s", alias.c_str());
             }
@@ -2762,16 +2762,6 @@ void PortsOrch::doPortTask(Consumer &consumer)
             }
             else
             {
-                /* Skip configuring recirc port for now because the current SAI implementation of some vendors
-                 * have limiited support for recirc port. This check can be removed once SAI implementation
-                 * is enhanced/changed in the future.
-                 */
-                if (m_recircPortRole.find(alias) != m_recircPortRole.end())
-                {
-                    it = consumer.m_toSync.erase(it);
-                    continue;
-                }
-
                 if (!an_str.empty())
                 {
                     if (autoneg_mode_map.find(an_str) == autoneg_mode_map.end())
