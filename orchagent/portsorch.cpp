@@ -212,7 +212,7 @@ static char* hostif_vlan_tag[] = {
 
 static bool isValidPortTypeForLagMember(const Port& port)
 {
-    return (port.m_type == Port::Type::PHY || port.m_type == Port::Type::SYSTEM);
+    return port.m_type == Port::Type::PHY;
 }
 
 /*
