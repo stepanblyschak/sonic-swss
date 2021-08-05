@@ -1279,6 +1279,48 @@ bool AclRuleMirror::remove()
     return true;
 }
 
+void AclRuleMirror::activate() {
+    sai_object_id_t oid = SAI_NULL_OBJECT_ID;
+
+    if (!m_pMirrorOrch->getSessionOid(m_sessionName, oid))
+    {
+        SWSS_LOG_THROW("Failed to get mirror session OID for session %s", m_sessionName.c_str());
+    }
+
+    sai_attribute_t attr;
+    sai_status_t status;
+
+    attr.id = SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS;
+    attr.value.aclaction.parameter.objlist.list = &oid;
+    attr.value.aclaction.parameter.objlist.count = 1;
+    attr.value.aclaction.enable = true;
+
+    status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_THROW("Failed to activate mirror");
+    }
+
+}
+
+void AclRuleMirror::deactivate() {
+    sai_object_id_t oid = SAI_NULL_OBJECT_ID;
+
+    sai_attribute_t attr;
+    sai_status_t status;
+
+    attr.id = SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS;
+    attr.value.aclaction.parameter.objlist.list = &oid;
+    attr.value.aclaction.parameter.objlist.count = 1;
+    attr.value.aclaction.enable = false;
+
+    status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_THROW("Failed to deactivate mirror");
+    }
+}
+
 void AclRuleMirror::update(SubjectType type, void *cntx)
 {
     if (type != SUBJECT_TYPE_MIRROR_SESSION_CHANGE)
@@ -1296,7 +1338,7 @@ void AclRuleMirror::update(SubjectType type, void *cntx)
     if (update->active)
     {
         SWSS_LOG_INFO("Activating mirroring ACL %s for session %s", m_id.c_str(), m_sessionName.c_str());
-        create();
+        activate();
     }
     else
     {
@@ -1304,7 +1346,7 @@ void AclRuleMirror::update(SubjectType type, void *cntx)
         counters += AclRule::getCounters();
 
         SWSS_LOG_INFO("Deactivating mirroring ACL %s for session %s", m_id.c_str(), m_sessionName.c_str());
-        remove();
+        deactivate();
     }
 }
 

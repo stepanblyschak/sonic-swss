@@ -269,6 +269,8 @@ public:
     bool validate();
     bool create();
     bool remove();
+    void activate();
+    void deactivate();
     void update(SubjectType, void *);
     AclRuleCounters getCounters();
 
