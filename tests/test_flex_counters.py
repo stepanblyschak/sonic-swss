@@ -8,6 +8,7 @@ RIF_KEY                   =   "RIF"
 BUFFER_POOL_WATERMARK_KEY =   "BUFFER_POOL_WATERMARK"
 PORT_BUFFER_DROP_KEY      =   "PORT_BUFFER_DROP"
 PG_WATERMARK_KEY          =   "PG_WATERMARK"
+ACL_KEY                   =   "ACL"
 
 # Counter stats on FlexCountersDB
 PORT_STAT                  =   "PORT_STAT_COUNTER"
@@ -16,6 +17,7 @@ RIF_STAT                   =   "RIF_STAT_COUNTER"
 BUFFER_POOL_WATERMARK_STAT =   "BUFFER_POOL_WATERMARK_STAT_COUNTER"
 PORT_BUFFER_DROP_STAT      =   "PORT_BUFFER_DROP_STAT"
 PG_WATERMARK_STAT          =   "PG_WATERMARK_STAT_COUNTER"
+ACL_STAT                   =   "ACL_STAT_COUNTER"
 
 # Counter maps on CountersDB
 PORT_MAP                  =   "COUNTERS_PORT_NAME_MAP"
@@ -24,6 +26,7 @@ RIF_MAP                   =   "COUNTERS_RIF_NAME_MAP"
 BUFFER_POOL_WATERMARK_MAP =   "COUNTERS_BUFFER_POOL_NAME_MAP"
 PORT_BUFFER_DROP_MAP      =   "COUNTERS_PORT_NAME_MAP"
 PG_WATERMARK_MAP          =   "COUNTERS_PG_NAME_MAP"
+ACL_MAP                   =   "ACL_COUNTER_RULE_MAP"
 
 NUMBER_OF_RETRIES         =   10
 CPU_PORT_OID              = "0x0"
@@ -33,7 +36,8 @@ counter_type_dict = {"port_counter":[PORT_KEY, PORT_STAT, PORT_MAP],
                      "rif_counter":[RIF_KEY, RIF_STAT, RIF_MAP],
                      "buffer_pool_watermark_counter":[BUFFER_POOL_WATERMARK_KEY, BUFFER_POOL_WATERMARK_STAT, BUFFER_POOL_WATERMARK_MAP],
                      "port_buffer_drop_counter":[PORT_BUFFER_DROP_KEY, PORT_BUFFER_DROP_STAT, PORT_BUFFER_DROP_MAP],
-                     "pg_watermark_counter":[PG_WATERMARK_KEY, PG_WATERMARK_STAT, PG_WATERMARK_MAP]}
+                     "pg_watermark_counter":[PG_WATERMARK_KEY, PG_WATERMARK_STAT, PG_WATERMARK_MAP],
+                     "acl_counter":[ACL_KEY, ACL_STAT, ACL_MAP]}
 
 class TestFlexCounters(object):
 
@@ -101,6 +105,21 @@ class TestFlexCounters(object):
         if counter_type == "rif_counter":
             self.config_db.db_connection.hset('INTERFACE|Ethernet0', "NULL", "NULL")
             self.config_db.db_connection.hset('INTERFACE|Ethernet0|192.168.0.1/24', "NULL", "NULL")
+        elif counter_type == "acl_counter":
+            self.config_db.create_entry('ACL_TABLE', 'DATAACL',
+                {
+                    'STAGE': 'INGRESS',
+                    'PORTS': 'Ethernet0',
+                    'TYPE': 'L3'
+                }
+            )
+            self.config_db.create_entry('ACL_RULE', 'DATAACL|RULE0',
+                {
+                    'MATCH_ETHER_TYPE': '2048',
+                    'PACKET_ACTION': 'FORWARD',
+                    'PRIORITY': '9999'
+                }
+            )
 
         self.enable_flex_counter_group(counter_key, counter_map)
         self.verify_flex_counters_populated(counter_map, counter_stat)
@@ -110,3 +129,6 @@ class TestFlexCounters(object):
 
         if counter_type == "rif_counter":
             self.config_db.db_connection.hdel('INTERFACE|Ethernet0|192.168.0.1/24', "NULL")
+        elif counter_type == "acl_counter":
+            self.config_db.delete_entry('ACL_RULE', 'DATAACL|RULE0')
+            self.config_db.delete_entry('ACL_TABLE', 'DATAACL')

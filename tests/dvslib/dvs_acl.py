@@ -1,5 +1,5 @@
 """Utilities for interacting with ACLs when writing VS tests."""
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional, Tuple
 
 
 class DVSAcl:
@@ -427,6 +427,7 @@ class DVSAcl:
         fvs = self.asic_db.wait_for_entry("ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY", acl_rule_id)
         self._check_acl_entry_base(fvs, sai_qualifiers, action, priority)
         self._check_acl_entry_packet_action(fvs, action)
+        self._check_acl_entry_counters_map(acl_rule_id)
 
     def verify_redirect_acl_rule(
             self,
@@ -451,6 +452,7 @@ class DVSAcl:
         fvs = self.asic_db.wait_for_entry("ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY", acl_rule_id)
         self._check_acl_entry_base(fvs, sai_qualifiers, "REDIRECT", priority)
         self._check_acl_entry_redirect_action(fvs, expected_destination)
+        self._check_acl_entry_counters_map(acl_rule_id)
 
     def verify_nat_acl_rule(
             self,
@@ -471,6 +473,7 @@ class DVSAcl:
 
         fvs = self.asic_db.wait_for_entry("ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY", acl_rule_id)
         self._check_acl_entry_base(fvs, sai_qualifiers, "DO_NOT_NAT", priority)
+        self._check_acl_entry_counters_map(acl_rule_id)
 
     def verify_mirror_acl_rule(
             self,
@@ -496,6 +499,7 @@ class DVSAcl:
         fvs = self.asic_db.wait_for_entry("ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY", acl_rule_id)
         self._check_acl_entry_base(fvs, sai_qualifiers, "MIRROR", priority)
         self._check_acl_entry_mirror_action(fvs, session_oid, stage)
+        self._check_acl_entry_counters_map(acl_rule_id)
 
     def verify_acl_rule_set(
             self,
@@ -517,7 +521,6 @@ class DVSAcl:
         for entry in acl_entries:
             rule = self.asic_db.wait_for_entry("ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY", entry)
             priority = rule.get("SAI_ACL_ENTRY_ATTR_PRIORITY", None)
-            assert priority in priorities
             self.verify_acl_rule(expected[priority], in_actions[priority], priority, entry)
 
     # FIXME: This `get_x_comparator` abstraction is a bit clunky, we should try to improve this later.
@@ -628,3 +631,12 @@ class DVSAcl:
     def _check_acl_entry_mirror_action(self, entry: Dict[str, str], session_oid: str, stage: str) -> None:
         assert stage in self.ADB_MIRROR_ACTION_LOOKUP
         assert entry.get(self.ADB_MIRROR_ACTION_LOOKUP[stage]) == session_oid
+
+    def _check_acl_entry_counters_map(self, acl_entry_oid: str):
+        entry = self.asic_db.wait_for_entry("ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY", acl_entry_oid)
+        counter_oid = entry.get("SAI_ACL_ENTRY_ATTR_ACTION_COUNTER")
+        if counter_oid is None:
+            return
+        rule_to_counter_map = self.counters_db.get_entry("ACL_COUNTER_RULE_MAP", "")
+        counter_to_rule_map = {v: k for k, v in rule_to_counter_map.items()}
+        assert counter_oid in counter_to_rule_map
