@@ -15,10 +15,7 @@
 using namespace std;
 using namespace swss;
 
-mutex AclOrch::m_countersMutex;
 map<acl_range_properties_t, AclRange*> AclRange::m_ranges;
-condition_variable AclOrch::m_sleepGuard;
-bool AclOrch::m_bCollectCounters = true;
 sai_uint32_t AclRule::m_minPriority = 0;
 sai_uint32_t AclRule::m_maxPriority = 0;
 
@@ -34,6 +31,10 @@ extern CrmOrch *gCrmOrch;
 
 #define MIN_VLAN_ID 1    // 0 is a reserved VLAN ID
 #define MAX_VLAN_ID 4095 // 4096 is a reserved VLAN ID
+
+#define COUNTERS_ACL_COUNTER_GROUP "ACL_STAT_COUNTER"
+#define COUNTERS_ACL_COUNTER_RULE_MAP "ACL_COUNTER_RULE_MAP"
+#define COUNTERS_ACL_COUNTER_DEFAULT_POLLING_INTERVAL_MS 10000 // ms
 
 const int TCP_PROTOCOL_NUM = 6; // TCP protocol number
 
@@ -2759,7 +2760,14 @@ AclOrch::AclOrch(vector<TableConnector>& connectors, SwitchOrch *switchOrch,
         m_mirrorOrch(mirrorOrch),
         m_neighOrch(neighOrch),
         m_routeOrch(routeOrch),
-        m_dTelOrch(dtelOrch)
+        m_dTelOrch(dtelOrch),
+        m_acl_counter_rule_map(&m_db, COUNTERS_ACL_COUNTER_RULE_MAP),
+        m_flex_counter_manager(
+            COUNTERS_ACL_COUNTER_GROUP,
+            StatsMode::READ,
+            COUNTERS_ACL_COUNTER_DEFAULT_POLLING_INTERVAL_MS,
+            true
+        )
 {
     SWSS_LOG_ENTER();
 
@@ -2781,9 +2789,6 @@ AclOrch::~AclOrch()
         m_dTelOrch->detach(this);
     }
 
-    m_bCollectCounters = false;
-    m_sleepGuard.notify_all();
-
     deleteDTelWatchListTables();
 }
 
@@ -2797,8 +2802,6 @@ void AclOrch::update(SubjectType type, void *cntx)
     {
         return;
     }
-
-    unique_lock<mutex> lock(m_countersMutex);
 
     // ACL table deals with port change
     // ACL rule deals with mirror session change and int session change
@@ -2831,12 +2834,10 @@ void AclOrch::doTask(Consumer &consumer)
 
     if (table_name == CFG_ACL_TABLE_TABLE_NAME || table_name == APP_ACL_TABLE_TABLE_NAME)
     {
-        unique_lock<mutex> lock(m_countersMutex);
         doAclTableTask(consumer);
     }
     else if (table_name == CFG_ACL_RULE_TABLE_NAME || table_name == APP_ACL_RULE_TABLE_NAME)
     {
-        unique_lock<mutex> lock(m_countersMutex);
         doAclRuleTask(consumer);
     }
     else
@@ -4081,6 +4082,28 @@ sai_status_t AclOrch::deleteDTelWatchListTables()
     m_AclTables.erase(table_oid);
 
     return SAI_STATUS_SUCCESS;
+}
+
+void AclOrch::registerFlexCounter(const AclRule& rule)
+{
+    SWSS_LOG_ENTER();
+
+    FieldValueTuple ruleNameToCounterOid(rule.getId(), sai_serialize_object_id(rule.getOid()));
+
+    std::unordered_set<std::string> serializedCounterStatAttrs =
+    {
+        "SAI_ACL_COUNTER_ATTR_BYTES",
+        "SAI_ACL_COUNTER_ATTR_PACKETS",
+    };
+
+    m_flex_counter_manager.setCounterIdList(rule.getOid(), CounterType::ACL_COUNTER, serializedCounterStatAttrs);
+    m_acl_counter_rule_map.set("", {ruleNameToCounterOid});
+}
+
+void AclOrch::deregisterFlexCounter(const AclRule& rule)
+{
+    m_db.hdel(COUNTERS_ACL_COUNTER_RULE_MAP, rule.getId());
+    m_flex_counter_manager.clearCounterIdList(rule.getOid());
 }
 
 bool AclOrch::getAclBindPortId(Port &port, sai_object_id_t &port_id)

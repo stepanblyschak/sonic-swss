@@ -15,12 +15,10 @@
 #include "mirrororch.h"
 #include "dtelorch.h"
 #include "observer.h"
+#include "flex_counter_manager.h"
 
 #include "acltable.h"
 
-// ACL counters update interval in the DB
-// Value is in seconds. Should not be less than 5 seconds
-// (in worst case update of 1265 counters takes almost 5 sec)
 #define COUNTERS_READ_INTERVAL 10
 
 #define RULE_PRIORITY           "PRIORITY"
@@ -175,7 +173,12 @@ public:
     virtual bool disableCounter();
     virtual AclRuleCounters getCounters();
 
-    string getId()
+    sai_object_id_t getOid() const
+    {
+        return m_ruleOid;
+    }
+
+    string getId() const
     {
         return m_id;
     }
@@ -190,7 +193,7 @@ public:
         return m_counterOid;
     }
 
-    vector<sai_object_id_t> getInPorts() 
+    vector<sai_object_id_t> getInPorts()
     {
         return m_inPorts;
     }
@@ -428,7 +431,7 @@ public:
     map<acl_table_type_t, bool> m_mirrorTableCapabilities;
 
     static sai_acl_action_type_t getAclActionFromAclEntry(sai_acl_entry_attr_t attr);
-    
+
     // Get the OID for the ACL bind point for a given port
     static bool getAclBindPortId(Port& port, sai_object_id_t& port_id);
 
@@ -476,13 +479,13 @@ private:
     sai_status_t createDTelWatchListTables();
     sai_status_t deleteDTelWatchListTables();
 
+    void registerFlexCounter(const AclRule& rule);
+    void deregisterFlexCounter(const AclRule& rule);
+
     map<sai_object_id_t, AclTable> m_AclTables;
     // TODO: Move all ACL tables into one map: name -> instance
     map<string, AclTable> m_ctrlAclTables;
 
-    static mutex m_countersMutex;
-    static condition_variable m_sleepGuard;
-    static bool m_bCollectCounters;
     static DBConnector m_db;
     static Table m_countersTable;
 
@@ -491,6 +494,8 @@ private:
 
     acl_capabilities_t m_aclCapabilities;
     acl_action_enum_values_capabilities_t m_aclEnumActionCapabilities;
+    Table m_acl_counter_rule_map;
+    FlexCounterManager m_flex_counter_manager;
 };
 
 #endif /* SWSS_ACLORCH_H */
