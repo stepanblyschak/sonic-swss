@@ -601,6 +601,11 @@ bool AclRule::remove()
     return res;
 }
 
+bool AclRule::update(AclRule& updatedRule)
+{
+    return true;
+}
+
 void AclRule::updateInPorts()
 {
     SWSS_LOG_ENTER();
@@ -2015,6 +2020,32 @@ bool AclTable::remove(string rule_id)
     }
 }
 
+bool AclTable::updateRule(shared_ptr<AclRule> updatedRule)
+{
+    SWSS_LOG_ENTER();
+
+    auto ruleId = updatedRule->getId();
+    auto ruleIter = rules.find(ruleId);
+    if (ruleIter == rules.end())
+    {
+        SWSS_LOG_ERROR("Failed to update ACL rule %s as it does not exist in %s",
+                       ruleId.c_str(), id.c_str());
+        return false;
+    }
+
+    if (!ruleIter->second->update(*updatedRule))
+    {
+        SWSS_LOG_ERROR("Failed to update ACL rule %s in table %s",
+                       ruleId.c_str(), id.c_str());
+        return false;
+    }
+
+    ruleIter->second = updatedRule;
+    SWSS_LOG_NOTICE("Successfully updated ACL rule %s in table %s",
+                    ruleId.c_str(), id.c_str());
+    return true;
+}
+
 bool AclTable::clear()
 {
     SWSS_LOG_ENTER();
@@ -3342,6 +3373,20 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, bool enableCounter)
     }
 
     return true;
+}
+
+bool AclOrch::updateAclRule(shared_ptr<AclRule> updatedRule)
+{
+
+    auto tableId = updatedRule->getTableId();
+    sai_object_id_t tableOid = getTableById(tableId);
+    if (tableOid == SAI_NULL_OBJECT_ID)
+    {
+        SWSS_LOG_ERROR("Failed to add ACL rule in ACL table %s. Table doesn't exist", tableId.c_str());
+        return false;
+    }
+
+    return m_AclTables[tableOid].updateRule(updatedRule);
 }
 
 bool AclOrch::isCombinedMirrorV6Table()

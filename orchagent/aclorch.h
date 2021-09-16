@@ -166,6 +166,7 @@ public:
 
     virtual bool create();
     virtual bool remove();
+    virtual bool update(AclRule& updatedRule);
     virtual void onUpdate(SubjectType, void *) = 0;
     virtual void updateInPorts();
 
@@ -365,6 +366,8 @@ public:
     bool add(shared_ptr<AclRule> newRule);
     // Remove a rule from the ACL table
     bool remove(string rule_id);
+    // Update existing rule and replace with new one.
+    bool updateRule(shared_ptr<AclRule> updatedRule);
     // Remove all rules from the ACL table
     bool clear();
     // Update table subject to changes
@@ -424,6 +427,7 @@ public:
     bool updateAclTable(string table_id, AclTable &table);
     bool addAclRule(shared_ptr<AclRule> aclRule, string table_id);
     bool removeAclRule(string table_id, string rule_id);
+    bool updateAclRule(shared_ptr<AclRule> updatedRule);
     bool updateAclRule(string table_id, string rule_id, string attr_name, void *data, bool oper);
     bool updateAclRule(string table_id, string rule_id, bool enableCounter);
     AclRule* getAclRule(string table_id, string rule_id);
