@@ -562,42 +562,11 @@ bool AclRule::create()
         SWSS_LOG_ERROR("Failed to create ACL rule %s, rv:%d",
                 m_id.c_str(), status);
         AclRange::remove(range_objects, range_object_list.count);
-        decreaseNextHopRefCount();
     }
 
     gCrmOrch->incCrmAclTableUsedCounter(CrmResourceType::CRM_ACL_ENTRY, m_tableOid);
 
     return (status == SAI_STATUS_SUCCESS);
-}
-
-void AclRule::decreaseNextHopRefCount()
-{
-    if (!m_redirect_target_next_hop.empty())
-    {
-        m_pAclOrch->m_neighOrch->decreaseNextHopRefCount(NextHopKey(m_redirect_target_next_hop));
-        m_redirect_target_next_hop.clear();
-    }
-    if (!m_redirect_target_next_hop_group.empty())
-    {
-        NextHopGroupKey target = NextHopGroupKey(m_redirect_target_next_hop_group);
-        m_pAclOrch->m_routeOrch->decreaseNextHopRefCount(target);
-        // remove next hop group in case it's not used by anything else
-        if (m_pAclOrch->m_routeOrch->isRefCounterZero(target))
-        {
-            if (m_pAclOrch->m_routeOrch->removeNextHopGroup(target))
-            {
-                SWSS_LOG_DEBUG("Removed acl redirect target next hop group '%s'", m_redirect_target_next_hop_group.c_str());
-            }
-            else
-            {
-                SWSS_LOG_ERROR("Failed to remove unused next hop group '%s'", m_redirect_target_next_hop_group.c_str());
-                // FIXME: what else could we do here?
-            }
-        }
-        m_redirect_target_next_hop_group.clear();
-    }
-
-    return;
 }
 
 bool AclRule::isActionSupported(sai_acl_entry_attr_t action) const
@@ -625,8 +594,6 @@ bool AclRule::remove()
     gCrmOrch->decCrmAclTableUsedCounter(CrmResourceType::CRM_ACL_ENTRY, m_tableOid);
 
     m_ruleOid = SAI_NULL_OBJECT_ID;
-
-    decreaseNextHopRefCount();
 
     res = removeRanges();
     res &= removeCounter();
@@ -1111,9 +1078,61 @@ bool AclRuleL3::validate()
     return true;
 }
 
+bool AclRuleL3::create()
+{
+    if (!AclRule::create())
+    {
+        decreaseNextHopRefCount();
+        return false;
+    }
+
+    return true;
+}
+
+bool AclRuleL3::remove()
+{
+    if (!AclRule::remove())
+    {
+        return false;
+    }
+
+    decreaseNextHopRefCount();
+    return true;
+}
+
 void AclRuleL3::onUpdate(SubjectType, void *)
 {
     // Do nothing
+}
+
+void AclRuleL3::decreaseNextHopRefCount()
+{
+    if (!m_redirect_target_next_hop.empty())
+    {
+        m_pAclOrch->m_neighOrch->decreaseNextHopRefCount(NextHopKey(m_redirect_target_next_hop));
+        m_redirect_target_next_hop.clear();
+    }
+    if (!m_redirect_target_next_hop_group.empty())
+    {
+        NextHopGroupKey target = NextHopGroupKey(m_redirect_target_next_hop_group);
+        m_pAclOrch->m_routeOrch->decreaseNextHopRefCount(target);
+        // remove next hop group in case it's not used by anything else
+        if (m_pAclOrch->m_routeOrch->isRefCounterZero(target))
+        {
+            if (m_pAclOrch->m_routeOrch->removeNextHopGroup(target))
+            {
+                SWSS_LOG_DEBUG("Removed acl redirect target next hop group '%s'", m_redirect_target_next_hop_group.c_str());
+            }
+            else
+            {
+                SWSS_LOG_ERROR("Failed to remove unused next hop group '%s'", m_redirect_target_next_hop_group.c_str());
+                // FIXME: what else could we do here?
+            }
+        }
+        m_redirect_target_next_hop_group.clear();
+    }
+
+    return;
 }
 
 AclRulePfcwd::AclRulePfcwd(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :

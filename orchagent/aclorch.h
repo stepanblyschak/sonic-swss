@@ -206,8 +206,6 @@ protected:
     virtual bool removeCounter();
     virtual bool removeRanges();
 
-    void decreaseNextHopRefCount();
-
     bool isActionSupported(sai_acl_entry_attr_t) const;
 
     static sai_uint32_t m_minPriority;
@@ -222,8 +220,6 @@ protected:
     uint32_t m_priority;
     map <sai_acl_entry_attr_t, sai_attribute_value_t> m_matches;
     map <sai_acl_entry_attr_t, sai_attribute_value_t> m_actions;
-    string m_redirect_target_next_hop;
-    string m_redirect_target_next_hop_group;
 
     vector<sai_object_id_t> m_inPorts;
     vector<sai_object_id_t> m_outPorts;
@@ -237,12 +233,21 @@ class AclRuleL3: public AclRule
 public:
     AclRuleL3(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = true);
 
+    bool create() override;
+    bool remove() override;
+
     bool validateAddAction(string attr_name, string attr_value);
     bool validateAddMatch(string attr_name, string attr_value);
     bool validate();
     void onUpdate(SubjectType, void *) override;
+
 protected:
     sai_object_id_t getRedirectObjectId(const string& redirect_param);
+    void decreaseNextHopRefCount();
+
+private:
+    string m_redirect_target_next_hop;
+    string m_redirect_target_next_hop_group;
 };
 
 class AclRuleL3V6: public AclRuleL3
@@ -250,6 +255,7 @@ class AclRuleL3V6: public AclRuleL3
 public:
     AclRuleL3V6(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type);
     bool validateAddMatch(string attr_name, string attr_value);
+
 };
 
 class AclRulePfcwd: public AclRuleL3
