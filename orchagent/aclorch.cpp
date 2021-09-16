@@ -690,17 +690,14 @@ shared_ptr<AclRule> AclRule::makeShared(acl_table_type_t type, AclOrch *acl, Mir
     {
         return make_shared<AclRuleMirror>(acl, mirror, rule, table, type);
     }
-    /* L3 rules can exist only in L3 table */
     else if (type == ACL_TABLE_L3)
     {
-        return make_shared<AclRuleL3>(acl, rule, table, type);
+        return make_shared<AclRulePacket>(acl, rule, table, type);
     }
-    /* L3V6 rules can exist only in L3V6 table */
     else if (type == ACL_TABLE_L3V6)
     {
-        return make_shared<AclRuleL3V6>(acl, rule, table, type);
+        return make_shared<AclRulePacket>(acl, rule, table, type);
     }
-    /* Pfcwd rules can exist only in PFCWD table */
     else if (type == ACL_TABLE_PFCWD)
     {
         return make_shared<AclRulePfcwd>(acl, rule, table, type);
@@ -886,12 +883,12 @@ bool AclRule::removeCounter()
     return true;
 }
 
-AclRuleL3::AclRuleL3(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
+AclRulePacket::AclRulePacket(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
         AclRule(aclOrch, rule, table, type, createCounter)
 {
 }
 
-bool AclRuleL3::validateAddAction(string attr_name, string _attr_value)
+bool AclRulePacket::validateAddAction(string attr_name, string _attr_value)
 {
     SWSS_LOG_ENTER();
 
@@ -969,7 +966,7 @@ bool AclRuleL3::validateAddAction(string attr_name, string _attr_value)
 }
 
 // This method should return sai attribute id of the redirect destination
-sai_object_id_t AclRuleL3::getRedirectObjectId(const string& redirect_value)
+sai_object_id_t AclRulePacket::getRedirectObjectId(const string& redirect_value)
 {
 
     string target = redirect_value;
@@ -1042,36 +1039,7 @@ sai_object_id_t AclRuleL3::getRedirectObjectId(const string& redirect_value)
     return SAI_NULL_OBJECT_ID;
 }
 
-bool AclRuleL3::validateAddMatch(string attr_name, string attr_value)
-{
-    if (attr_name == MATCH_DSCP)
-    {
-        SWSS_LOG_ERROR("DSCP match is not supported for table type L3");
-        return false;
-    }
-
-    if (attr_name == MATCH_SRC_IPV6 || attr_name == MATCH_DST_IPV6)
-    {
-        SWSS_LOG_ERROR("IPv6 address match is not supported for table type L3");
-        return false;
-    }
-
-    if (attr_name == MATCH_ICMPV6_TYPE || attr_name == MATCH_ICMPV6_CODE)
-    {
-        SWSS_LOG_ERROR("ICMPv6 match is not supported for table type L3");
-        return false;
-    }
-
-    if (attr_name == MATCH_NEXT_HEADER)
-    {
-        SWSS_LOG_ERROR("IPv6 Next Header match is not supported for table type L3");
-        return false;
-    }
-
-    return AclRule::validateAddMatch(attr_name, attr_value);
-}
-
-bool AclRuleL3::validate()
+bool AclRulePacket::validate()
 {
     SWSS_LOG_ENTER();
 
@@ -1083,7 +1051,7 @@ bool AclRuleL3::validate()
     return true;
 }
 
-bool AclRuleL3::create()
+bool AclRulePacket::create()
 {
     if (!AclRule::create())
     {
@@ -1094,7 +1062,7 @@ bool AclRuleL3::create()
     return true;
 }
 
-bool AclRuleL3::remove()
+bool AclRulePacket::remove()
 {
     if (!AclRule::remove())
     {
@@ -1105,12 +1073,12 @@ bool AclRuleL3::remove()
     return true;
 }
 
-void AclRuleL3::onUpdate(SubjectType, void *)
+void AclRulePacket::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
 
-void AclRuleL3::decreaseNextHopRefCount()
+void AclRulePacket::decreaseNextHopRefCount()
 {
     if (!m_redirect_target_next_hop.empty())
     {
@@ -1141,63 +1109,14 @@ void AclRuleL3::decreaseNextHopRefCount()
 }
 
 AclRulePfcwd::AclRulePfcwd(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRuleL3(aclOrch, rule, table, type, createCounter)
+        AclRulePacket(aclOrch, rule, table, type, createCounter)
 {
-}
-
-bool AclRulePfcwd::validateAddMatch(string attr_name, string attr_value)
-{
-    return AclRule::validateAddMatch(attr_name, attr_value);
 }
 
 AclRuleMux::AclRuleMux(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRuleL3(aclOrch, rule, table, type, createCounter)
+        AclRulePacket(aclOrch, rule, table, type, createCounter)
 {
 }
-
-bool AclRuleMux::validateAddMatch(string attr_name, string attr_value)
-{
-    return AclRule::validateAddMatch(attr_name, attr_value);
-}
-
-AclRuleL3V6::AclRuleL3V6(AclOrch *aclOrch, string rule, string table, acl_table_type_t type) :
-        AclRuleL3(aclOrch, rule, table, type)
-{
-}
-
-
-bool AclRuleL3V6::validateAddMatch(string attr_name, string attr_value)
-{
-    if (attr_name == MATCH_DSCP)
-    {
-        SWSS_LOG_ERROR("DSCP match is not supported for table type L3V6");
-        return false;
-    }
-
-    if (attr_name == MATCH_SRC_IP || attr_name == MATCH_DST_IP)
-    {
-        SWSS_LOG_ERROR("IPv4 address match is not supported for table type L3V6");
-        return false;
-    }
-
-    if (attr_name == MATCH_ICMP_TYPE || attr_name == MATCH_ICMP_CODE)
-    {
-        SWSS_LOG_ERROR("ICMPv4 match is not supported for table type L3V6");
-        return false;
-    }
-
-    if (attr_name == MATCH_ETHER_TYPE)
-    {
-        SWSS_LOG_ERROR("Ethertype match is not supported for table type L3V6");
-        return false;
-    }
-
-    // TODO: For backwards compatibility, users can substitute IP_PROTOCOL for NEXT_HEADER.
-    // Should add a check for IP_PROTOCOL in a future release.
-
-    return AclRule::validateAddMatch(attr_name, attr_value);
-}
-
 
 AclRuleMirror::AclRuleMirror(AclOrch *aclOrch, MirrorOrch *mirror, string rule, string table, acl_table_type_t type) :
         AclRule(aclOrch, rule, table, type),
@@ -1233,70 +1152,6 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
     m_actions[action] = sai_attribute_value_t{};
 
     return AclRule::validateAddAction(attr_name, attr_value);
-}
-
-bool AclRuleMirror::validateAddMatch(string attr_name, string attr_value)
-{
-    if ((m_tableType == ACL_TABLE_L3 || m_tableType == ACL_TABLE_L3V6)
-        && attr_name == MATCH_DSCP)
-    {
-        SWSS_LOG_ERROR("DSCP match is not supported for the table of type L3");
-        return false;
-    }
-
-    if ((m_tableType == ACL_TABLE_MIRROR_DSCP &&
-                aclMatchLookup.find(attr_name) != aclMatchLookup.end() &&
-                attr_name != MATCH_DSCP))
-    {
-        SWSS_LOG_ERROR("%s match is not supported for the table of type MIRROR_DSCP",
-                attr_name.c_str());
-        return false;
-    }
-
-    /*
-     * Type of Tables and Supported Match Types (Configuration)
-     * |---------------------------------------------------|
-     * |    Match Type     | TABLE_MIRROR | TABLE_MIRRORV6 |
-     * |---------------------------------------------------|
-     * | MATCH_SRC_IP      |      √       |                |
-     * | MATCH_DST_IP      |      √       |                |
-     * |---------------------------------------------------|
-     * | MATCH_ICMP_TYPE   |      √       |                |
-     * | MATCH_ICMP_CODE   |      √       |                |
-     * |---------------------------------------------------|
-     * | MATCH_ICMPV6_TYPE |              |       √        |
-     * | MATCH_ICMPV6_CODE |              |       √        |
-     * |---------------------------------------------------|
-     * | MATCH_SRC_IPV6    |              |       √        |
-     * | MATCH_DST_IPV6    |              |       √        |
-     * |---------------------------------------------------|
-     * | MARTCH_ETHERTYPE  |      √       |                |
-     * |---------------------------------------------------|
-     */
-
-    if (m_tableType == ACL_TABLE_MIRROR &&
-            (attr_name == MATCH_SRC_IPV6 || attr_name == MATCH_DST_IPV6 ||
-             attr_name == MATCH_ICMPV6_TYPE || attr_name == MATCH_ICMPV6_CODE ||
-             attr_name == MATCH_NEXT_HEADER))
-    {
-        SWSS_LOG_ERROR("%s match is not supported for the table of type MIRROR",
-                attr_name.c_str());
-        return false;
-    }
-
-    // TODO: For backwards compatibility, users can substitute IP_PROTOCOL for NEXT_HEADER.
-    // This check should be expanded to include IP_PROTOCOL in a future release.
-    if (m_tableType == ACL_TABLE_MIRRORV6 &&
-            (attr_name == MATCH_SRC_IP || attr_name == MATCH_DST_IP ||
-             attr_name == MATCH_ICMP_TYPE || attr_name == MATCH_ICMP_CODE ||
-             attr_name == MATCH_ETHER_TYPE))
-    {
-        SWSS_LOG_ERROR("%s match is not supported for the table of type MIRRORv6",
-                attr_name.c_str());
-        return false;
-    }
-
-    return AclRule::validateAddMatch(attr_name, attr_value);
 }
 
 bool AclRuleMirror::validate()
@@ -1413,18 +1268,8 @@ void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
 }
 
 AclRuleMclag::AclRuleMclag(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRuleL3(aclOrch, rule, table, type, createCounter)
+        AclRulePacket(aclOrch, rule, table, type, createCounter)
 {
-}
-
-bool AclRuleMclag::validateAddMatch(string attr_name, string attr_value)
-{
-    if (attr_name != MATCH_IP_TYPE && attr_name != MATCH_OUT_PORTS)
-    {
-        return false;
-    }
-
-    return AclRule::validateAddMatch(attr_name, attr_value);
 }
 
 bool AclRuleMclag::validate()

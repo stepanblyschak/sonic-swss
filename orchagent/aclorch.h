@@ -229,16 +229,15 @@ private:
     bool m_createCounter;
 };
 
-class AclRuleL3: public AclRule
+class AclRulePacket: public AclRule
 {
 public:
-    AclRuleL3(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = true);
+    AclRulePacket(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = true);
 
     bool create() override;
     bool remove() override;
 
     bool validateAddAction(string attr_name, string attr_value);
-    bool validateAddMatch(string attr_name, string attr_value);
     bool validate();
     void onUpdate(SubjectType, void *) override;
 
@@ -251,26 +250,16 @@ private:
     string m_redirect_target_next_hop_group;
 };
 
-class AclRuleL3V6: public AclRuleL3
-{
-public:
-    AclRuleL3V6(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type);
-    bool validateAddMatch(string attr_name, string attr_value);
-
-};
-
-class AclRulePfcwd: public AclRuleL3
+class AclRulePfcwd: public AclRulePacket
 {
 public:
     AclRulePfcwd(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = false);
-    bool validateAddMatch(string attr_name, string attr_value);
 };
 
-class AclRuleMux: public AclRuleL3
+class AclRuleMux: public AclRulePacket
 {
 public:
     AclRuleMux(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = false);
-    bool validateAddMatch(string attr_name, string attr_value);
 };
 
 class AclRuleMirror: public AclRule
@@ -278,7 +267,6 @@ class AclRuleMirror: public AclRule
 public:
     AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, string rule, string table, acl_table_type_t type);
     bool validateAddAction(string attr_name, string attr_value);
-    bool validateAddMatch(string attr_name, string attr_value);
     bool validate();
     bool create();
     bool remove();
@@ -321,11 +309,10 @@ protected:
     DTelOrch *m_pDTelOrch;
 };
 
-class AclRuleMclag: public AclRuleL3
+class AclRuleMclag: public AclRulePacket
 {
 public:
     AclRuleMclag(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = false);
-    bool validateAddMatch(string attr_name, string attr_value);
     bool validate();
 };
 
