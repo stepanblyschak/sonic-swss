@@ -107,7 +107,7 @@ bool AclRulePbh::validate()
     return true;
 }
 
-void AclRulePbh::update(SubjectType, void *)
+void AclRulePbh::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }

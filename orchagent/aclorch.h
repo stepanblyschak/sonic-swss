@@ -166,7 +166,7 @@ public:
 
     virtual bool create();
     virtual bool remove();
-    virtual void update(SubjectType, void *) = 0;
+    virtual void onUpdate(SubjectType, void *) = 0;
     virtual void updateInPorts();
 
     virtual bool enableCounter();
@@ -240,7 +240,7 @@ public:
     bool validateAddAction(string attr_name, string attr_value);
     bool validateAddMatch(string attr_name, string attr_value);
     bool validate();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
 protected:
     sai_object_id_t getRedirectObjectId(const string& redirect_param);
 };
@@ -275,7 +275,7 @@ public:
     bool validate();
     bool create();
     bool remove();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
     AclRuleCounters getCounters();
 
 protected:
@@ -293,7 +293,7 @@ public:
     bool validate();
     bool create();
     bool remove();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
 
 protected:
     DTelOrch *m_pDTelOrch;
@@ -308,7 +308,7 @@ public:
     AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table, acl_table_type_t type);
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
 
 protected:
     DTelOrch *m_pDTelOrch;
@@ -362,7 +362,7 @@ public:
     // Remove all rules from the ACL table
     bool clear();
     // Update table subject to changes
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *);
 
 public:
     string id;

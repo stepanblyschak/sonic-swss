@@ -1111,7 +1111,7 @@ bool AclRuleL3::validate()
     return true;
 }
 
-void AclRuleL3::update(SubjectType, void *)
+void AclRuleL3::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
@@ -1359,7 +1359,7 @@ bool AclRuleMirror::remove()
     return true;
 }
 
-void AclRuleMirror::update(SubjectType type, void *cntx)
+void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
 {
     if (type != SUBJECT_TYPE_MIRROR_SESSION_CHANGE)
     {
@@ -1808,7 +1808,7 @@ bool AclTable::create()
     return status == SAI_STATUS_SUCCESS;
 }
 
-void AclTable::update(SubjectType type, void *cntx)
+void AclTable::onUpdate(SubjectType type, void *cntx)
 {
     SWSS_LOG_ENTER();
 
@@ -2185,7 +2185,7 @@ bool AclRuleDTelFlowWatchListEntry::remove()
     return true;
 }
 
-void AclRuleDTelFlowWatchListEntry::update(SubjectType type, void *cntx)
+void AclRuleDTelFlowWatchListEntry::onUpdate(SubjectType type, void *cntx)
 {
     sai_attribute_value_t value;
     sai_object_id_t session_oid = SAI_NULL_OBJECT_ID;
@@ -2293,7 +2293,7 @@ bool AclRuleDTelDropWatchListEntry::validate()
     return true;
 }
 
-void AclRuleDTelDropWatchListEntry::update(SubjectType, void *)
+void AclRuleDTelDropWatchListEntry::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
@@ -2809,13 +2809,13 @@ void AclOrch::update(SubjectType type, void *cntx)
     {
         if (type == SUBJECT_TYPE_PORT_CHANGE)
         {
-            table.second.update(type, cntx);
+            table.second.onUpdate(type, cntx);
         }
         else
         {
             for (auto& rule : table.second.rules)
             {
-                rule.second->update(type, cntx);
+                rule.second->onUpdate(type, cntx);
             }
         }
     }
