@@ -19,8 +19,6 @@
 
 #include "acltable.h"
 
-#define COUNTERS_READ_INTERVAL 10
-
 #define RULE_PRIORITY           "PRIORITY"
 #define MATCH_IN_PORTS          "IN_PORTS"
 #define MATCH_OUT_PORTS         "OUT_PORTS"
@@ -442,7 +440,6 @@ private:
     void doTask(Consumer &consumer);
     void doAclTableTask(Consumer &consumer);
     void doAclRuleTask(Consumer &consumer);
-    void doTask(SelectableTimer &timer);
     void init(vector<TableConnector>& connectors, PortsOrch *portOrch, MirrorOrch *mirrorOrch, NeighOrch *neighOrch, RouteOrch *routeOrch);
 
     void queryMirrorTableCapability();

@@ -2381,14 +2381,6 @@ void AclOrch::init(vector<TableConnector>& connectors, PortsOrch *portOrch, Mirr
     // Attach observers
     m_mirrorOrch->attach(this);
     gPortsOrch->attach(this);
-
-    // Should be initialized last to guaranty that object is
-    // initialized before thread start.
-    auto interv = timespec { .tv_sec = COUNTERS_READ_INTERVAL, .tv_nsec = 0 };
-    auto timer = new SelectableTimer(interv);
-    auto executor = new ExecutableTimer(timer, this, "ACL_POLL_TIMER");
-    Orch::addExecutor(executor);
-    timer->start();
 }
 
 void AclOrch::queryAclActionCapability()
@@ -3693,30 +3685,6 @@ sai_status_t AclOrch::deleteUnbindAclTable(sai_object_id_t table_oid)
     }
 
     return sai_acl_api->remove_acl_table(table_oid);
-}
-
-void AclOrch::doTask(SelectableTimer &timer)
-{
-    SWSS_LOG_ENTER();
-
-    for (auto& table_it : m_AclTables)
-    {
-        vector<swss::FieldValueTuple> values;
-
-        for (auto rule_it : table_it.second.rules)
-        {
-            AclRuleCounters cnt = rule_it.second->getCounters();
-
-            swss::FieldValueTuple fvtp("Packets", to_string(cnt.packets));
-            values.push_back(fvtp);
-            swss::FieldValueTuple fvtb("Bytes", to_string(cnt.bytes));
-            values.push_back(fvtb);
-
-            AclOrch::getCountersTable().set(rule_it.second->getTableId() + ":"
-                    + rule_it.second->getId(), values, "");
-        }
-        values.clear();
-    }
 }
 
 sai_status_t AclOrch::bindAclTable(AclTable &aclTable, bool bind)
