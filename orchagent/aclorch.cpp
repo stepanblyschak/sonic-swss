@@ -158,11 +158,10 @@ static acl_ip_type_lookup_t aclIpTypeLookup =
     { IP_TYPE_ARP_REPLY,   SAI_ACL_IP_TYPE_ARP_REPLY }
 };
 
-AclRule::AclRule(AclOrch *pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
+AclRule::AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounter) :
     m_pAclOrch(pAclOrch),
     m_id(rule),
     m_tableId(table),
-    m_tableType(type),
     m_tableOid(SAI_NULL_OBJECT_ID),
     m_ruleOid(SAI_NULL_OBJECT_ID),
     m_counterOid(SAI_NULL_OBJECT_ID),
@@ -407,15 +406,6 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
         return false;
     }
 
-    // TODO: For backwards compatibility, users can substitute IP_PROTOCOL for NEXT_HEADER.
-    // This should be removed in a future release.
-    if ((m_tableType == ACL_TABLE_MIRRORV6 || m_tableType == ACL_TABLE_L3V6)
-            && attr_name == MATCH_IP_PROTOCOL)
-    {
-        SWSS_LOG_WARN("Support for IP protocol on IPv6 tables will be removed in a future release, please switch to using NEXT_HEADER instead!");
-        attr_name = MATCH_NEXT_HEADER;
-    }
-
     m_matches[aclMatchLookup[attr_name]] = value;
 
     return true;
@@ -645,7 +635,7 @@ AclRuleCounters AclRule::getCounters()
     return AclRuleCounters(counter_attr[0].value.u64, counter_attr[1].value.u64);
 }
 
-shared_ptr<AclRule> AclRule::makeShared(acl_table_type_t type, AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple& data)
+shared_ptr<AclRule> AclRule::makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple& data)
 {
     string action;
     bool action_found = false;
@@ -671,62 +661,33 @@ shared_ptr<AclRule> AclRule::makeShared(acl_table_type_t type, AclOrch *acl, Mir
         throw runtime_error("ACL rule action is not found in rule " + rule);
     }
 
-    if (type != ACL_TABLE_L3 &&
-        type != ACL_TABLE_L3V6 &&
-        type != ACL_TABLE_MIRROR &&
-        type != ACL_TABLE_MIRRORV6 &&
-        type != ACL_TABLE_MIRROR_DSCP &&
-        type != ACL_TABLE_DTEL_FLOW_WATCHLIST &&
-        type != ACL_TABLE_DTEL_DROP_WATCHLIST &&
-        type != ACL_TABLE_MCLAG &&
-        type != ACL_TABLE_DROP)
-    {
-        throw runtime_error("Unknown table type");
-    }
-
     /* Mirror rules can exist in both tables */
     if (aclMirrorStageLookup.find(action) != aclMirrorStageLookup.cend() ||
         action == ACTION_MIRROR_ACTION /* implicitly ingress in old schema */)
     {
-        return make_shared<AclRuleMirror>(acl, mirror, rule, table, type);
+        return make_shared<AclRuleMirror>(acl, mirror, rule, table);
     }
-    else if (type == ACL_TABLE_L3)
+    else if (aclL3ActionLookup.find(action) != aclL3ActionLookup.cend())
     {
-        return make_shared<AclRulePacket>(acl, rule, table, type);
+        return make_shared<AclRulePacket>(acl, rule, table);
     }
-    else if (type == ACL_TABLE_L3V6)
+    else if (aclDTelFlowOpTypeLookup.find(action) != aclDTelFlowOpTypeLookup.cend())
     {
-        return make_shared<AclRulePacket>(acl, rule, table, type);
-    }
-    else if (type == ACL_TABLE_PFCWD)
-    {
-        return make_shared<AclRulePfcwd>(acl, rule, table, type);
-    }
-    else if (type == ACL_TABLE_DTEL_FLOW_WATCHLIST)
-    {
-        if (dtel)
+        if (!dtel)
         {
-            return make_shared<AclRuleDTelFlowWatchListEntry>(acl, dtel, rule, table, type);
-        } else {
             throw runtime_error("DTel feature is not enabled. Watchlists cannot be configured");
         }
-    }
-    else if (type == ACL_TABLE_DTEL_DROP_WATCHLIST)
-    {
-        if (dtel)
+
+        if (action == ACTION_DTEL_DROP_REPORT_ENABLE ||
+            action == ACTION_DTEL_TAIL_DROP_REPORT_ENABLE ||
+            action == ACTION_DTEL_REPORT_ALL_PACKETS)
         {
-            return make_shared<AclRuleDTelDropWatchListEntry>(acl, dtel, rule, table, type);
-        } else {
-            throw runtime_error("DTel feature is not enabled. Watchlists cannot be configured");
+            return make_shared<AclRuleDTelDropWatchListEntry>(acl, dtel, rule, table);
         }
-    }
-    else if (type == ACL_TABLE_MCLAG)
-    {
-        return make_shared<AclRuleMclag>(acl, rule, table, type);
-    }
-    else if (type == ACL_TABLE_DROP)
-    {
-        return make_shared<AclRulePfcwd>(acl, rule, table, type);
+        else
+        {
+            return make_shared<AclRuleDTelFlowWatchListEntry>(acl, dtel, rule, table);
+        }
     }
 
     throw runtime_error("Wrong combination of table type and action in rule " + rule);
@@ -883,8 +844,8 @@ bool AclRule::removeCounter()
     return true;
 }
 
-AclRulePacket::AclRulePacket(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRule(aclOrch, rule, table, type, createCounter)
+AclRulePacket::AclRulePacket(AclOrch *aclOrch, string rule, string table, bool createCounter) :
+        AclRule(aclOrch, rule, table, createCounter)
 {
 }
 
@@ -1108,18 +1069,18 @@ void AclRulePacket::decreaseNextHopRefCount()
     return;
 }
 
-AclRulePfcwd::AclRulePfcwd(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRulePacket(aclOrch, rule, table, type, createCounter)
+AclRulePfcwd::AclRulePfcwd(AclOrch *aclOrch, string rule, string table, bool createCounter) :
+        AclRulePacket(aclOrch, rule, table, createCounter)
 {
 }
 
-AclRuleMux::AclRuleMux(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRulePacket(aclOrch, rule, table, type, createCounter)
+AclRuleMux::AclRuleMux(AclOrch *aclOrch, string rule, string table, bool createCounter) :
+        AclRulePacket(aclOrch, rule, table, createCounter)
 {
 }
 
-AclRuleMirror::AclRuleMirror(AclOrch *aclOrch, MirrorOrch *mirror, string rule, string table, acl_table_type_t type) :
-        AclRule(aclOrch, rule, table, type),
+AclRuleMirror::AclRuleMirror(AclOrch *aclOrch, MirrorOrch *mirror, string rule, string table) :
+        AclRule(aclOrch, rule, table),
         m_state(false),
         m_pMirrorOrch(mirror)
 {
@@ -1267,8 +1228,8 @@ void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
     }
 }
 
-AclRuleMclag::AclRuleMclag(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRulePacket(aclOrch, rule, table, type, createCounter)
+AclRuleMclag::AclRuleMclag(AclOrch *aclOrch, string rule, string table, bool createCounter) :
+        AclRulePacket(aclOrch, rule, table, createCounter)
 {
 }
 
@@ -1922,8 +1883,8 @@ AclRuleCounters AclRuleMirror::getCounters()
     return cnt;
 }
 
-AclRuleDTelFlowWatchListEntry::AclRuleDTelFlowWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table, acl_table_type_t type) :
-        AclRule(aclOrch, rule, table, type),
+AclRuleDTelFlowWatchListEntry::AclRuleDTelFlowWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table) :
+        AclRule(aclOrch, rule, table),
         m_pDTelOrch(dtel)
 {
 }
@@ -2137,8 +2098,8 @@ void AclRuleDTelFlowWatchListEntry::onUpdate(SubjectType type, void *cntx)
     }
 }
 
-AclRuleDTelDropWatchListEntry::AclRuleDTelDropWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table, acl_table_type_t type) :
-        AclRule(aclOrch, rule, table, type),
+AclRuleDTelDropWatchListEntry::AclRuleDTelDropWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table) :
+        AclRule(aclOrch, rule, table),
         m_pDTelOrch(dtel)
 {
 }
@@ -3463,7 +3424,7 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
 
             try
             {
-                newRule = AclRule::makeShared(type, this, m_mirrorOrch, m_dTelOrch, rule_id, table_id, t);
+                newRule = AclRule::makeShared(this, m_mirrorOrch, m_dTelOrch, rule_id, table_id, t);
             }
             catch (exception &e)
             {

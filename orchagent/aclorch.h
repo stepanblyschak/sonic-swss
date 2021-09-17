@@ -152,7 +152,7 @@ struct AclRuleCounters
 class AclRule
 {
 public:
-    AclRule(AclOrch *pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = true);
+    AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounter = true);
     virtual bool validateAddPriority(string attr_name, string attr_value);
     virtual bool validateAddMatch(string attr_name, string attr_value);
     virtual bool validateAddAction(string attr_name, string attr_value);
@@ -199,7 +199,7 @@ public:
         return m_inPorts;
     }
 
-    static shared_ptr<AclRule> makeShared(acl_table_type_t type, AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple&);
+    static shared_ptr<AclRule> makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple&);
     virtual ~AclRule() {}
 
 protected:
@@ -214,7 +214,6 @@ protected:
     AclOrch *m_pAclOrch;
     string m_id;
     string m_tableId;
-    acl_table_type_t m_tableType;
     sai_object_id_t m_tableOid;
     sai_object_id_t m_ruleOid;
     sai_object_id_t m_counterOid;
@@ -232,7 +231,7 @@ private:
 class AclRulePacket: public AclRule
 {
 public:
-    AclRulePacket(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = true);
+    AclRulePacket(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = true);
 
     bool create() override;
     bool remove() override;
@@ -253,19 +252,19 @@ private:
 class AclRulePfcwd: public AclRulePacket
 {
 public:
-    AclRulePfcwd(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = false);
+    AclRulePfcwd(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = false);
 };
 
 class AclRuleMux: public AclRulePacket
 {
 public:
-    AclRuleMux(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = false);
+    AclRuleMux(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = false);
 };
 
 class AclRuleMirror: public AclRule
 {
 public:
-    AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, string rule, string table, acl_table_type_t type);
+    AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
     bool create();
@@ -283,7 +282,7 @@ protected:
 class AclRuleDTelFlowWatchListEntry: public AclRule
 {
 public:
-    AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table, acl_table_type_t type);
+    AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
     bool create();
@@ -300,7 +299,7 @@ protected:
 class AclRuleDTelDropWatchListEntry: public AclRule
 {
 public:
-    AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table, acl_table_type_t type);
+    AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
     void onUpdate(SubjectType, void *) override;
@@ -312,7 +311,7 @@ protected:
 class AclRuleMclag: public AclRulePacket
 {
 public:
-    AclRuleMclag(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = false);
+    AclRuleMclag(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = false);
     bool validate();
 };
 
