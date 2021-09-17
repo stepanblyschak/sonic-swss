@@ -122,31 +122,6 @@ private:
     static map<acl_range_properties_t, AclRange*> m_ranges;
 };
 
-struct AclRuleCounters
-{
-    uint64_t packets;
-    uint64_t bytes;
-
-    AclRuleCounters(uint64_t p = 0, uint64_t b = 0) :
-        packets(p),
-        bytes(b)
-    {
-    }
-
-    AclRuleCounters(const AclRuleCounters& rhs) :
-        packets(rhs.packets),
-        bytes(rhs.bytes)
-    {
-    }
-
-    AclRuleCounters& operator +=(const AclRuleCounters& rhs)
-    {
-        packets += rhs.packets;
-        bytes += rhs.bytes;
-        return *this;
-    }
-};
-
 class AclRule
 {
 public:
@@ -170,7 +145,6 @@ public:
 
     virtual bool enableCounter();
     virtual bool disableCounter();
-    virtual AclRuleCounters getCounters();
 
     sai_object_id_t getOid() const
     {
@@ -187,7 +161,7 @@ public:
         return m_tableId;
     }
 
-    sai_object_id_t getCounterOid()
+    sai_object_id_t getCounterOid() const
     {
         return m_counterOid;
     }
@@ -204,6 +178,7 @@ protected:
     virtual bool createCounter();
     virtual bool removeCounter();
     virtual bool removeRanges();
+    virtual bool removeRule();
 
     bool isActionSupported(sai_acl_entry_attr_t) const;
 
@@ -264,16 +239,16 @@ class AclRuleMirror: public AclRule
 public:
     AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
-    bool validate();
-    bool create();
-    bool remove();
+    bool validate() override;
+    bool create() override;
+    bool remove() override;
+    bool activate();
+    bool deactivate();
     void onUpdate(SubjectType, void *) override;
-    AclRuleCounters getCounters();
 
 protected:
     bool m_state {false};
     string m_sessionName;
-    AclRuleCounters counters;
     MirrorOrch *m_pMirrorOrch {nullptr};
 };
 
@@ -282,9 +257,9 @@ class AclRuleDTelFlowWatchListEntry: public AclRule
 public:
     AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
-    bool validate();
-    bool create();
-    bool remove();
+    bool validate() override;
+    bool create() override;
+    bool remove() override;
     void onUpdate(SubjectType, void *) override;
 
 protected:
@@ -299,7 +274,7 @@ class AclRuleDTelDropWatchListEntry: public AclRule
 public:
     AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
-    bool validate();
+    bool validate() override;
     void onUpdate(SubjectType, void *) override;
 
 protected:
@@ -310,7 +285,7 @@ class AclRuleMclag: public AclRulePacket
 {
 public:
     AclRuleMclag(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = false);
-    bool validate();
+    bool validate() override;
 };
 
 class AclTable
