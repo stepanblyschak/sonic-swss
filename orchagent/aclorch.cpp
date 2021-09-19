@@ -472,7 +472,7 @@ bool AclRule::create()
     sai_attribute_t attr;
     sai_status_t status;
 
-    if (m_createCounter && m_counterOid == SAI_NULL_OBJECT_ID)
+    if (m_createCounter)
     {
         if (!createCounter())
         {
