@@ -614,6 +614,77 @@ bool AclRule::remove()
 
 bool AclRule::update(AclRule& updatedRule)
 {
+    SWSS_LOG_ENTER();
+
+    if (updatedRule.m_createCounter)
+    {
+        if (!createCounter())
+        {
+            return false;
+        }
+    }
+    else
+    {
+        if (!removeCounter())
+        {
+            return false;
+        }
+    }
+
+    vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> attrs;
+    if (m_priority != updatedRule.m_priority)
+    {
+        sai_attribute_value_t value;
+        value.s32 = updatedRule.m_priority;
+        attrs.emplace_back(SAI_ACL_ENTRY_ATTR_PRIORITY, value);
+    }
+    set_symmetric_difference(m_matches.begin(), m_matches.end(),
+        updatedRule.m_matches.begin(),
+        updatedRule.m_matches.end(),
+        back_inserter(attrs),
+        [](auto& oldMatch, auto& newMatch)
+        {
+            if (oldMatch.first != newMatch.first)
+            {
+                return oldMatch.first < newMatch.first;
+            }
+            return compareAclField(oldMatch.first,
+                oldMatch.second.aclfield,
+                newMatch.second.aclfield);
+        }
+    );
+    set_symmetric_difference(m_actions.begin(), m_actions.end(),
+        updatedRule.m_actions.begin(),
+        updatedRule.m_actions.end(),
+        back_inserter(attrs),
+        [](auto& oldAction, auto& newAction)
+        {
+            if (oldAction.first != newAction.first)
+            {
+                return oldAction.first < newAction.first;
+            }
+            return compareAclAction(oldAction.first,
+                oldAction.second.aclaction,
+                newAction.second.aclaction);
+        }
+    );
+
+    for (auto attrPair: attrs)
+    {
+        sai_attribute_t attr;
+        std::tie(attr.id, attr.value) = attrPair;
+        auto status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR("Failed to update attribute %d on ACL rule %s in ACL table %s",
+                            attr.id, getId().c_str(), getTableId().c_str());
+            return false;
+        }
+    }
+
+    updatedRule.m_ruleOid = updatedRule.m_ruleOid;
+    updatedRule.m_counterOid = updatedRule.m_counterOid;
+
     return true;
 }
 

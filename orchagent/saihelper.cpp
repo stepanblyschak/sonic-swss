@@ -451,3 +451,188 @@ sai_status_t initSaiPhyApi(swss::gearbox_phy_t *phy)
 
     return status;
 }
+
+// helper function used in ACL rule attributes diff calculation.
+bool compareAclAction(sai_acl_entry_attr_t id, sai_acl_action_data_t first, sai_acl_action_data_t second)
+{
+    auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, id);
+    if (!meta)
+    {
+        SWSS_LOG_THROW("SAI Bug: Failed to get metadata for SAI_OBJECT_TYPE_ACL_ENTRY");
+    }
+
+    if (first.enable < second.enable)
+    {
+        return true;
+    }
+
+    auto valuetype = meta->attrvaluetype;
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_BOOL)
+    {
+        return first.parameter.booldata < second.parameter.booldata;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_UINT8)
+    {
+        return first.parameter.u8 < second.parameter.u8;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_INT8)
+    {
+        return first.parameter.s8 < second.parameter.s8;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_UINT16)
+    {
+        return first.parameter.u16 < second.parameter.u16;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_INT16)
+    {
+        return first.parameter.s16 < second.parameter.s16;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_UINT32)
+    {
+        return first.parameter.u32 < second.parameter.u32;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_INT32)
+    {
+        return first.parameter.s32 < second.parameter.s32;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_MAC)
+    {
+        return memcmp(first.parameter.mac, second.parameter.mac, sizeof(sai_mac_t)) < 0;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_IPV4)
+    {
+        return first.parameter.ip4 < second.parameter.ip4;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_IPV6)
+    {
+        return memcmp(first.parameter.ip6, second.parameter.ip6, sizeof(sai_ip6_t)) < 0;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_OBJECT_ID)
+    {
+        return first.parameter.oid < second.parameter.oid;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_OBJECT_LIST)
+    {
+        auto countCompareRes = first.parameter.objlist.count < second.parameter.objlist.count;
+        auto listCompareRes = first.parameter.objlist.list < second.parameter.objlist.list;
+        return countCompareRes || listCompareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_ACTION_DATA_IP_ADDRESS)
+    {
+        if (first.parameter.ipaddr.addr_family != second.parameter.ipaddr.addr_family)
+        {
+            return first.parameter.ipaddr.addr_family < second.parameter.ipaddr.addr_family;
+        }
+        switch (first.parameter.ipaddr.addr_family)
+        {
+        case SAI_IP_ADDR_FAMILY_IPV4:
+            return first.parameter.ipaddr.addr.ip4 < second.parameter.ipaddr.addr.ip4;
+        case SAI_IP_ADDR_FAMILY_IPV6:
+            return memcmp(first.parameter.ipaddr.addr.ip6, second.parameter.ipaddr.addr.ip6, sizeof(sai_ip6_t));
+        }
+    }
+
+    SWSS_LOG_THROW("Unhandled ACL field type %d", meta->attrvaluetype);
+}
+
+// helper function used in ACL rule attributes diff calculation.
+bool compareAclField(sai_acl_entry_attr_t id, sai_acl_field_data_t first, sai_acl_field_data_t second)
+{
+    auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, id);
+    if (!meta)
+    {
+        SWSS_LOG_THROW("SAI Bug: Failed to get metadata for SAI_OBJECT_TYPE_ACL_ENTRY");
+    }
+
+    if (first.enable < second.enable)
+    {
+        return true;
+    }
+
+    auto valuetype = meta->attrvaluetype;
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_BOOL)
+    {
+        auto compareRes = first.data.booldata < second.data.booldata;
+        return compareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_UINT8)
+    {
+        auto maskCompareResult = first.mask.u8 < second.mask.u8;
+        auto dataCompareRes = first.data.u8 < second.data.u8;
+        return maskCompareResult || dataCompareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_INT8)
+    {
+        auto maskCompareResult = first.mask.s8 < second.mask.s8;
+        auto dataCompareRes = first.data.s8 < second.data.s8;
+        return maskCompareResult || dataCompareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_UINT16)
+    {
+        auto maskCompareResult = first.mask.u16 < second.mask.u16;
+        auto dataCompareRes = first.data.u16 < second.data.u16;
+        return maskCompareResult || dataCompareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_INT16)
+    {
+        auto maskCompareResult = first.mask.s16 < second.mask.s16;
+        auto dataCompareRes = first.data.s16 < second.data.s16;
+        return maskCompareResult || dataCompareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_UINT32)
+    {
+        auto maskCompareResult = first.mask.u32 < second.mask.u32;
+        auto dataCompareRes = first.data.u32 < second.data.u32;
+        return maskCompareResult || dataCompareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_INT32)
+    {
+        auto maskCompareResult = first.mask.s32 < second.mask.s32;
+        auto dataCompareRes = first.data.s32 < second.data.s32;
+        return maskCompareResult || dataCompareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_UINT64)
+    {
+        auto maskCompareResult = first.mask.u64 < second.mask.u64;
+        auto dataCompareRes = first.data.u64 < second.data.u64;
+        return maskCompareResult || dataCompareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_MAC)
+    {
+        auto maskCompareRes = memcmp(first.mask.mac, second.mask.mac, sizeof(sai_mac_t));
+        auto dataCompareRes = memcmp(first.data.mac, second.data.mac, sizeof(sai_mac_t));
+        return (maskCompareRes < 0) || (dataCompareRes < 0);
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_IPV4)
+    {
+        auto maskCompareRes = first.mask.ip4 < second.mask.ip4;
+        auto dataCompareRes = first.data.ip4 < second.data.ip4;
+        return maskCompareRes || dataCompareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_IPV6)
+    {
+        auto maskCompareRes = memcmp(first.mask.ip6, second.mask.ip6, sizeof(sai_ip6_t));
+        auto dataCompareRes = memcmp(first.data.ip6, second.data.ip6, sizeof(sai_ip6_t));
+        return (maskCompareRes < 0) || (dataCompareRes < 0);
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_OBJECT_ID)
+    {
+        return first.data.oid < second.data.oid;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_OBJECT_LIST)
+    {
+        auto countCompareRes = first.data.objlist.count < second.data.objlist.count;
+        auto listCompareRes = first.data.objlist.list < second.data.objlist.list;
+        return countCompareRes || listCompareRes;
+    }
+    if (valuetype == SAI_ATTR_VALUE_TYPE_ACL_FIELD_DATA_UINT8_LIST)
+    {
+        auto maskCountCompareRes = first.mask.u8list.count < second.mask.u8list.count;
+        auto maskListCompareRes = first.mask.u8list.list < second.mask.u8list.list;
+        auto dataCountCompareRes = first.data.u8list.count < second.data.u8list.count;
+        auto dataListCompareRes = first.data.u8list.list < second.data.u8list.list;
+        return maskCountCompareRes || maskListCompareRes || dataCountCompareRes || dataListCompareRes;
+    }
+
+    SWSS_LOG_THROW("Unhandled ACL field type %d", meta->attrvaluetype);
+}
