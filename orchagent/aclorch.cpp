@@ -472,12 +472,9 @@ bool AclRule::create()
     sai_attribute_t attr;
     sai_status_t status;
 
-    if (m_createCounter)
+    if (m_createCounter && !createCounter())
     {
-        if (!createCounter())
-        {
-            return false;
-        }
+        return false;
     }
 
     // store table oid this rule belongs to
