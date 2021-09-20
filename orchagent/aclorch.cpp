@@ -4159,7 +4159,7 @@ void AclOrch::registerFlexCounter(const AclRule& rule)
     for (auto counterAttrPair: aclCounterLookup)
     {
         sai_acl_counter_attr_t id {};
-        tie(id, ignore) = counterAttrPair;
+        tie(ignore, id) = counterAttrPair;
         auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_COUNTER, id);
         if (!meta)
         {
