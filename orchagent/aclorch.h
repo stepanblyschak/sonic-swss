@@ -180,6 +180,10 @@ protected:
     virtual bool removeRanges();
     virtual bool removeRule();
 
+    bool updatePriority(AclRule& updatedRule);
+    bool updateMatches(AclRule& updatedRule);
+    bool updateActions(AclRule& updatedRule);
+
     bool isActionSupported(sai_acl_entry_attr_t) const;
 
     static sai_uint32_t m_minPriority;
