@@ -32,7 +32,6 @@ extern CrmOrch *gCrmOrch;
 #define MIN_VLAN_ID 1    // 0 is a reserved VLAN ID
 #define MAX_VLAN_ID 4095 // 4096 is a reserved VLAN ID
 
-#define COUNTERS_ACL_COUNTER_GROUP "ACL_STAT_COUNTER"
 #define COUNTERS_ACL_COUNTER_RULE_MAP "ACL_COUNTER_RULE_MAP"
 #define COUNTERS_ACL_COUNTER_DEFAULT_POLLING_INTERVAL_MS 10000 // ms
 
@@ -2807,10 +2806,10 @@ AclOrch::AclOrch(vector<TableConnector>& connectors, SwitchOrch *switchOrch,
         m_dTelOrch(dtelOrch),
         m_acl_counter_rule_map(&m_db, COUNTERS_ACL_COUNTER_RULE_MAP),
         m_flex_counter_manager(
-            COUNTERS_ACL_COUNTER_GROUP,
+            ACL_COUNTER_FLEX_COUNTER_GROUP,
             StatsMode::READ,
             COUNTERS_ACL_COUNTER_DEFAULT_POLLING_INTERVAL_MS,
-            true
+            false
         )
 {
     SWSS_LOG_ENTER();

@@ -23,6 +23,7 @@ extern BufferOrch *gBufferOrch;
 #define QUEUE_KEY                   "QUEUE"
 #define PG_WATERMARK_KEY            "PG_WATERMARK"
 #define RIF_KEY                     "RIF"
+#define ACL_KEY                     "ACL"
 
 unordered_map<string, string> flexCounterGroupMap =
 {
@@ -38,6 +39,7 @@ unordered_map<string, string> flexCounterGroupMap =
     {"RIF", RIF_STAT_COUNTER_FLEX_COUNTER_GROUP},
     {"RIF_RATES", RIF_RATE_COUNTER_FLEX_COUNTER_GROUP},
     {"DEBUG_COUNTER", DEBUG_COUNTER_FLEX_COUNTER_GROUP},
+    {"ACL", ACL_COUNTER_FLEX_COUNTER_GROUP},
 };
 
 

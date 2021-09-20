@@ -90,6 +90,8 @@
 #define RULE_OPER_ADD           0
 #define RULE_OPER_DELETE        1
 
+#define ACL_COUNTER_FLEX_COUNTER_GROUP "ACL_STAT_COUNTER"
+
 typedef map<string, sai_acl_entry_attr_t> acl_rule_attr_lookup_t;
 typedef map<string, sai_acl_ip_type_t> acl_ip_type_lookup_t;
 typedef map<string, sai_acl_dtel_flow_op_t> acl_dtel_flow_op_type_lookup_t;
