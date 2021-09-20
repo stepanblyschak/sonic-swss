@@ -158,6 +158,12 @@ static acl_ip_type_lookup_t aclIpTypeLookup =
     { IP_TYPE_ARP_REPLY,   SAI_ACL_IP_TYPE_ARP_REPLY }
 };
 
+static map<sai_acl_counter_attr_t, sai_acl_counter_attr_t> aclCounterLookup =
+{
+    {SAI_ACL_COUNTER_ATTR_ENABLE_BYTE_COUNT,   SAI_ACL_COUNTER_ATTR_BYTES},
+    {SAI_ACL_COUNTER_ATTR_ENABLE_PACKET_COUNT, SAI_ACL_COUNTER_ATTR_PACKETS},
+};
+
 AclRule::AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounter) :
     m_pAclOrch(pAclOrch),
     m_id(rule),
@@ -966,13 +972,12 @@ bool AclRule::createCounter()
     attr.value.oid = m_tableOid;
     counter_attrs.push_back(attr);
 
-    attr.id = SAI_ACL_COUNTER_ATTR_ENABLE_BYTE_COUNT;
-    attr.value.booldata = true;
-    counter_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_COUNTER_ATTR_ENABLE_PACKET_COUNT;
-    attr.value.booldata = true;
-    counter_attrs.push_back(attr);
+    for (auto counterAttrPair: aclCounterLookup)
+    {
+        tie(attr.id, ignore) = counterAttrPair;
+        attr.value.booldata = true;
+        counter_attrs.push_back(attr);
+    }
 
     if (sai_acl_api->create_acl_counter(&m_counterOid, gSwitchId, (uint32_t)counter_attrs.size(), counter_attrs.data()) != SAI_STATUS_SUCCESS)
     {
@@ -4150,11 +4155,18 @@ void AclOrch::registerFlexCounter(const AclRule& rule)
 
     FieldValueTuple ruleNameToCounterOid(rule.getId(), sai_serialize_object_id(rule.getOid()));
 
-    std::unordered_set<std::string> serializedCounterStatAttrs =
+    unordered_set<string> serializedCounterStatAttrs;
+    for (auto counterAttrPair: aclCounterLookup)
     {
-        "SAI_ACL_COUNTER_ATTR_BYTES",
-        "SAI_ACL_COUNTER_ATTR_PACKETS",
-    };
+        sai_acl_counter_attr_t id {};
+        tie(id, ignore) = counterAttrPair;
+        auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_COUNTER, id);
+        if (!meta)
+        {
+            SWSS_LOG_THROW("SAI Bug: Failed to get metadata of attribute %d for SAI_OBJECT_TYPE_ACL_COUNTER", id);
+        }
+        serializedCounterStatAttrs.insert(sai_serialize_attr_id(*meta));
+    }
 
     m_flex_counter_manager.setCounterIdList(rule.getCounterOid(), CounterType::ACL_COUNTER, serializedCounterStatAttrs);
     m_acl_counter_rule_map.set("", {ruleNameToCounterOid});
