@@ -694,9 +694,10 @@ bool AclRule::updateMatches(AclRule& updatedRule)
             newMatch.second.aclfield);
     };
 
-    set_symmetric_difference(m_matches.begin(), m_matches.end(),
+    set_difference(
         updatedRule.m_matches.begin(),
         updatedRule.m_matches.end(),
+        m_matches.begin(), m_matches.end(),
         back_inserter(matchesUpdated),
         compareMatches
     );
@@ -706,7 +707,6 @@ bool AclRule::updateMatches(AclRule& updatedRule)
         back_inserter(matchesDisabled),
         compareMatches
     );
-
 
     for (auto attrPair: matchesUpdated)
     {
@@ -754,13 +754,15 @@ bool AclRule::updateActions(AclRule& updatedRule)
             newAction.second.aclaction);
     };
 
-    set_symmetric_difference(m_actions.begin(), m_actions.end(),
+    set_difference(
         updatedRule.m_actions.begin(),
         updatedRule.m_actions.end(),
+        m_actions.begin(), m_actions.end(),
         back_inserter(actionsUpdated),
         compareActions
     );
-    set_difference(m_actions.begin(), m_actions.end(),
+    set_difference(
+        m_actions.begin(), m_actions.end(),
         updatedRule.m_actions.begin(),
         updatedRule.m_actions.end(),
         back_inserter(actionsDisabled),
