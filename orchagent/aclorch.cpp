@@ -4153,7 +4153,7 @@ void AclOrch::registerFlexCounter(const AclRule& rule)
     SWSS_LOG_ENTER();
 
     string ruleIdentifier = generateAclRuleIdentifierInCountersDb(rule);
-    FieldValueTuple ruleNameToCounterOid(ruleIdentifier, sai_serialize_object_id(rule.getOid()));
+    FieldValueTuple ruleNameToCounterOid(ruleIdentifier, sai_serialize_object_id(rule.getCounterOid()));
 
     unordered_set<string> serializedCounterStatAttrs;
     for (auto counterAttrPair: aclCounterLookup)
