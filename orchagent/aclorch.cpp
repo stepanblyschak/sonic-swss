@@ -4182,7 +4182,7 @@ void AclOrch::deregisterFlexCounter(const AclRule& rule)
 
 string AclOrch::generateAclRuleIdentifierInCountersDb(const AclRule& rule) const
 {
-    string ruleIdentifier = rule.getTableId() + m_acl_counter_rule_map.getTableNameSeparator() + rule.getId();
+    return rule.getTableId() + m_acl_counter_rule_map.getTableNameSeparator() + rule.getId();
 }
 
 bool AclOrch::getAclBindPortId(Port &port, sai_object_id_t &port_id)
