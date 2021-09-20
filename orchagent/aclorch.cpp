@@ -1316,6 +1316,11 @@ bool AclRuleMirror::create()
 {
     SWSS_LOG_ENTER();
 
+    if (!createCounter())
+    {
+        return false;
+    }
+
     return activate();
 }
 
