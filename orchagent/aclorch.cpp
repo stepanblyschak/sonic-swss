@@ -683,29 +683,31 @@ bool AclRule::updateMatches(AclRule& updatedRule)
     vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> matchesUpdated;
     vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> matchesDisabled;
 
-    auto compareMatches = [](auto& oldMatch, auto& newMatch)
-    {
-        if (oldMatch.first != newMatch.first)
-        {
-            return oldMatch.first < newMatch.first;
-        }
-        return compareAclField(oldMatch.first,
-            oldMatch.second.aclfield,
-            newMatch.second.aclfield);
-    };
-
     set_difference(
         updatedRule.m_matches.begin(),
         updatedRule.m_matches.end(),
         m_matches.begin(), m_matches.end(),
         back_inserter(matchesUpdated),
-        compareMatches
+        [](auto& oldMatch, auto& newMatch)
+        {
+            if (oldMatch.first != newMatch.first)
+            {
+                return oldMatch.first < newMatch.first;
+            }
+            return compareAclField(oldMatch.first,
+                oldMatch.second.aclfield,
+                newMatch.second.aclfield);
+        }
     );
-    set_difference(m_matches.begin(), m_matches.end(),
+    set_difference(
+        m_matches.begin(), m_matches.end(),
         updatedRule.m_matches.begin(),
         updatedRule.m_matches.end(),
         back_inserter(matchesDisabled),
-        compareMatches
+        [](auto& oldMatch, auto& newMatch)
+        {
+            return oldMatch.first < newMatch.first;
+        }
     );
 
     for (auto attrPair: matchesUpdated)
@@ -743,30 +745,31 @@ bool AclRule::updateActions(AclRule& updatedRule)
     vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> actionsUpdated;
     vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> actionsDisabled;
 
-    auto compareActions = [](auto& oldAction, auto& newAction)
-    {
-        if (oldAction.first != newAction.first)
-        {
-            return oldAction.first < newAction.first;
-        }
-        return compareAclAction(oldAction.first,
-            oldAction.second.aclaction,
-            newAction.second.aclaction);
-    };
-
     set_difference(
         updatedRule.m_actions.begin(),
         updatedRule.m_actions.end(),
         m_actions.begin(), m_actions.end(),
         back_inserter(actionsUpdated),
-        compareActions
+        [](auto& oldAction, auto& newAction)
+        {
+            if (oldAction.first != newAction.first)
+            {
+                return oldAction.first < newAction.first;
+            }
+            return compareAclAction(oldAction.first,
+                oldAction.second.aclaction,
+                newAction.second.aclaction);
+        }
     );
     set_difference(
         m_actions.begin(), m_actions.end(),
         updatedRule.m_actions.begin(),
         updatedRule.m_actions.end(),
         back_inserter(actionsDisabled),
-        compareActions
+        [](auto& oldAction, auto& newAction)
+        {
+            return oldAction.first < newAction.first;
+        }
     );
 
     for (auto attrPair: actionsUpdated)
