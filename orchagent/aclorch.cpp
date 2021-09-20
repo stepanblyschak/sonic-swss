@@ -4153,7 +4153,8 @@ void AclOrch::registerFlexCounter(const AclRule& rule)
 {
     SWSS_LOG_ENTER();
 
-    FieldValueTuple ruleNameToCounterOid(rule.getId(), sai_serialize_object_id(rule.getOid()));
+    string ruleIdentifier = generateAclRuleIdentifierInCountersDb(rule);
+    FieldValueTuple ruleNameToCounterOid(ruleIdentifier, sai_serialize_object_id(rule.getOid()));
 
     unordered_set<string> serializedCounterStatAttrs;
     for (auto counterAttrPair: aclCounterLookup)
@@ -4174,8 +4175,14 @@ void AclOrch::registerFlexCounter(const AclRule& rule)
 
 void AclOrch::deregisterFlexCounter(const AclRule& rule)
 {
+    string ruleIdentifier = generateAclRuleIdentifierInCountersDb(rule);
     m_db.hdel(COUNTERS_ACL_COUNTER_RULE_MAP, rule.getId());
     m_flex_counter_manager.clearCounterIdList(rule.getCounterOid());
+}
+
+string AclOrch::generateAclRuleIdentifierInCountersDb(const AclRule& rule) const
+{
+    string ruleIdentifier = rule.getTableId() + m_acl_counter_rule_map.getTableNameSeparator() + rule.getId();
 }
 
 bool AclOrch::getAclBindPortId(Port &port, sai_object_id_t &port_id)

@@ -156,7 +156,7 @@ public:
         return m_id;
     }
 
-    string getTableId()
+    string getTableId() const
     {
         return m_tableId;
     }
@@ -453,6 +453,7 @@ private:
 
     void registerFlexCounter(const AclRule& rule);
     void deregisterFlexCounter(const AclRule& rule);
+    string generateAclRuleIdentifierInCountersDb(const AclRule& rule) const;
 
     map<sai_object_id_t, AclTable> m_AclTables;
     // TODO: Move all ACL tables into one map: name -> instance
