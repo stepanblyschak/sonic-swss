@@ -656,8 +656,8 @@ bool AclRule::update(AclRule& updatedRule)
         }
     }
 
-    updatedRule.m_ruleOid = updatedRule.m_ruleOid;
-    updatedRule.m_counterOid = updatedRule.m_counterOid;
+    updatedRule.m_ruleOid = m_ruleOid;
+    updatedRule.m_counterOid = m_counterOid;
 
     return true;
 }
@@ -675,8 +675,9 @@ bool AclRule::updatePriority(AclRule& updatedRule)
     auto status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
     if (status != SAI_STATUS_SUCCESS)
     {
-        SWSS_LOG_ERROR("Failed to update match attribute %d on ACL rule %s in ACL table %s",
-                        attr.id, getId().c_str(), getTableId().c_str());
+        SWSS_LOG_ERROR("Failed to update priority on ACL rule %s in ACL table %s: %s",
+                        getId().c_str(), getTableId().c_str(),
+                        sai_serialize_status(status).c_str());
         return false;
     }
 
@@ -688,6 +689,8 @@ bool AclRule::updateMatches(AclRule& updatedRule)
     vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> matchesUpdated;
     vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> matchesDisabled;
 
+    // Diff by value to get new matches and updated matches
+    // in a single set_difference pass.
     set_difference(
         updatedRule.m_matches.begin(),
         updatedRule.m_matches.end(),
@@ -704,6 +707,9 @@ bool AclRule::updateMatches(AclRule& updatedRule)
                 newMatch.second.aclfield);
         }
     );
+
+    // Diff by key only to get delete matches. Assuming that
+    // deleted matches mean setting a match attribute to disabled state.
     set_difference(
         m_matches.begin(), m_matches.end(),
         updatedRule.m_matches.begin(),
@@ -722,10 +728,14 @@ bool AclRule::updateMatches(AclRule& updatedRule)
         auto status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
         if (status != SAI_STATUS_SUCCESS)
         {
-            SWSS_LOG_ERROR("Failed to update match attribute %d on ACL rule %s in ACL table %s",
-                            attr.id, getId().c_str(), getTableId().c_str());
+            SWSS_LOG_ERROR("Failed to update match attribute %d on ACL rule %s in ACL table %s: %s",
+                           attr.id, getId().c_str(), getTableId().c_str(),
+                           sai_serialize_status(status).c_str());
             return false;
         }
+
+        SWSS_LOG_INFO("Successfully updated match attribute %d on ACL rule %s in ACL table %s",
+                      attr.id, getId().c_str(), getTableId().c_str());
     }
 
     for (auto attrPair: matchesDisabled)
@@ -736,10 +746,14 @@ bool AclRule::updateMatches(AclRule& updatedRule)
         auto status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
         if (status != SAI_STATUS_SUCCESS)
         {
-            SWSS_LOG_ERROR("Failed to update match attribute %d on ACL rule %s in ACL table %s",
-                            attr.id, getId().c_str(), getTableId().c_str());
+            SWSS_LOG_ERROR("Failed to update match attribute %d on ACL rule %s in ACL table %s: %s",
+                           attr.id, getId().c_str(), getTableId().c_str(),
+                           sai_serialize_status(status).c_str());
             return false;
         }
+
+        SWSS_LOG_INFO("Successfully updated match attribute %d on ACL rule %s in ACL table %s",
+                      attr.id, getId().c_str(), getTableId().c_str());
     }
 
     return true;
@@ -750,6 +764,8 @@ bool AclRule::updateActions(AclRule& updatedRule)
     vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> actionsUpdated;
     vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> actionsDisabled;
 
+    // Diff by value to get new action and updated actions
+    // in a single set_difference pass.
     set_difference(
         updatedRule.m_actions.begin(),
         updatedRule.m_actions.end(),
@@ -766,6 +782,9 @@ bool AclRule::updateActions(AclRule& updatedRule)
                 newAction.second.aclaction);
         }
     );
+
+    // Diff by key only to get delete actions. Assuming that
+    // action matches mean setting a action attribute to disabled state.
     set_difference(
         m_actions.begin(), m_actions.end(),
         updatedRule.m_actions.begin(),
@@ -784,10 +803,14 @@ bool AclRule::updateActions(AclRule& updatedRule)
         auto status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
         if (status != SAI_STATUS_SUCCESS)
         {
-            SWSS_LOG_ERROR("Failed to update action attribute %d on ACL rule %s in ACL table %s",
-                            attr.id, getId().c_str(), getTableId().c_str());
+            SWSS_LOG_ERROR("Failed to update action attribute %d on ACL rule %s in ACL table %s: %s",
+                           attr.id, getId().c_str(), getTableId().c_str(),
+                           sai_serialize_status(status).c_str());
             return false;
         }
+
+        SWSS_LOG_INFO("Successfully updated action attribute %d on ACL rule %s in ACL table %s",
+                      attr.id, getId().c_str(), getTableId().c_str());
     }
 
     for (auto attrPair: actionsDisabled)
@@ -798,10 +821,14 @@ bool AclRule::updateActions(AclRule& updatedRule)
         auto status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
         if (status != SAI_STATUS_SUCCESS)
         {
-            SWSS_LOG_ERROR("Failed to update action attribute %d on ACL rule %s in ACL table %s",
-                            attr.id, getId().c_str(), getTableId().c_str());
+            SWSS_LOG_ERROR("Failed to update action attribute %d on ACL rule %s in ACL table %s: %s",
+                           attr.id, getId().c_str(), getTableId().c_str(),
+                           sai_serialize_status(status).c_str());
             return false;
         }
+
+        SWSS_LOG_INFO("Successfully updated action attribute %d on ACL rule %s in ACL table %s",
+                      attr.id, getId().c_str(), getTableId().c_str());
     }
 
     return true;
