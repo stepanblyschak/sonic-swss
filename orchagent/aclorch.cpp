@@ -3246,7 +3246,7 @@ bool AclOrch::addAclRule(shared_ptr<AclRule> newRule, string table_id)
         return false;
     }
 
-    if (newRule->getCounterOid() != SAI_NULL_OBJECT_ID)
+    if (newRule->hasCounter())
     {
         registerFlexCounter(*newRule);
     }
@@ -3264,7 +3264,8 @@ bool AclOrch::removeAclRule(string table_id, string rule_id)
     }
 
     auto rule = getAclRule(table_id, rule_id);
-    if (rule->getCounterOid() != SAI_NULL_OBJECT_ID)
+
+    if (rule->hasCounter())
     {
         deregisterFlexCounter(*rule);
     }
@@ -3432,7 +3433,7 @@ bool AclOrch::updateAclRule(shared_ptr<AclRule> updatedRule)
         return false;
     }
 
-    if (updatedRule->getCounterOid() != SAI_NULL_OBJECT_ID)
+    if (updatedRule->hasCounter())
     {
         registerFlexCounter(*updatedRule);
     }

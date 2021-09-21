@@ -168,6 +168,11 @@ public:
         return m_counterOid;
     }
 
+    bool hasCounter() const
+    {
+        return getCounterOid() != SAI_NULL_OBJECT_ID;
+    }
+
     vector<sai_object_id_t> getInPorts()
     {
         return m_inPorts;
