@@ -179,6 +179,11 @@ namespace aclorch_test
         {
             return Portal::AclOrchInternal::getAclTables(m_aclOrch);
         }
+
+        bool updateAclRule(shared_ptr<AclRule> updatedRule)
+        {
+            return m_aclOrch->updateAclRule(updatedRule);
+        }
     };
 
     struct AclOrchTest : public AclTest
@@ -1275,6 +1280,15 @@ namespace aclorch_test
 
         ASSERT_TRUE(ruleObj->enableCounter());
         ASSERT_TRUE(validateAclRuleCounter(*ruleObj, true));
+        
+        // update ACL rule
+
+        // auto newRule = std::make_shared<AclRule>(*ruleObj);
+        // newRule->validateAddPriority(RULE_PRIORITY, "800");
+        // newRule->validateAddMatch(MATCH_ETHER_TYPE, "2048");
+        // newRule->validateAddAction(ACTION_PACKET_ACTION, PACKET_ACTION_DROP);
+
+        // ASSERT_TRUE(orch->updateAclRule(newRule));
 
         // delete acl rule ...
 

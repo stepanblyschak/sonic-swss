@@ -184,12 +184,14 @@ public:
 protected:
     virtual bool createCounter();
     virtual bool removeCounter();
+    virtual bool createRanges();
     virtual bool removeRanges();
     virtual bool removeRule();
 
     bool updatePriority(AclRule& updatedRule);
     bool updateMatches(AclRule& updatedRule);
     bool updateActions(AclRule& updatedRule);
+    bool updateRanges(AclRule& updatedRule);
 
     bool isActionSupported(sai_acl_entry_attr_t) const;
 
@@ -205,11 +207,14 @@ protected:
     map <sai_acl_entry_attr_t, sai_attribute_value_t> m_matches;
     map <sai_acl_entry_attr_t, sai_attribute_value_t> m_actions;
 
+    vector<sai_object_id_t> m_range_objects;
+    vector<acl_range_properties_t> m_ranges;
+
     vector<sai_object_id_t> m_inPorts;
     vector<sai_object_id_t> m_outPorts;
 
 private:
-    bool m_createCounter;
+    bool m_enableCounter;
 };
 
 class AclRulePacket: public AclRule
