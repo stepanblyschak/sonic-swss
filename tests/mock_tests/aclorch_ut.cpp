@@ -179,11 +179,6 @@ namespace aclorch_test
         {
             return Portal::AclOrchInternal::getAclTables(m_aclOrch);
         }
-
-        bool updateAclRule(shared_ptr<AclRule> updatedRule)
-        {
-            return m_aclOrch->updateAclRule(updatedRule);
-        }
     };
 
     struct AclOrchTest : public AclTest
@@ -1320,5 +1315,62 @@ namespace aclorch_test
         tableIt = orch->getAclTables().find(tableOid);
         ASSERT_EQ(tableIt, orch->getAclTables().end());
     }
+
+    TEST_F(AclOrchTest, AclRuleUpdate)
+    {
+        string acl_table_id = "acl_table_1";
+        string acl_rule_id = "acl_rule_1";
+
+        auto orch = createAclOrch();
+
+        auto kvfAclTable = deque<KeyOpFieldsValuesTuple>(
+            { { acl_table_id,
+                SET_COMMAND,
+                { { ACL_TABLE_DESCRIPTION, "TEST" },
+                  { ACL_TABLE_TYPE, TABLE_TYPE_L3 },
+                  { ACL_TABLE_STAGE, STAGE_INGRESS },
+                  { ACL_TABLE_PORTS, "1,2" } } } });
+
+        orch->doAclTableTask(kvfAclTable);
+
+        // validate acl table ...
+
+        auto acl_table_oid = orch->getTableById(acl_table_id);
+        ASSERT_NE(acl_table_oid, SAI_NULL_OBJECT_ID);
+
+        const auto &acl_tables = orch->getAclTables();
+        auto it_table = acl_tables.find(acl_table_oid);
+        ASSERT_NE(it_table, acl_tables.end());
+
+        class AclRuleTest : public AclRulePacket
+        {
+        public:
+            AclRuleTest(AclOrch* orch, string rule, string table):
+                AclRulePacket(orch, rule, table, true)
+            {}
+            bool validate() override
+            {
+                return true;
+            }
+        };
+
+        auto rule = make_shared<AclRuleTest>(orch->m_aclOrch, acl_rule_id, acl_table_id);
+        rule->validateAddPriority(RULE_PRIORITY, "800");
+        rule->validateAddMatch(MATCH_SRC_IP, "1.1.1.1/32");
+        rule->validateAddAction(ACTION_PACKET_ACTION, PACKET_ACTION_FORWARD);
+
+        ASSERT_TRUE(orch->m_aclOrch->addAclRule(rule, acl_table_id));
+        ASSERT_TRUE(validateAclRule(acl_rule_id, *rule, acl_table_oid, it_table->second));
+
+        auto updatedRule = make_shared<AclRuleTest>(*rule);
+        updatedRule->validateAddPriority(RULE_PRIORITY, "900");
+        updatedRule->validateAddMatch(MATCH_SRC_IP, "2.2.2.2/32");
+        updatedRule->validateAddMatch(MATCH_L4_DST_PORT_RANGE, "80..100");
+        updatedRule->validateAddAction(ACTION_PACKET_ACTION, PACKET_ACTION_DROP);
+
+        ASSERT_TRUE(orch->m_aclOrch->updateAclRule(updatedRule));
+        ASSERT_TRUE(validateAclRule(acl_rule_id, *updatedRule, acl_table_oid, it_table->second));
+    }
+
 
 } // namespace nsAclOrchTest
