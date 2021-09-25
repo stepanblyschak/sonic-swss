@@ -966,6 +966,59 @@ namespace aclorch_test
 
             return !aclEnable && aclOid == SAI_NULL_OBJECT_ID;
         }
+
+        bool validateAclRulePriority(const AclRule &rule, uint32_t priority)
+        {
+            auto ruleOid = Portal::AclRuleInternal::getRuleOid(&rule);
+
+            sai_attribute_t attr;
+            attr.id = SAI_ACL_ENTRY_ATTR_PRIORITY;
+
+            auto status = sai_acl_api->get_acl_entry_attribute(ruleOid, 1, &attr);
+            if (status != SAI_STATUS_SUCCESS)
+            {
+                return false;
+            }
+
+            return attr.value.u32 == priority;
+        }
+
+        string getAclRuleSaiAttribute(const AclRule& rule,
+                                      sai_acl_entry_attr_t attrId)
+        {
+            sai_attribute_t attr{};
+            attr.id = attrId;
+            auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, attrId);
+            if (!meta)
+            {
+                SWSS_LOG_THROW("SAI BUG: Failed to get attribute metadata for SAI_OBJECT_TYPE_ACL_ENTRY attribute id %d", attrId);
+            }
+
+            auto status = sai_acl_api->get_acl_entry_attribute(rule.getOid(), 1, &attr);
+            EXPECT_TRUE(status == SAI_STATUS_SUCCESS);
+
+            auto actualSaiValue = sai_serialize_attr_value(*meta, attr);
+
+            return actualSaiValue;
+        }
+
+        string getAclRangeSaiAttribute(sai_object_id_t rangeOid,
+                                            sai_acl_range_attr_t attrId)
+        {
+            sai_attribute_t attr{};
+            attr.id = attrId;
+            auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_RANGE, attrId);
+            if (!meta)
+            {
+                SWSS_LOG_THROW("SAI BUG: Failed to get attribute metadata for SAI_OBJECT_TYPE_ACL_RANGE attribute id %d", attrId);
+            }
+
+            auto status = sai_acl_api->get_acl_range_attribute(rangeOid, 1, &attr);
+            EXPECT_TRUE(status == SAI_STATUS_SUCCESS);
+
+            auto actualSaiValue = sai_serialize_attr_value(*meta, attr);
+            return actualSaiValue;
+        }
     };
 
     map<string, string> AclOrchTest::gProfileMap;
@@ -1355,21 +1408,54 @@ namespace aclorch_test
         };
 
         auto rule = make_shared<AclRuleTest>(orch->m_aclOrch, acl_rule_id, acl_table_id);
-        rule->validateAddPriority(RULE_PRIORITY, "800");
-        rule->validateAddMatch(MATCH_SRC_IP, "1.1.1.1/32");
-        rule->validateAddAction(ACTION_PACKET_ACTION, PACKET_ACTION_FORWARD);
+        ASSERT_TRUE(rule->validateAddPriority(RULE_PRIORITY, "800"));
+        ASSERT_TRUE(rule->validateAddMatch(MATCH_SRC_IP, "1.1.1.1/32"));
+        ASSERT_TRUE(rule->validateAddAction(ACTION_PACKET_ACTION, PACKET_ACTION_FORWARD));
 
         ASSERT_TRUE(orch->m_aclOrch->addAclRule(rule, acl_table_id));
-        ASSERT_TRUE(validateAclRule(acl_rule_id, *rule, acl_table_oid, it_table->second));
+        ASSERT_EQ(getAclRuleSaiAttribute(*rule, SAI_ACL_ENTRY_ATTR_PRIORITY), "800");
+        ASSERT_EQ(getAclRuleSaiAttribute(*rule, SAI_ACL_ENTRY_ATTR_FIELD_SRC_IP), "1.1.1.1&mask:255.255.255.255");
+        ASSERT_EQ(getAclRuleSaiAttribute(*rule, SAI_ACL_ENTRY_ATTR_ACTION_PACKET_ACTION), "SAI_PACKET_ACTION_FORWARD");
 
         auto updatedRule = make_shared<AclRuleTest>(*rule);
-        updatedRule->validateAddPriority(RULE_PRIORITY, "900");
-        updatedRule->validateAddMatch(MATCH_SRC_IP, "2.2.2.2/32");
-        updatedRule->validateAddMatch(MATCH_L4_DST_PORT_RANGE, "80..100");
-        updatedRule->validateAddAction(ACTION_PACKET_ACTION, PACKET_ACTION_DROP);
+        ASSERT_TRUE(updatedRule->validateAddPriority(RULE_PRIORITY, "900"));
+        ASSERT_TRUE(updatedRule->validateAddMatch(MATCH_SRC_IP, "2.2.2.2/24"));
+        ASSERT_TRUE(updatedRule->validateAddMatch(MATCH_L4_DST_PORT_RANGE, "80-100"));
+        ASSERT_TRUE(updatedRule->validateAddAction(ACTION_PACKET_ACTION, PACKET_ACTION_DROP));
 
         ASSERT_TRUE(orch->m_aclOrch->updateAclRule(updatedRule));
-        ASSERT_TRUE(validateAclRule(acl_rule_id, *updatedRule, acl_table_oid, it_table->second));
+        ASSERT_EQ(getAclRuleSaiAttribute(*rule, SAI_ACL_ENTRY_ATTR_PRIORITY), "900");
+        ASSERT_EQ(getAclRuleSaiAttribute(*rule, SAI_ACL_ENTRY_ATTR_FIELD_SRC_IP), "2.2.2.2&mask:255.255.255.0");
+        ASSERT_EQ(getAclRuleSaiAttribute(*rule, SAI_ACL_ENTRY_ATTR_ACTION_PACKET_ACTION), "SAI_PACKET_ACTION_DROP");
+        auto ranges = Portal::AclRuleInternal::getRanges(updatedRule.get());
+        ASSERT_EQ(ranges.size(), 1);
+        ASSERT_EQ(getAclRangeSaiAttribute(ranges[0], SAI_ACL_RANGE_ATTR_TYPE), "SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE");
+        ASSERT_EQ(getAclRangeSaiAttribute(ranges[0], SAI_ACL_RANGE_ATTR_LIMIT), "80,100");
+
+        auto updatedRule1 = make_shared<AclRuleTest>(*updatedRule);
+        ASSERT_TRUE(updatedRule1->validateAddMatch(MATCH_L4_DST_PORT_RANGE, "70-100"));
+        ASSERT_TRUE(updatedRule1->validateAddMatch(MATCH_L4_SRC_PORT_RANGE, "170-200"));
+
+        ASSERT_TRUE(orch->m_aclOrch->updateAclRule(updatedRule1));
+        ranges = Portal::AclRuleInternal::getRanges(updatedRule1.get());
+        ASSERT_EQ(ranges.size(), 2);
+        for (auto range: ranges)
+        {
+            if (getAclRangeSaiAttribute(range, SAI_ACL_RANGE_ATTR_TYPE) == "SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE")
+            {
+                ASSERT_EQ(getAclRangeSaiAttribute(range, SAI_ACL_RANGE_ATTR_LIMIT), "70,100");
+            }
+            else if (getAclRangeSaiAttribute(range, SAI_ACL_RANGE_ATTR_TYPE) == "SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE")
+            {
+                ASSERT_EQ(getAclRangeSaiAttribute(range, SAI_ACL_RANGE_ATTR_LIMIT), "170,200");
+            }
+            else
+            {
+                FAIL() << "Unexpected range type";
+            }
+        }
+
+        ASSERT_TRUE(orch->m_aclOrch->removeAclRule(updatedRule1->getTableId(), updatedRule1->getId()));
     }
 
 

@@ -191,7 +191,8 @@ protected:
     bool updatePriority(AclRule& updatedRule);
     bool updateMatches(AclRule& updatedRule);
     bool updateActions(AclRule& updatedRule);
-    bool updateRanges(AclRule& updatedRule);
+    bool updateMatchRanges(AclRule& updatedRule);
+    bool updateCounter(AclRule& updatedRule);
 
     bool isActionSupported(sai_acl_entry_attr_t) const;
 
@@ -208,7 +209,7 @@ protected:
     map <sai_acl_entry_attr_t, sai_attribute_value_t> m_actions;
 
     vector<sai_object_id_t> m_range_objects;
-    vector<acl_range_properties_t> m_ranges;
+    map<sai_acl_range_type_t, pair<uint32_t, uint32_t>> m_ranges;
 
     vector<sai_object_id_t> m_inPorts;
     vector<sai_object_id_t> m_outPorts;
@@ -258,6 +259,7 @@ public:
     bool validate() override;
     bool create() override;
     bool remove() override;
+    bool update(AclRule& updatedRule) override;
     bool activate();
     bool deactivate();
     void onUpdate(SubjectType, void *) override;
@@ -276,6 +278,7 @@ public:
     bool validate() override;
     bool create() override;
     bool remove() override;
+    bool update(AclRule& updatedRule) override;
     void onUpdate(SubjectType, void *) override;
 
 protected:

@@ -27,6 +27,11 @@ struct Portal
         {
             return aclRule->m_actions;
         }
+
+        static const vector<sai_object_id_t> &getRanges(const AclRule *aclRule)
+        {
+            return aclRule->m_range_objects;
+        }
     };
 
     struct AclOrchInternal

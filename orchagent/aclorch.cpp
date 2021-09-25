@@ -382,7 +382,7 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
             {
                 return false;
             }
-            m_ranges.emplace_back(SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE, min, max);
+            m_ranges[SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE] = make_pair(min, max);
         }
         else if (attr_name == MATCH_L4_DST_PORT_RANGE)
         {
@@ -391,7 +391,7 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
             {
                 return false;
             }
-            m_ranges.emplace_back(SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE, min, max);
+            m_ranges[SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE] = make_pair(min, max);
         }
         else if (attr_name == MATCH_TC)
         {
@@ -617,54 +617,49 @@ bool AclRule::update(AclRule& updatedRule)
 {
     SWSS_LOG_ENTER();
 
-    updatedRule.m_counterOid = m_counterOid;
-    if (updatedRule.m_enableCounter)
+    if (!updatePriority(updatedRule))
     {
-        if (!updatedRule.enableCounter())
-        {
-            updatedRule.remove();
-            return false;
-        }
-    }
-    else if (updatedRule.m_enableCounter)
-    {
-        if (!updatedRule.disableCounter())
-        {
-            return false;
-        }
-    }
-
-    if (!updatedRule.createRanges())
-    {
-        updatedRule.remove();
         return false;
     }
 
-    if (!updatePriority(updatedRule))
+    if (!updateMatchRanges(updatedRule))
     {
-        updatedRule.remove();
         return false;
     }
 
     if (!updateMatches(updatedRule))
     {
-        updatedRule.remove();
         return false;
     }
 
     if (!updateActions(updatedRule))
     {
-        updatedRule.remove();
-        return false;
-    }
-
-    if (!removeRanges())
-    {
-        updatedRule.remove();
         return false;
     }
 
     updatedRule.m_ruleOid = m_ruleOid;
+    updatedRule.m_counterOid = m_counterOid;
+    updatedRule.m_range_objects = m_range_objects;
+
+    return true;
+}
+
+bool AclRule::updateCounter(AclRule& updatedRule)
+{
+    if (!m_enableCounter && updatedRule.m_enableCounter)
+    {
+        if (!enableCounter())
+        {
+            return false;
+        }
+    }
+    else if (m_enableCounter && !updatedRule.m_enableCounter)
+    {
+        if (!disableCounter())
+        {
+            return false;
+        }
+    }
 
     return true;
 }
@@ -685,6 +680,50 @@ bool AclRule::updatePriority(AclRule& updatedRule)
         SWSS_LOG_ERROR("Failed to update priority on ACL rule %s in ACL table %s: %s",
                         getId().c_str(), getTableId().c_str(),
                         sai_serialize_status(status).c_str());
+        return false;
+    }
+
+    return true;
+}
+
+bool AclRule::updateMatchRanges(AclRule& updatedRule)
+{
+    sai_attribute_t attr{};
+    if (m_ranges == updatedRule.m_ranges)
+    {
+        return true;
+    }
+
+    auto& value = m_matches[SAI_ACL_ENTRY_ATTR_FIELD_ACL_RANGE_TYPE];
+    value.aclfield.enable = false;
+
+    attr.id = SAI_ACL_ENTRY_ATTR_FIELD_ACL_RANGE_TYPE;
+    attr.value = value;
+
+    auto status = sai_acl_api->set_acl_entry_attribute(getOid(), &attr);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        return false;
+    }
+
+    if (!removeRanges())
+    {
+        return false;
+    }
+
+    m_ranges = updatedRule.m_ranges;
+
+    if (!createRanges())
+    {
+        return false;
+    }
+
+    attr.value = m_matches[SAI_ACL_ENTRY_ATTR_FIELD_ACL_RANGE_TYPE];
+    attr.value.aclfield.enable = true;
+
+    status = sai_acl_api->set_acl_entry_attribute(getOid(), &attr);
+    if (status != SAI_STATUS_SUCCESS)
+    {
         return false;
     }
 
@@ -732,6 +771,10 @@ bool AclRule::updateMatches(AclRule& updatedRule)
     {
         sai_attribute_t attr {};
         tie(attr.id, attr.value) = attrPair;
+        if (attr.id == SAI_ACL_ENTRY_ATTR_FIELD_ACL_RANGE_TYPE)
+        {
+            continue;
+        }
         auto status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
         if (status != SAI_STATUS_SUCCESS)
         {
@@ -1032,21 +1075,21 @@ bool AclRule::createCounter()
 
 bool AclRule::createRanges()
 {
-    for (auto& rangeTuple: m_ranges)
+    for (auto& range: m_ranges)
     {
         sai_acl_range_type_t rangeType;
-        uint32_t min, max;
-        tie(rangeType, min, max) = rangeTuple;
-        auto* range = AclRange::create(rangeType, min, max);
+        pair<uint32_t, uint32_t> rangeValue;
+        tie(rangeType, rangeValue) = range;
+        auto rangeObject = AclRange::create(rangeType, rangeValue.first, rangeValue.second);
 
-        if (range == nullptr)
+        if (!rangeObject)
         {
-            SWSS_LOG_ERROR("Failed to create range %d, min: %d, max: %d", rangeType, min, max);
+            SWSS_LOG_ERROR("Failed to create range %d, min: %d, max: %d", rangeType, rangeValue.first, rangeValue.second);
             removeRanges();
             return false;
         }
 
-        m_range_objects.push_back(range->getOid());
+        m_range_objects.push_back(rangeObject->getOid());
     }
 
     auto& value = m_matches[SAI_ACL_ENTRY_ATTR_FIELD_ACL_RANGE_TYPE];
@@ -1060,10 +1103,19 @@ bool AclRule::removeRanges()
 {
     SWSS_LOG_ENTER();
 
-    auto res = AclRange::remove(m_range_objects.data(),
-                                static_cast<uint32_t>(m_range_objects.size()));
+    for (auto range: m_ranges)
+    {
+        sai_acl_range_type_t rangeType;
+        pair<uint32_t, uint32_t> rangeValue;
+        tie(rangeType, rangeValue) = range;
+        if (!AclRange::remove(rangeType, rangeValue.first, rangeValue.second))
+        {
+            return false;
+        }
+    }
+
     m_range_objects.clear();
-    return res;
+    return true;
 }
 
 bool AclRule::removeCounter()
@@ -1473,6 +1525,16 @@ bool AclRuleMirror::deactivate()
     m_state = false;
 
     return true;
+}
+
+bool AclRuleMirror::update(AclRule& updatedRule)
+{
+    if (!m_state)
+    {
+        return activate();
+    }
+
+    return AclRule::update(updatedRule);
 }
 
 void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
@@ -2302,6 +2364,16 @@ bool AclRuleDTelFlowWatchListEntry::remove()
     return true;
 }
 
+bool AclRuleDTelFlowWatchListEntry::update(AclRule& updatedRule)
+{
+    if (INT_session_valid)
+    {
+        return true;
+    }
+
+    return AclRule::update(updatedRule);
+}
+
 void AclRuleDTelFlowWatchListEntry::onUpdate(SubjectType type, void *cntx)
 {
     sai_attribute_value_t value;
@@ -2502,12 +2574,15 @@ bool AclRange::remove(sai_object_id_t *oids, int oidsCnt)
         {
             if (it.second->m_oid == oids[oidsCnt])
             {
-                return it.second->remove();
+                if (!it.second->remove())
+		{
+			return false;
+		}
             }
         }
     }
 
-    return false;
+    return true;
 }
 
 bool AclRange::remove()
@@ -3469,6 +3544,12 @@ bool AclOrch::updateAclRule(shared_ptr<AclRule> updatedRule)
         return false;
     }
 
+    auto rule = getAclRule(updatedRule->getTableId(), updatedRule->getId());
+    if (rule && rule->hasCounter())
+    {
+        deregisterFlexCounter(*rule);
+    }
+
     if (!m_AclTables[tableOid].updateRule(updatedRule))
     {
         return false;
@@ -3477,10 +3558,6 @@ bool AclOrch::updateAclRule(shared_ptr<AclRule> updatedRule)
     if (updatedRule->hasCounter())
     {
         registerFlexCounter(*updatedRule);
-    }
-    else
-    {
-        deregisterFlexCounter(*updatedRule);
     }
 
     return true;
