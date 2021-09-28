@@ -470,7 +470,7 @@ private:
     // TODO: Move all ACL tables into one map: name -> instance
     map<string, AclTable> m_ctrlAclTables;
 
-    static DBConnector m_db;
+    static DBConnector m_countersDb;
     static Table m_countersTable;
 
     map<acl_stage_type_t, string> m_mirrorTableId;
@@ -478,7 +478,6 @@ private:
 
     acl_capabilities_t m_aclCapabilities;
     acl_action_enum_values_capabilities_t m_aclEnumActionCapabilities;
-    Table m_acl_counter_rule_map;
     FlexCounterManager m_flex_counter_manager;
 };
 

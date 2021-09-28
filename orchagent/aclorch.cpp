@@ -19,8 +19,8 @@ map<acl_range_properties_t, AclRange*> AclRange::m_ranges;
 sai_uint32_t AclRule::m_minPriority = 0;
 sai_uint32_t AclRule::m_maxPriority = 0;
 
-swss::DBConnector AclOrch::m_db("COUNTERS_DB", 0);
-swss::Table AclOrch::m_countersTable(&m_db, "COUNTERS");
+swss::DBConnector AclOrch::m_countersDb("COUNTERS_DB", 0);
+swss::Table AclOrch::m_countersTable(&m_countersDb, "COUNTERS");
 
 extern sai_acl_api_t*    sai_acl_api;
 extern sai_port_api_t*   sai_port_api;
@@ -855,7 +855,7 @@ bool AclRule::createCounter()
 
     for (auto counterAttrPair: aclCounterLookup)
     {
-        tie(attr.id, ignore) = counterAttrPair;
+        tie(attr.id, std::ignore) = counterAttrPair;
         attr.value.booldata = true;
         counter_attrs.push_back(attr);
     }
@@ -2779,7 +2779,6 @@ AclOrch::AclOrch(vector<TableConnector>& connectors, SwitchOrch *switchOrch,
         m_neighOrch(neighOrch),
         m_routeOrch(routeOrch),
         m_dTelOrch(dtelOrch),
-        m_acl_counter_rule_map(&m_db, COUNTERS_ACL_COUNTER_RULE_MAP),
         m_flex_counter_manager(
             ACL_COUNTER_FLEX_COUNTER_GROUP,
             StatsMode::READ,
@@ -3352,6 +3351,7 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, bool enableCounter)
         return true;
     }
 
+    deregisterFlexCounter(*rule);
     if (!rule->disableCounter())
     {
         SWSS_LOG_ERROR(
@@ -3359,10 +3359,10 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, bool enableCounter)
             rule_id.c_str(),
             table_id.c_str()
         );
+        registerFlexCounter(*rule);
         return false;
     }
 
-    deregisterFlexCounter(*rule);
     return true;
 }
 
@@ -4105,14 +4105,14 @@ void AclOrch::registerFlexCounter(const AclRule& rule)
 {
     SWSS_LOG_ENTER();
 
-    string ruleIdentifier = generateAclRuleIdentifierInCountersDb(rule);
-    FieldValueTuple ruleNameToCounterOid(ruleIdentifier, sai_serialize_object_id(rule.getCounterOid()));
+    auto ruleIdentifier = generateAclRuleIdentifierInCountersDb(rule);
+    auto counterOidStr = sai_serialize_object_id(rule.getCounterOid());
 
     unordered_set<string> serializedCounterStatAttrs;
     for (auto counterAttrPair: aclCounterLookup)
     {
         sai_acl_counter_attr_t id {};
-        tie(ignore, id) = counterAttrPair;
+        tie(std::ignore, id) = counterAttrPair;
         auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_COUNTER, id);
         if (!meta)
         {
@@ -4122,19 +4122,19 @@ void AclOrch::registerFlexCounter(const AclRule& rule)
     }
 
     m_flex_counter_manager.setCounterIdList(rule.getCounterOid(), CounterType::ACL_COUNTER, serializedCounterStatAttrs);
-    m_acl_counter_rule_map.set("", {ruleNameToCounterOid});
+    m_countersDb.hset(COUNTERS_ACL_COUNTER_RULE_MAP, ruleIdentifier, counterOidStr);
 }
 
 void AclOrch::deregisterFlexCounter(const AclRule& rule)
 {
-    string ruleIdentifier = generateAclRuleIdentifierInCountersDb(rule);
-    m_db.hdel(COUNTERS_ACL_COUNTER_RULE_MAP, rule.getId());
+    auto ruleIdentifier = generateAclRuleIdentifierInCountersDb(rule);
+    m_countersDb.hdel(COUNTERS_ACL_COUNTER_RULE_MAP, rule.getId());
     m_flex_counter_manager.clearCounterIdList(rule.getCounterOid());
 }
 
 string AclOrch::generateAclRuleIdentifierInCountersDb(const AclRule& rule) const
 {
-    return rule.getTableId() + m_acl_counter_rule_map.getTableNameSeparator() + rule.getId();
+    return rule.getTableId() + m_countersTable.getTableNameSeparator() + rule.getId();
 }
 
 bool AclOrch::getAclBindPortId(Port &port, sai_object_id_t &port_id)

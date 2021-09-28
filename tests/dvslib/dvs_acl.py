@@ -521,6 +521,7 @@ class DVSAcl:
         for entry in acl_entries:
             rule = self.asic_db.wait_for_entry("ASIC_STATE:SAI_OBJECT_TYPE_ACL_ENTRY", entry)
             priority = rule.get("SAI_ACL_ENTRY_ATTR_PRIORITY", None)
+            assert priority in priorities
             self.verify_acl_rule(expected[priority], in_actions[priority], priority, entry)
 
     # FIXME: This `get_x_comparator` abstraction is a bit clunky, we should try to improve this later.
