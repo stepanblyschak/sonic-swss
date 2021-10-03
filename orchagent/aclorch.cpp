@@ -853,7 +853,7 @@ bool AclRule::createCounter()
     attr.value.oid = m_tableOid;
     counter_attrs.push_back(attr);
 
-    for (auto counterAttrPair: aclCounterLookup)
+    for (const auto& counterAttrPair: aclCounterLookup)
     {
         tie(attr.id, std::ignore) = counterAttrPair;
         attr.value.booldata = true;
@@ -2783,7 +2783,7 @@ AclOrch::AclOrch(vector<TableConnector>& connectors, SwitchOrch *switchOrch,
             ACL_COUNTER_FLEX_COUNTER_GROUP,
             StatsMode::READ,
             ACL_COUNTER_DEFAULT_POLLING_INTERVAL_MS,
-            ACL_COUNTER_DEFAULT_ENABLED_STATE 
+            ACL_COUNTER_DEFAULT_ENABLED_STATE
         )
 {
     SWSS_LOG_ENTER();
@@ -4109,7 +4109,7 @@ void AclOrch::registerFlexCounter(const AclRule& rule)
     auto counterOidStr = sai_serialize_object_id(rule.getCounterOid());
 
     unordered_set<string> serializedCounterStatAttrs;
-    for (auto counterAttrPair: aclCounterLookup)
+    for (const auto& counterAttrPair: aclCounterLookup)
     {
         sai_acl_counter_attr_t id {};
         tie(std::ignore, id) = counterAttrPair;
