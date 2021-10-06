@@ -1,5 +1,5 @@
 """Utilities for interacting with ACLs when writing VS tests."""
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List
 
 
 class DVSAcl:
