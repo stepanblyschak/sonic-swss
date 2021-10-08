@@ -167,8 +167,9 @@ public:
     }
 
     virtual bool create();
+    virtual bool update(const AclRule& updatedRule);
     virtual bool remove();
-    virtual void update(SubjectType, void *) = 0;
+    virtual void onUpdate(SubjectType, void *) = 0;
     virtual void updateInPorts();
 
     virtual bool enableCounter();
@@ -202,6 +203,13 @@ protected:
     virtual bool createCounter();
     virtual bool removeCounter();
     virtual bool removeRanges();
+
+    virtual bool updatePriority(const AclRule& updatedRule);
+    virtual bool updateMatches(const AclRule& updatedRule);
+    virtual bool updateActions(const AclRule& updatedRule);
+    virtual bool updateCounter(const AclRule& updatedRule);
+
+    virtual bool setAttribute(sai_attribute_t attr);
 
     void decreaseNextHopRefCount();
 
@@ -237,7 +245,8 @@ public:
     bool validateAddAction(string attr_name, string attr_value);
     bool validateAddMatch(string attr_name, string attr_value);
     bool validate();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
+
 protected:
     sai_object_id_t getRedirectObjectId(const string& redirect_param);
 };
@@ -272,7 +281,7 @@ public:
     bool validate();
     bool create();
     bool remove();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
     AclRuleCounters getCounters();
 
 protected:
@@ -290,7 +299,7 @@ public:
     bool validate();
     bool create();
     bool remove();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
 
 protected:
     DTelOrch *m_pDTelOrch;
@@ -305,7 +314,7 @@ public:
     AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table, acl_table_type_t type);
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
 
 protected:
     DTelOrch *m_pDTelOrch;
@@ -354,12 +363,14 @@ public:
     void unlink(sai_object_id_t portOid);
     // Add or overwrite a rule into the ACL table
     bool add(shared_ptr<AclRule> newRule);
+    // Update existing ACL rule
+    bool updateRule(shared_ptr<AclRule> updatedRule);
     // Remove a rule from the ACL table
     bool remove(string rule_id);
     // Remove all rules from the ACL table
     bool clear();
     // Update table subject to changes
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *);
 
 public:
     string id;
@@ -415,6 +426,15 @@ public:
     bool updateAclTable(string table_id, AclTable &table);
     bool addAclRule(shared_ptr<AclRule> aclRule, string table_id);
     bool removeAclRule(string table_id, string rule_id);
+
+    // Update ACL rule based on new configuration in updatedAclRule.
+    // This method calculates the diff between counter, priority,
+    // matches and actions and applies the difference to SAI.
+    // This API is limited to support actions and matches that
+    // hold a plain value, e.g: actions or matches of type
+    // SAI_ATTR_VALUE_TYPE_ACL_ACTION/FIELD_DATA_OBJECT_LIST
+    // are not supported.
+    bool updateAclRule(shared_ptr<AclRule> updatedAclRule);
     bool updateAclRule(string table_id, string rule_id, string attr_name, void *data, bool oper);
     bool updateAclRule(string table_id, string rule_id, bool enableCounter);
     AclRule* getAclRule(string table_id, string rule_id);
@@ -428,7 +448,7 @@ public:
     map<acl_table_type_t, bool> m_mirrorTableCapabilities;
 
     static sai_acl_action_type_t getAclActionFromAclEntry(sai_acl_entry_attr_t attr);
-    
+
     // Get the OID for the ACL bind point for a given port
     static bool getAclBindPortId(Port& port, sai_object_id_t& port_id);
 

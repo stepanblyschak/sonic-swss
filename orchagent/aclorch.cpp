@@ -195,6 +195,7 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
     SWSS_LOG_ENTER();
 
     sai_attribute_value_t value;
+    value.aclfield.enable = true;
 
     try
     {
@@ -533,7 +534,6 @@ bool AclRule::create()
         {
             attr.id = it.first;
             attr.value = it.second;
-            attr.value.aclfield.enable = true;
             rule_attrs.push_back(attr);
         }
     }
@@ -648,6 +648,222 @@ void AclRule::updateInPorts()
     {
         SWSS_LOG_ERROR("Failed to update ACL rule %s, rv:%d", m_id.c_str(), status);
     }
+}
+
+
+bool AclRule::update(const AclRule& updatedRule)
+{
+    SWSS_LOG_ENTER();
+
+    if (!updateCounter(updatedRule))
+    {
+        return false;
+    }
+
+    if (!updatePriority(updatedRule))
+    {
+        return false;
+    }
+
+    if (!updateMatches(updatedRule))
+    {
+        return false;
+    }
+
+    if (!updateActions(updatedRule))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool AclRule::updateCounter(const AclRule& updatedRule)
+{
+    if (updatedRule.m_createCounter)
+    {
+        if (!enableCounter())
+        {
+            return false;
+        }
+    }
+    else
+    {
+        if (!disableCounter())
+        {
+            return false;
+        }
+    }
+
+    m_createCounter = updatedRule.m_createCounter;
+
+    return true;
+}
+
+bool AclRule::updatePriority(const AclRule& updatedRule)
+{
+    if (m_priority == updatedRule.m_priority)
+    {
+        return true;
+    }
+
+    sai_attribute_t attr {};
+    attr.id = SAI_ACL_ENTRY_ATTR_PRIORITY;
+    attr.value.s32 = updatedRule.m_priority;
+    if (!setAttribute(attr))
+    {
+        return false;
+    }
+
+    m_priority = updatedRule.m_priority;
+
+    return true;
+}
+
+bool AclRule::updateMatches(const AclRule& updatedRule)
+{
+    vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> matchesUpdated;
+    vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> matchesDisabled;
+
+    // Diff by value to get new matches and updated matches
+    // in a single set_difference pass.
+    set_difference(
+        updatedRule.m_matches.begin(),
+        updatedRule.m_matches.end(),
+        m_matches.begin(), m_matches.end(),
+        back_inserter(matchesUpdated),
+        [](auto& oldMatch, auto& newMatch)
+        {
+            if (oldMatch.first != newMatch.first)
+            {
+                return oldMatch.first < newMatch.first;
+            }
+            return compareAclField(oldMatch.first,
+                oldMatch.second.aclfield,
+                newMatch.second.aclfield);
+        }
+    );
+
+    // Diff by key only to get delete matches. Assuming that
+    // deleted matches mean setting a match attribute to disabled state.
+    set_difference(
+        m_matches.begin(), m_matches.end(),
+        updatedRule.m_matches.begin(),
+        updatedRule.m_matches.end(),
+        back_inserter(matchesDisabled),
+        [](auto& oldMatch, auto& newMatch)
+        {
+            return oldMatch.first < newMatch.first;
+        }
+    );
+
+    for (const auto& attrPair: matchesDisabled)
+    {
+        sai_attribute_t attr {};
+        tie(attr.id, attr.value) = attrPair;
+        attr.value.aclfield.enable = false;
+        if (!setAttribute(attr))
+        {
+            return false;
+        }
+        m_matches.erase(static_cast<sai_acl_entry_attr_t>(attr.id));
+    }
+
+    for (const auto& attrPair: matchesUpdated)
+    {
+        sai_attribute_t attr {};
+        tie(attr.id, attr.value) = attrPair;
+        if (!setAttribute(attr))
+        {
+            return false;
+        }
+        m_matches.emplace(attrPair);
+    }
+
+    return true;
+}
+
+bool AclRule::updateActions(const AclRule& updatedRule)
+{
+    vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> actionsUpdated;
+    vector<pair<sai_acl_entry_attr_t, sai_attribute_value_t>> actionsDisabled;
+
+    // Diff by value to get new action and updated actions
+    // in a single set_difference pass.
+    set_difference(
+        updatedRule.m_actions.begin(),
+        updatedRule.m_actions.end(),
+        m_actions.begin(), m_actions.end(),
+        back_inserter(actionsUpdated),
+        [](auto& oldAction, auto& newAction)
+        {
+            if (oldAction.first != newAction.first)
+            {
+                return oldAction.first < newAction.first;
+            }
+            return compareAclAction(oldAction.first,
+                oldAction.second.aclaction,
+                newAction.second.aclaction);
+        }
+    );
+
+    // Diff by key only to get delete actions. Assuming that
+    // action matches mean setting a action attribute to disabled state.
+    set_difference(
+        m_actions.begin(), m_actions.end(),
+        updatedRule.m_actions.begin(),
+        updatedRule.m_actions.end(),
+        back_inserter(actionsDisabled),
+        [](auto& oldAction, auto& newAction)
+        {
+            return oldAction.first < newAction.first;
+        }
+    );
+
+    for (const auto& attrPair: actionsDisabled)
+    {
+        sai_attribute_t attr {};
+        tie(attr.id, attr.value) = attrPair;
+        attr.value.aclaction.enable = false;
+        if (!setAttribute(attr))
+        {
+            return false;
+        }
+        m_actions.erase(static_cast<sai_acl_entry_attr_t>(attr.id));
+    }
+
+    for (const auto& attrPair: actionsUpdated)
+    {
+        sai_attribute_t attr {};
+        tie(attr.id, attr.value) = attrPair;
+        if (!setAttribute(attr))
+        {
+            return false;
+        }
+        m_actions.emplace(attrPair);
+    }
+
+    return true;
+}
+
+bool AclRule::setAttribute(sai_attribute_t attr)
+{
+    auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, attr.id);
+    if (!meta)
+    {
+        SWSS_LOG_THROW("Failed to get metadata for attribute id %d", attr.id);
+    }
+    auto status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to update attribute %s on ACL rule %s in ACL table %s: %s",
+                        meta->attridname, getId().c_str(), getTableId().c_str(),
+                        sai_serialize_status(status).c_str());
+        return false;
+    }
+    SWSS_LOG_INFO("Successfully updated action attribute %s on ACL rule %s in ACL table %s",
+                   meta->attridname, getId().c_str(), getTableId().c_str());
+    return true;
 }
 
 AclRuleCounters AclRule::getCounters()
@@ -1110,7 +1326,7 @@ bool AclRuleL3::validate()
     return true;
 }
 
-void AclRuleL3::update(SubjectType, void *)
+void AclRuleL3::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
@@ -1358,7 +1574,7 @@ bool AclRuleMirror::remove()
     return true;
 }
 
-void AclRuleMirror::update(SubjectType type, void *cntx)
+void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
 {
     if (type != SUBJECT_TYPE_MIRROR_SESSION_CHANGE)
     {
@@ -1807,7 +2023,7 @@ bool AclTable::create()
     return status == SAI_STATUS_SUCCESS;
 }
 
-void AclTable::update(SubjectType type, void *cntx)
+void AclTable::onUpdate(SubjectType type, void *cntx)
 {
     SWSS_LOG_ENTER();
 
@@ -1993,6 +2209,36 @@ bool AclTable::remove(string rule_id)
                 rule_id.c_str(), id.c_str());
         return true;
     }
+}
+
+bool AclTable::updateRule(shared_ptr<AclRule> updatedRule)
+{
+    SWSS_LOG_ENTER();
+
+    if (!updatedRule)
+    {
+        return false;
+    }
+
+    auto ruleId = updatedRule->getId();
+    auto ruleIter = rules.find(ruleId);
+    if (ruleIter == rules.end())
+    {
+        SWSS_LOG_ERROR("Failed to update ACL rule %s as it does not exist in %s",
+                       ruleId.c_str(), id.c_str());
+        return false;
+    }
+
+    if (!ruleIter->second->update(*updatedRule))
+    {
+        SWSS_LOG_ERROR("Failed to update ACL rule %s in table %s",
+                       ruleId.c_str(), id.c_str());
+        return false;
+    }
+
+    SWSS_LOG_NOTICE("Successfully updated ACL rule %s in table %s",
+                    ruleId.c_str(), id.c_str());
+    return true;
 }
 
 bool AclTable::clear()
@@ -2184,7 +2430,7 @@ bool AclRuleDTelFlowWatchListEntry::remove()
     return true;
 }
 
-void AclRuleDTelFlowWatchListEntry::update(SubjectType type, void *cntx)
+void AclRuleDTelFlowWatchListEntry::onUpdate(SubjectType type, void *cntx)
 {
     sai_attribute_value_t value;
     sai_object_id_t session_oid = SAI_NULL_OBJECT_ID;
@@ -2292,7 +2538,7 @@ bool AclRuleDTelDropWatchListEntry::validate()
     return true;
 }
 
-void AclRuleDTelDropWatchListEntry::update(SubjectType, void *)
+void AclRuleDTelDropWatchListEntry::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
@@ -2806,13 +3052,13 @@ void AclOrch::update(SubjectType type, void *cntx)
     {
         if (type == SUBJECT_TYPE_PORT_CHANGE)
         {
-            table.second.update(type, cntx);
+            table.second.onUpdate(type, cntx);
         }
         else
         {
             for (auto& rule : table.second.rules)
             {
-                rule.second->update(type, cntx);
+                rule.second->onUpdate(type, cntx);
             }
         }
     }
@@ -3318,6 +3564,25 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, bool enableCounter)
             rule_id.c_str(),
             table_id.c_str()
         );
+        return false;
+    }
+
+    return true;
+}
+
+bool AclOrch::updateAclRule(shared_ptr<AclRule> updatedRule)
+{
+
+    auto tableId = updatedRule->getTableId();
+    sai_object_id_t tableOid = getTableById(tableId);
+    if (tableOid == SAI_NULL_OBJECT_ID)
+    {
+        SWSS_LOG_ERROR("Failed to add ACL rule in ACL table %s. Table doesn't exist", tableId.c_str());
+        return false;
+    }
+
+    if (!m_AclTables[tableOid].updateRule(updatedRule))
+    {
         return false;
     }
 
