@@ -154,7 +154,7 @@ struct AclRuleCounters
 class AclRule
 {
 public:
-    AclRule(AclOrch *pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = true);
+    AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounter = true);
     virtual bool validateAddPriority(string attr_name, string attr_value);
     virtual bool validateAddMatch(string attr_name, string attr_value);
     virtual bool validateAddAction(string attr_name, string attr_value);
@@ -168,7 +168,7 @@ public:
 
     virtual bool create();
     virtual bool remove();
-    virtual void update(SubjectType, void *) = 0;
+    virtual void onUpdate(SubjectType, void *) = 0;
     virtual void updateInPorts();
 
     virtual bool enableCounter();
@@ -195,15 +195,13 @@ public:
         return m_inPorts;
     }
 
-    static shared_ptr<AclRule> makeShared(acl_table_type_t type, AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple&);
+    static shared_ptr<AclRule> makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple&);
     virtual ~AclRule() {}
 
 protected:
     virtual bool createCounter();
     virtual bool removeCounter();
     virtual bool removeRanges();
-
-    void decreaseNextHopRefCount();
 
     bool isActionSupported(sai_acl_entry_attr_t) const;
 
@@ -212,15 +210,12 @@ protected:
     AclOrch *m_pAclOrch;
     string m_id;
     string m_tableId;
-    acl_table_type_t m_tableType;
     sai_object_id_t m_tableOid;
     sai_object_id_t m_ruleOid;
     sai_object_id_t m_counterOid;
     uint32_t m_priority;
     map <sai_acl_entry_attr_t, sai_attribute_value_t> m_matches;
     map <sai_acl_entry_attr_t, sai_attribute_value_t> m_actions;
-    string m_redirect_target_next_hop;
-    string m_redirect_target_next_hop_group;
 
     vector<sai_object_id_t> m_inPorts;
     vector<sai_object_id_t> m_outPorts;
@@ -229,50 +224,48 @@ private:
     bool m_createCounter;
 };
 
-class AclRuleL3: public AclRule
+class AclRulePacket: public AclRule
 {
 public:
-    AclRuleL3(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = true);
+    AclRulePacket(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = true);
+
+    bool create() override;
+    bool remove() override;
 
     bool validateAddAction(string attr_name, string attr_value);
-    bool validateAddMatch(string attr_name, string attr_value);
     bool validate();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
+
 protected:
     sai_object_id_t getRedirectObjectId(const string& redirect_param);
+    void decreaseNextHopRefCount();
+
+private:
+    string m_redirect_target_next_hop;
+    string m_redirect_target_next_hop_group;
 };
 
-class AclRuleL3V6: public AclRuleL3
+class AclRulePfcwd: public AclRulePacket
 {
 public:
-    AclRuleL3V6(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type);
-    bool validateAddMatch(string attr_name, string attr_value);
+    AclRulePfcwd(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = false);
 };
 
-class AclRulePfcwd: public AclRuleL3
+class AclRuleMux: public AclRulePacket
 {
 public:
-    AclRulePfcwd(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = false);
-    bool validateAddMatch(string attr_name, string attr_value);
-};
-
-class AclRuleMux: public AclRuleL3
-{
-public:
-    AclRuleMux(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = false);
-    bool validateAddMatch(string attr_name, string attr_value);
+    AclRuleMux(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = false);
 };
 
 class AclRuleMirror: public AclRule
 {
 public:
-    AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, string rule, string table, acl_table_type_t type);
+    AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
-    bool validateAddMatch(string attr_name, string attr_value);
     bool validate();
     bool create();
     bool remove();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
     AclRuleCounters getCounters();
 
 protected:
@@ -285,12 +278,12 @@ protected:
 class AclRuleDTelFlowWatchListEntry: public AclRule
 {
 public:
-    AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table, acl_table_type_t type);
+    AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
     bool create();
     bool remove();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
 
 protected:
     DTelOrch *m_pDTelOrch;
@@ -302,20 +295,19 @@ protected:
 class AclRuleDTelDropWatchListEntry: public AclRule
 {
 public:
-    AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table, acl_table_type_t type);
+    AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *) override;
 
 protected:
     DTelOrch *m_pDTelOrch;
 };
 
-class AclRuleMclag: public AclRuleL3
+class AclRuleMclag: public AclRulePacket
 {
 public:
-    AclRuleMclag(AclOrch *m_pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = false);
-    bool validateAddMatch(string attr_name, string attr_value);
+    AclRuleMclag(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = false);
     bool validate();
 };
 
@@ -359,7 +351,7 @@ public:
     // Remove all rules from the ACL table
     bool clear();
     // Update table subject to changes
-    void update(SubjectType, void *);
+    void onUpdate(SubjectType, void *);
 
 public:
     string id;

@@ -157,11 +157,10 @@ static acl_ip_type_lookup_t aclIpTypeLookup =
     { IP_TYPE_ARP_REPLY,   SAI_ACL_IP_TYPE_ARP_REPLY }
 };
 
-AclRule::AclRule(AclOrch *pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
+AclRule::AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounter) :
     m_pAclOrch(pAclOrch),
     m_id(rule),
     m_tableId(table),
-    m_tableType(type),
     m_tableOid(SAI_NULL_OBJECT_ID),
     m_ruleOid(SAI_NULL_OBJECT_ID),
     m_counterOid(SAI_NULL_OBJECT_ID),
@@ -406,15 +405,6 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
         return false;
     }
 
-    // TODO: For backwards compatibility, users can substitute IP_PROTOCOL for NEXT_HEADER.
-    // This should be removed in a future release.
-    if ((m_tableType == ACL_TABLE_MIRRORV6 || m_tableType == ACL_TABLE_L3V6)
-            && attr_name == MATCH_IP_PROTOCOL)
-    {
-        SWSS_LOG_WARN("Support for IP protocol on IPv6 tables will be removed in a future release, please switch to using NEXT_HEADER instead!");
-        attr_name = MATCH_NEXT_HEADER;
-    }
-
     m_matches[aclMatchLookup[attr_name]] = value;
 
     return true;
@@ -561,42 +551,11 @@ bool AclRule::create()
         SWSS_LOG_ERROR("Failed to create ACL rule %s, rv:%d",
                 m_id.c_str(), status);
         AclRange::remove(range_objects, range_object_list.count);
-        decreaseNextHopRefCount();
     }
 
     gCrmOrch->incCrmAclTableUsedCounter(CrmResourceType::CRM_ACL_ENTRY, m_tableOid);
 
     return (status == SAI_STATUS_SUCCESS);
-}
-
-void AclRule::decreaseNextHopRefCount()
-{
-    if (!m_redirect_target_next_hop.empty())
-    {
-        m_pAclOrch->m_neighOrch->decreaseNextHopRefCount(NextHopKey(m_redirect_target_next_hop));
-        m_redirect_target_next_hop.clear();
-    }
-    if (!m_redirect_target_next_hop_group.empty())
-    {
-        NextHopGroupKey target = NextHopGroupKey(m_redirect_target_next_hop_group);
-        m_pAclOrch->m_routeOrch->decreaseNextHopRefCount(target);
-        // remove next hop group in case it's not used by anything else
-        if (m_pAclOrch->m_routeOrch->isRefCounterZero(target))
-        {
-            if (m_pAclOrch->m_routeOrch->removeNextHopGroup(target))
-            {
-                SWSS_LOG_DEBUG("Removed acl redirect target next hop group '%s'", m_redirect_target_next_hop_group.c_str());
-            }
-            else
-            {
-                SWSS_LOG_ERROR("Failed to remove unused next hop group '%s'", m_redirect_target_next_hop_group.c_str());
-                // FIXME: what else could we do here?
-            }
-        }
-        m_redirect_target_next_hop_group.clear();
-    }
-
-    return;
 }
 
 bool AclRule::isActionSupported(sai_acl_entry_attr_t action) const
@@ -624,8 +583,6 @@ bool AclRule::remove()
     gCrmOrch->decCrmAclTableUsedCounter(CrmResourceType::CRM_ACL_ENTRY, m_tableOid);
 
     m_ruleOid = SAI_NULL_OBJECT_ID;
-
-    decreaseNextHopRefCount();
 
     res = removeRanges();
     res &= removeCounter();
@@ -672,7 +629,7 @@ AclRuleCounters AclRule::getCounters()
     return AclRuleCounters(counter_attr[0].value.u64, counter_attr[1].value.u64);
 }
 
-shared_ptr<AclRule> AclRule::makeShared(acl_table_type_t type, AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple& data)
+shared_ptr<AclRule> AclRule::makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple& data)
 {
     string action;
     bool action_found = false;
@@ -698,65 +655,33 @@ shared_ptr<AclRule> AclRule::makeShared(acl_table_type_t type, AclOrch *acl, Mir
         throw runtime_error("ACL rule action is not found in rule " + rule);
     }
 
-    if (type != ACL_TABLE_L3 &&
-        type != ACL_TABLE_L3V6 &&
-        type != ACL_TABLE_MIRROR &&
-        type != ACL_TABLE_MIRRORV6 &&
-        type != ACL_TABLE_MIRROR_DSCP &&
-        type != ACL_TABLE_DTEL_FLOW_WATCHLIST &&
-        type != ACL_TABLE_DTEL_DROP_WATCHLIST &&
-        type != ACL_TABLE_MCLAG &&
-        type != ACL_TABLE_DROP)
-    {
-        throw runtime_error("Unknown table type");
-    }
-
     /* Mirror rules can exist in both tables */
     if (aclMirrorStageLookup.find(action) != aclMirrorStageLookup.cend() ||
         action == ACTION_MIRROR_ACTION /* implicitly ingress in old schema */)
     {
-        return make_shared<AclRuleMirror>(acl, mirror, rule, table, type);
+        return make_shared<AclRuleMirror>(acl, mirror, rule, table);
     }
-    /* L3 rules can exist only in L3 table */
-    else if (type == ACL_TABLE_L3)
+    else if (aclL3ActionLookup.find(action) != aclL3ActionLookup.cend())
     {
-        return make_shared<AclRuleL3>(acl, rule, table, type);
+        return make_shared<AclRulePacket>(acl, rule, table);
     }
-    /* L3V6 rules can exist only in L3V6 table */
-    else if (type == ACL_TABLE_L3V6)
+    else if (aclDTelFlowOpTypeLookup.find(action) != aclDTelFlowOpTypeLookup.cend())
     {
-        return make_shared<AclRuleL3V6>(acl, rule, table, type);
-    }
-    /* Pfcwd rules can exist only in PFCWD table */
-    else if (type == ACL_TABLE_PFCWD)
-    {
-        return make_shared<AclRulePfcwd>(acl, rule, table, type);
-    }
-    else if (type == ACL_TABLE_DTEL_FLOW_WATCHLIST)
-    {
-        if (dtel)
+        if (!dtel)
         {
-            return make_shared<AclRuleDTelFlowWatchListEntry>(acl, dtel, rule, table, type);
-        } else {
             throw runtime_error("DTel feature is not enabled. Watchlists cannot be configured");
         }
-    }
-    else if (type == ACL_TABLE_DTEL_DROP_WATCHLIST)
-    {
-        if (dtel)
+
+        if (action == ACTION_DTEL_DROP_REPORT_ENABLE ||
+            action == ACTION_DTEL_TAIL_DROP_REPORT_ENABLE ||
+            action == ACTION_DTEL_REPORT_ALL_PACKETS)
         {
-            return make_shared<AclRuleDTelDropWatchListEntry>(acl, dtel, rule, table, type);
-        } else {
-            throw runtime_error("DTel feature is not enabled. Watchlists cannot be configured");
+            return make_shared<AclRuleDTelDropWatchListEntry>(acl, dtel, rule, table);
         }
-    }
-    else if (type == ACL_TABLE_MCLAG)
-    {
-        return make_shared<AclRuleMclag>(acl, rule, table, type);
-    }
-    else if (type == ACL_TABLE_DROP)
-    {
-        return make_shared<AclRulePfcwd>(acl, rule, table, type);
+        else
+        {
+            return make_shared<AclRuleDTelFlowWatchListEntry>(acl, dtel, rule, table);
+        }
     }
 
     throw runtime_error("Wrong combination of table type and action in rule " + rule);
@@ -913,12 +838,12 @@ bool AclRule::removeCounter()
     return true;
 }
 
-AclRuleL3::AclRuleL3(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRule(aclOrch, rule, table, type, createCounter)
+AclRulePacket::AclRulePacket(AclOrch *aclOrch, string rule, string table, bool createCounter) :
+        AclRule(aclOrch, rule, table, createCounter)
 {
 }
 
-bool AclRuleL3::validateAddAction(string attr_name, string _attr_value)
+bool AclRulePacket::validateAddAction(string attr_name, string _attr_value)
 {
     SWSS_LOG_ENTER();
 
@@ -996,7 +921,7 @@ bool AclRuleL3::validateAddAction(string attr_name, string _attr_value)
 }
 
 // This method should return sai attribute id of the redirect destination
-sai_object_id_t AclRuleL3::getRedirectObjectId(const string& redirect_value)
+sai_object_id_t AclRulePacket::getRedirectObjectId(const string& redirect_value)
 {
 
     string target = redirect_value;
@@ -1069,36 +994,7 @@ sai_object_id_t AclRuleL3::getRedirectObjectId(const string& redirect_value)
     return SAI_NULL_OBJECT_ID;
 }
 
-bool AclRuleL3::validateAddMatch(string attr_name, string attr_value)
-{
-    if (attr_name == MATCH_DSCP)
-    {
-        SWSS_LOG_ERROR("DSCP match is not supported for table type L3");
-        return false;
-    }
-
-    if (attr_name == MATCH_SRC_IPV6 || attr_name == MATCH_DST_IPV6)
-    {
-        SWSS_LOG_ERROR("IPv6 address match is not supported for table type L3");
-        return false;
-    }
-
-    if (attr_name == MATCH_ICMPV6_TYPE || attr_name == MATCH_ICMPV6_CODE)
-    {
-        SWSS_LOG_ERROR("ICMPv6 match is not supported for table type L3");
-        return false;
-    }
-
-    if (attr_name == MATCH_NEXT_HEADER)
-    {
-        SWSS_LOG_ERROR("IPv6 Next Header match is not supported for table type L3");
-        return false;
-    }
-
-    return AclRule::validateAddMatch(attr_name, attr_value);
-}
-
-bool AclRuleL3::validate()
+bool AclRulePacket::validate()
 {
     SWSS_LOG_ENTER();
 
@@ -1110,72 +1006,75 @@ bool AclRuleL3::validate()
     return true;
 }
 
-void AclRuleL3::update(SubjectType, void *)
+bool AclRulePacket::create()
+{
+    if (!AclRule::create())
+    {
+        decreaseNextHopRefCount();
+        return false;
+    }
+
+    return true;
+}
+
+bool AclRulePacket::remove()
+{
+    if (!AclRule::remove())
+    {
+        return false;
+    }
+
+    decreaseNextHopRefCount();
+    return true;
+}
+
+void AclRulePacket::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
 
-AclRulePfcwd::AclRulePfcwd(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRuleL3(aclOrch, rule, table, type, createCounter)
+void AclRulePacket::decreaseNextHopRefCount()
 {
-}
-
-bool AclRulePfcwd::validateAddMatch(string attr_name, string attr_value)
-{
-    return AclRule::validateAddMatch(attr_name, attr_value);
-}
-
-AclRuleMux::AclRuleMux(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRuleL3(aclOrch, rule, table, type, createCounter)
-{
-}
-
-bool AclRuleMux::validateAddMatch(string attr_name, string attr_value)
-{
-    return AclRule::validateAddMatch(attr_name, attr_value);
-}
-
-AclRuleL3V6::AclRuleL3V6(AclOrch *aclOrch, string rule, string table, acl_table_type_t type) :
-        AclRuleL3(aclOrch, rule, table, type)
-{
-}
-
-
-bool AclRuleL3V6::validateAddMatch(string attr_name, string attr_value)
-{
-    if (attr_name == MATCH_DSCP)
+    if (!m_redirect_target_next_hop.empty())
     {
-        SWSS_LOG_ERROR("DSCP match is not supported for table type L3V6");
-        return false;
+        m_pAclOrch->m_neighOrch->decreaseNextHopRefCount(NextHopKey(m_redirect_target_next_hop));
+        m_redirect_target_next_hop.clear();
+    }
+    if (!m_redirect_target_next_hop_group.empty())
+    {
+        NextHopGroupKey target = NextHopGroupKey(m_redirect_target_next_hop_group);
+        m_pAclOrch->m_routeOrch->decreaseNextHopRefCount(target);
+        // remove next hop group in case it's not used by anything else
+        if (m_pAclOrch->m_routeOrch->isRefCounterZero(target))
+        {
+            if (m_pAclOrch->m_routeOrch->removeNextHopGroup(target))
+            {
+                SWSS_LOG_DEBUG("Removed acl redirect target next hop group '%s'", m_redirect_target_next_hop_group.c_str());
+            }
+            else
+            {
+                SWSS_LOG_ERROR("Failed to remove unused next hop group '%s'", m_redirect_target_next_hop_group.c_str());
+                // FIXME: what else could we do here?
+            }
+        }
+        m_redirect_target_next_hop_group.clear();
     }
 
-    if (attr_name == MATCH_SRC_IP || attr_name == MATCH_DST_IP)
-    {
-        SWSS_LOG_ERROR("IPv4 address match is not supported for table type L3V6");
-        return false;
-    }
-
-    if (attr_name == MATCH_ICMP_TYPE || attr_name == MATCH_ICMP_CODE)
-    {
-        SWSS_LOG_ERROR("ICMPv4 match is not supported for table type L3V6");
-        return false;
-    }
-
-    if (attr_name == MATCH_ETHER_TYPE)
-    {
-        SWSS_LOG_ERROR("Ethertype match is not supported for table type L3V6");
-        return false;
-    }
-
-    // TODO: For backwards compatibility, users can substitute IP_PROTOCOL for NEXT_HEADER.
-    // Should add a check for IP_PROTOCOL in a future release.
-
-    return AclRule::validateAddMatch(attr_name, attr_value);
+    return;
 }
 
+AclRulePfcwd::AclRulePfcwd(AclOrch *aclOrch, string rule, string table, bool createCounter) :
+        AclRulePacket(aclOrch, rule, table, createCounter)
+{
+}
 
-AclRuleMirror::AclRuleMirror(AclOrch *aclOrch, MirrorOrch *mirror, string rule, string table, acl_table_type_t type) :
-        AclRule(aclOrch, rule, table, type),
+AclRuleMux::AclRuleMux(AclOrch *aclOrch, string rule, string table, bool createCounter) :
+        AclRulePacket(aclOrch, rule, table, createCounter)
+{
+}
+
+AclRuleMirror::AclRuleMirror(AclOrch *aclOrch, MirrorOrch *mirror, string rule, string table) :
+        AclRule(aclOrch, rule, table),
         m_state(false),
         m_pMirrorOrch(mirror)
 {
@@ -1208,70 +1107,6 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
     m_actions[action] = sai_attribute_value_t{};
 
     return AclRule::validateAddAction(attr_name, attr_value);
-}
-
-bool AclRuleMirror::validateAddMatch(string attr_name, string attr_value)
-{
-    if ((m_tableType == ACL_TABLE_L3 || m_tableType == ACL_TABLE_L3V6)
-        && attr_name == MATCH_DSCP)
-    {
-        SWSS_LOG_ERROR("DSCP match is not supported for the table of type L3");
-        return false;
-    }
-
-    if ((m_tableType == ACL_TABLE_MIRROR_DSCP &&
-                aclMatchLookup.find(attr_name) != aclMatchLookup.end() &&
-                attr_name != MATCH_DSCP))
-    {
-        SWSS_LOG_ERROR("%s match is not supported for the table of type MIRROR_DSCP",
-                attr_name.c_str());
-        return false;
-    }
-
-    /*
-     * Type of Tables and Supported Match Types (Configuration)
-     * |---------------------------------------------------|
-     * |    Match Type     | TABLE_MIRROR | TABLE_MIRRORV6 |
-     * |---------------------------------------------------|
-     * | MATCH_SRC_IP      |      √       |                |
-     * | MATCH_DST_IP      |      √       |                |
-     * |---------------------------------------------------|
-     * | MATCH_ICMP_TYPE   |      √       |                |
-     * | MATCH_ICMP_CODE   |      √       |                |
-     * |---------------------------------------------------|
-     * | MATCH_ICMPV6_TYPE |              |       √        |
-     * | MATCH_ICMPV6_CODE |              |       √        |
-     * |---------------------------------------------------|
-     * | MATCH_SRC_IPV6    |              |       √        |
-     * | MATCH_DST_IPV6    |              |       √        |
-     * |---------------------------------------------------|
-     * | MARTCH_ETHERTYPE  |      √       |                |
-     * |---------------------------------------------------|
-     */
-
-    if (m_tableType == ACL_TABLE_MIRROR &&
-            (attr_name == MATCH_SRC_IPV6 || attr_name == MATCH_DST_IPV6 ||
-             attr_name == MATCH_ICMPV6_TYPE || attr_name == MATCH_ICMPV6_CODE ||
-             attr_name == MATCH_NEXT_HEADER))
-    {
-        SWSS_LOG_ERROR("%s match is not supported for the table of type MIRROR",
-                attr_name.c_str());
-        return false;
-    }
-
-    // TODO: For backwards compatibility, users can substitute IP_PROTOCOL for NEXT_HEADER.
-    // This check should be expanded to include IP_PROTOCOL in a future release.
-    if (m_tableType == ACL_TABLE_MIRRORV6 &&
-            (attr_name == MATCH_SRC_IP || attr_name == MATCH_DST_IP ||
-             attr_name == MATCH_ICMP_TYPE || attr_name == MATCH_ICMP_CODE ||
-             attr_name == MATCH_ETHER_TYPE))
-    {
-        SWSS_LOG_ERROR("%s match is not supported for the table of type MIRRORv6",
-                attr_name.c_str());
-        return false;
-    }
-
-    return AclRule::validateAddMatch(attr_name, attr_value);
 }
 
 bool AclRuleMirror::validate()
@@ -1358,7 +1193,7 @@ bool AclRuleMirror::remove()
     return true;
 }
 
-void AclRuleMirror::update(SubjectType type, void *cntx)
+void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
 {
     if (type != SUBJECT_TYPE_MIRROR_SESSION_CHANGE)
     {
@@ -1387,19 +1222,9 @@ void AclRuleMirror::update(SubjectType type, void *cntx)
     }
 }
 
-AclRuleMclag::AclRuleMclag(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
-        AclRuleL3(aclOrch, rule, table, type, createCounter)
+AclRuleMclag::AclRuleMclag(AclOrch *aclOrch, string rule, string table, bool createCounter) :
+        AclRulePacket(aclOrch, rule, table, createCounter)
 {
-}
-
-bool AclRuleMclag::validateAddMatch(string attr_name, string attr_value)
-{
-    if (attr_name != MATCH_IP_TYPE && attr_name != MATCH_OUT_PORTS)
-    {
-        return false;
-    }
-
-    return AclRule::validateAddMatch(attr_name, attr_value);
 }
 
 bool AclRuleMclag::validate()
@@ -1807,7 +1632,7 @@ bool AclTable::create()
     return status == SAI_STATUS_SUCCESS;
 }
 
-void AclTable::update(SubjectType type, void *cntx)
+void AclTable::onUpdate(SubjectType type, void *cntx)
 {
     SWSS_LOG_ENTER();
 
@@ -2026,8 +1851,8 @@ AclRuleCounters AclRuleMirror::getCounters()
     return cnt;
 }
 
-AclRuleDTelFlowWatchListEntry::AclRuleDTelFlowWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table, acl_table_type_t type) :
-        AclRule(aclOrch, rule, table, type),
+AclRuleDTelFlowWatchListEntry::AclRuleDTelFlowWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table) :
+        AclRule(aclOrch, rule, table),
         m_pDTelOrch(dtel)
 {
 }
@@ -2184,7 +2009,7 @@ bool AclRuleDTelFlowWatchListEntry::remove()
     return true;
 }
 
-void AclRuleDTelFlowWatchListEntry::update(SubjectType type, void *cntx)
+void AclRuleDTelFlowWatchListEntry::onUpdate(SubjectType type, void *cntx)
 {
     sai_attribute_value_t value;
     sai_object_id_t session_oid = SAI_NULL_OBJECT_ID;
@@ -2241,8 +2066,8 @@ void AclRuleDTelFlowWatchListEntry::update(SubjectType type, void *cntx)
     }
 }
 
-AclRuleDTelDropWatchListEntry::AclRuleDTelDropWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table, acl_table_type_t type) :
-        AclRule(aclOrch, rule, table, type),
+AclRuleDTelDropWatchListEntry::AclRuleDTelDropWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table) :
+        AclRule(aclOrch, rule, table),
         m_pDTelOrch(dtel)
 {
 }
@@ -2292,7 +2117,7 @@ bool AclRuleDTelDropWatchListEntry::validate()
     return true;
 }
 
-void AclRuleDTelDropWatchListEntry::update(SubjectType, void *)
+void AclRuleDTelDropWatchListEntry::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
@@ -2806,13 +2631,13 @@ void AclOrch::update(SubjectType type, void *cntx)
     {
         if (type == SUBJECT_TYPE_PORT_CHANGE)
         {
-            table.second.update(type, cntx);
+            table.second.onUpdate(type, cntx);
         }
         else
         {
             for (auto& rule : table.second.rules)
             {
-                rule.second->update(type, cntx);
+                rule.second->onUpdate(type, cntx);
             }
         }
     }
@@ -3553,7 +3378,7 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
 
             try
             {
-                newRule = AclRule::makeShared(type, this, m_mirrorOrch, m_dTelOrch, rule_id, table_id, t);
+                newRule = AclRule::makeShared(this, m_mirrorOrch, m_dTelOrch, rule_id, table_id, t);
             }
             catch (exception &e)
             {

@@ -3,7 +3,7 @@
 #include "pbhrule.h"
 
 AclRulePbh::AclRulePbh(AclOrch *pAclOrch, string rule, string table, bool createCounter) :
-    AclRule(pAclOrch, rule, table, ACL_TABLE_PBH, createCounter)
+    AclRule(pAclOrch, rule, table, createCounter)
 {
 }
 
@@ -107,7 +107,7 @@ bool AclRulePbh::validate()
     return true;
 }
 
-void AclRulePbh::update(SubjectType, void *)
+void AclRulePbh::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
