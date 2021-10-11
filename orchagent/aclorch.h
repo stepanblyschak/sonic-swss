@@ -52,6 +52,9 @@
 #define MATCH_INNER_L4_SRC_PORT "INNER_L4_SRC_PORT"
 #define MATCH_INNER_L4_DST_PORT "INNER_L4_DST_PORT"
 
+#define BIND_POINT_TYPE_PORT "PORT"
+#define BIND_POINT_TYPE_PORTCHANNEL "PORTCHANNEL"
+
 #define ACTION_PACKET_ACTION                "PACKET_ACTION"
 #define ACTION_REDIRECT_ACTION              "REDIRECT_ACTION"
 #define ACTION_DO_NOT_NAT_ACTION            "DO_NOT_NAT_ACTION"
@@ -95,6 +98,9 @@
 #define RULE_OPER_DELETE        1
 
 typedef map<string, sai_acl_entry_attr_t> acl_rule_attr_lookup_t;
+typedef map<string, sai_acl_table_attr_t> acl_table_attr_lookup_t;
+typedef map<string, sai_acl_range_type_t> acl_range_type_lookup_t;
+typedef map<string, sai_acl_bind_point_type_t> acl_bind_point_type_lookup_t;
 typedef map<string, sai_acl_ip_type_t> acl_ip_type_lookup_t;
 typedef map<string, sai_acl_dtel_flow_op_t> acl_dtel_flow_op_type_lookup_t;
 typedef map<string, sai_packet_action_t> acl_packet_action_lookup_t;
@@ -103,6 +109,15 @@ typedef map<acl_stage_type_t, set<sai_acl_action_type_t>> acl_capabilities_t;
 typedef map<sai_acl_action_type_t, set<int32_t>> acl_action_enum_values_capabilities_t;
 
 class AclOrch;
+
+struct AclTableType
+{
+    string m_name;
+    vector<sai_acl_bind_point_type_t> m_bpoint_types;
+    map<sai_acl_table_attr_t, sai_attribute_value_t> m_matches;
+    vector<sai_acl_range_type_t> m_matchRanges;
+    vector<sai_acl_action_type_t> m_acl_actions;
+};
 
 class AclRange
 {
@@ -323,10 +338,12 @@ public:
     sai_object_id_t getOid() { return m_oid; }
     string getId() { return id; }
 
+    string getTableTypeName() { return type.m_name; }
+
     void setDescription(const string &value) { description = value; }
     const string& getDescription() const { return description; }
 
-    bool validateAddType(const acl_table_type_t &value);
+    bool validateAddType(const string &value);
     bool validateAddStage(const acl_stage_type_t &value);
     bool validateAddPorts(const unordered_set<string> &value);
     bool validate();
@@ -357,7 +374,7 @@ public:
     string id;
     string description;
 
-    acl_table_type_t type = ACL_TABLE_UNKNOWN;
+    AclTableType type;
     acl_stage_type_t stage = ACL_STAGE_INGRESS;
 
     // Map port oid to group member oid
@@ -412,12 +429,12 @@ public:
     AclRule* getAclRule(string table_id, string rule_id);
 
     bool isCombinedMirrorV6Table();
-    bool isAclMirrorTableSupported(acl_table_type_t type) const;
+    bool isAclMirrorTableSupported(string type) const;
     bool isAclActionSupported(acl_stage_type_t stage, sai_acl_action_type_t action) const;
     bool isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const;
 
     bool m_isCombinedMirrorV6Table = true;
-    map<acl_table_type_t, bool> m_mirrorTableCapabilities;
+    map<string, bool> m_mirrorTableCapabilities;
 
     static sai_acl_action_type_t getAclActionFromAclEntry(sai_acl_entry_attr_t attr);
     
@@ -435,6 +452,7 @@ private:
     void doTask(Consumer &consumer);
     void doAclTableTask(Consumer &consumer);
     void doAclRuleTask(Consumer &consumer);
+    void doAclTableTypeTask(Consumer &consumer);
     void doTask(SelectableTimer &timer);
     void init(vector<TableConnector>& connectors, PortsOrch *portOrch, MirrorOrch *mirrorOrch, NeighOrch *neighOrch, RouteOrch *routeOrch);
 
@@ -454,8 +472,8 @@ private:
     sai_status_t bindAclTable(AclTable &aclTable, bool bind = true);
     sai_status_t deleteUnbindAclTable(sai_object_id_t table_oid);
 
-    bool isAclTableTypeUpdated(acl_table_type_t table_type, AclTable &aclTable);
-    bool processAclTableType(string type, acl_table_type_t &table_type);
+    bool isAclTableTypeUpdated(string table_type, AclTable &aclTable);
+    bool processAclTableType(string type, AclTable &table);
     bool isAclTableStageUpdated(acl_stage_type_t acl_stage, AclTable &aclTable);
     bool processAclTableStage(string stage, acl_stage_type_t &acl_stage);
     bool processAclTablePorts(string portList, AclTable &aclTable);
@@ -468,6 +486,7 @@ private:
     sai_status_t createDTelWatchListTables();
     sai_status_t deleteDTelWatchListTables();
 
+    map<string, AclTableType> m_AclTableTypes;
     map<sai_object_id_t, AclTable> m_AclTables;
     // TODO: Move all ACL tables into one map: name -> instance
     map<string, AclTable> m_ctrlAclTables;

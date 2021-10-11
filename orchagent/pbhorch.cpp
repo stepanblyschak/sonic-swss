@@ -180,7 +180,7 @@ bool PbhOrch::createPbhTable(const PbhTable &table)
 
     AclTable pbhTable(this->aclOrch, table.name);
 
-    if (!pbhTable.validateAddType(acl_table_type_t::ACL_TABLE_PBH))
+    if (!pbhTable.validateAddType(TABLE_TYPE_PBH))
     {
         SWSS_LOG_ERROR("Failed to configure PBH table(%s) type", table.key.c_str());
         return false;

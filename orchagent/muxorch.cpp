@@ -702,7 +702,6 @@ MuxAclHandler::MuxAclHandler(sai_object_id_t port, string alias)
     SWSS_LOG_ENTER();
 
     // There is one handler instance per MUX port
-    acl_table_type_t table_type = ACL_TABLE_DROP;
     string table_name = MUX_ACL_TABLE_NAME;
     string rule_name = MUX_ACL_RULE_NAME;
 
@@ -717,7 +716,7 @@ MuxAclHandler::MuxAclHandler(sai_object_id_t port, string alias)
         // First time handling of Mux Table, create ACL table, and bind
         createMuxAclTable(port, table_name);
         shared_ptr<AclRuleMux> newRule =
-                make_shared<AclRuleMux>(gAclOrch, rule_name, table_name, table_type);
+                make_shared<AclRuleMux>(gAclOrch, rule_name, table_name);
         createMuxAclRule(newRule, table_name);
     }
     else
@@ -728,7 +727,7 @@ MuxAclHandler::MuxAclHandler(sai_object_id_t port, string alias)
         if (rule == nullptr)
         {
             shared_ptr<AclRuleMux> newRule =
-                    make_shared<AclRuleMux>(gAclOrch, rule_name, table_name, table_type);
+                    make_shared<AclRuleMux>(gAclOrch, rule_name, table_name);
             createMuxAclRule(newRule, table_name);
         }
         else
@@ -784,7 +783,7 @@ void MuxAclHandler::createMuxAclTable(sai_object_id_t port, string strTable)
         return;
     }
 
-    acl_table.type = ACL_TABLE_DROP;
+    acl_table.type.m_name = TABLE_TYPE_DROP;
     acl_table.id = strTable;
     acl_table.link(port);
     acl_table.stage = ACL_STAGE_INGRESS;
