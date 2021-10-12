@@ -434,6 +434,17 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
         return false;
     }
 
+    auto attrId = aclMatchLookup[attr_name];
+    if (attrId >= SAI_ACL_ENTRY_ATTR_FIELD_START && attrId <= SAI_ACL_ENTRY_ATTR_FIELD_END)
+    {
+        // auto tableAttrId = SAI_ACL_TABLE_ATTR_FIELD_START + (attrId - SAI_ACL_ENTRY_ATTR_FIELD_START);
+
+    }
+    else /* Range Type */
+    {
+
+    }
+
     m_matches[aclMatchLookup[attr_name]] = value;
 
     return true;
@@ -1347,7 +1358,7 @@ bool AclTable::validateAddPorts(const unordered_set<string> &value)
 
 bool AclTable::validate()
 {
-    if (getTableTypeName().empty() || stage == ACL_STAGE_UNKNOWN)
+    if (stage == ACL_STAGE_UNKNOWN)
         return false;
 
     return true;
@@ -2902,14 +2913,26 @@ bool AclOrch::addAclTableType(const AclTableType& tableType)
 {
     SWSS_LOG_ENTER();
 
+    if (m_AclTableTypes.find(tableType.name) != m_AclTableTypes.end())
+    {
+        SWSS_LOG_ERROR("Table type %s already exists", tableType.name.c_str());
+        return false;
+    }
+    
     m_AclTableTypes.emplace(tableType.name, tableType);
     return true;
 }
 
 bool AclOrch::removeAclTableType(const string& tableTypeName)
 {
-    m_AclTableTypes.erase(tableTypeName);
-    return true;
+    auto erased = m_AclTableTypes.erase(tableTypeName);
+
+    if (!erased)
+    {
+        SWSS_LOG_ERROR("Unknown table type %s", tableTypeName.c_str());
+    }
+
+    return erased;
 }
 
 bool AclOrch::addAclRule(shared_ptr<AclRule> newRule, string table_id)
@@ -3315,6 +3338,7 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
                 continue;
             }
 
+            auto type = m_AclTables[table_oid].getTableTypeName();
             try
             {
                 newRule = AclRule::makeShared(this, m_mirrorOrch, m_dTelOrch, rule_id, table_id, t);
@@ -3325,8 +3349,8 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
                 it = consumer.m_toSync.erase(it);
                 return;
             }
-            // bool bHasTCPFlag = false;
-            // bool bHasIPProtocol = false;
+            bool bHasTCPFlag = false;
+            bool bHasIPProtocol = false;
             for (const auto& itr : kfvFieldsValues(t))
             {
                 string attr_name = to_upper(fvField(itr));
@@ -3335,11 +3359,11 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
                 SWSS_LOG_INFO("ATTRIBUTE: %s %s", attr_name.c_str(), attr_value.c_str());
                 if (attr_name == MATCH_TCP_FLAGS)
                 {
-                    // bHasTCPFlag = true;
+                    bHasTCPFlag = true;
                 }
                 if (attr_name == MATCH_IP_PROTOCOL || attr_name == MATCH_NEXT_HEADER)
                 {
-                    // bHasIPProtocol = true;
+                    bHasIPProtocol = true;
                 }
                 if (newRule->validateAddPriority(attr_name, attr_value))
                 {
@@ -3362,28 +3386,28 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
             }
             // If acl rule is to match TCP_FLAGS, and IP_PROTOCOL(NEXT_HEADER) is not set
             // we set IP_PROTOCOL(NEXT_HEADER) to 6 to match TCP explicitly
-            // if (bHasTCPFlag && !bHasIPProtocol)
-            // {
-            //     string attr_name;
-            //     if (type == TABLE_TYPE_MIRRORV6 || type == TABLE_TYPE_L3V6)
-            //     {
-            //         attr_name = MATCH_NEXT_HEADER;
-            //     }
-            //     else
-            //     {
-            //         attr_name = MATCH_IP_PROTOCOL;
+            if (bHasTCPFlag && !bHasIPProtocol)
+            {
+                string attr_name;
+                if (type == TABLE_TYPE_MIRRORV6 || type == TABLE_TYPE_L3V6)
+                {
+                    attr_name = MATCH_NEXT_HEADER;
+                }
+                else
+                {
+                    attr_name = MATCH_IP_PROTOCOL;
 
-            //     }
-            //     string attr_value = std::to_string(TCP_PROTOCOL_NUM);
-            //     if (newRule->validateAddMatch(attr_name, attr_value))
-            //     {
-            //         SWSS_LOG_INFO("Automatically added match attribute '%s : %s'", attr_name.c_str(), attr_value.c_str());
-            //     }
-            //     else
-            //     {
-            //         SWSS_LOG_ERROR("Failed to add attribute '%s : %s'", attr_name.c_str(), attr_value.c_str());
-            //     }
-            // }
+                }
+                string attr_value = std::to_string(TCP_PROTOCOL_NUM);
+                if (newRule->validateAddMatch(attr_name, attr_value))
+                {
+                    SWSS_LOG_INFO("Automatically added match attribute '%s : %s'", attr_name.c_str(), attr_value.c_str());
+                }
+                else
+                {
+                    SWSS_LOG_ERROR("Failed to add attribute '%s : %s'", attr_name.c_str(), attr_value.c_str());
+                }
+            }
 
             // validate and create ACL rule
             if (bAllAttributesOk && newRule->validate())

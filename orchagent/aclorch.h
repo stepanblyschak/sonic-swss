@@ -115,7 +115,6 @@ struct AclTableType
     string name;
     vector<sai_acl_bind_point_type_t> bpointTypes;
     map<sai_acl_table_attr_t, sai_attribute_value_t> matches;
-    // map<sai_acl_table_attr_t, shared_ptr<ISaiAttributeValue>> _matches;
     vector<int32_t> matchRanges;
     vector<sai_acl_action_type_t> aclActions;
 };
@@ -146,16 +145,6 @@ public:
         m_tableType.matches.emplace(matchField, value);
         return *this;
     }
-
-    // AclTableTypeBuilder& withMatch(sai_acl_table_attr_t matchField, shared_ptr<ISaiAttributeValue> value)
-    // {
-    //     if (!(matchField >= SAI_ACL_TABLE_ATTR_FIELD_START && matchField <= SAI_ACL_TABLE_ATTR_FIELD_END))
-    //     {
-    //         SWSS_LOG_THROW("Invalid match table attribute %d", matchField);
-    //     }
-    //     m_tableType._matches.emplace(matchField, value);
-    //     return *this;
-    // }
 
     AclTableTypeBuilder& withRangeMatch(sai_acl_range_type_t rangeType)
     {
