@@ -112,11 +112,70 @@ class AclOrch;
 
 struct AclTableType
 {
-    string m_name;
-    vector<sai_acl_bind_point_type_t> m_bpoint_types;
-    map<sai_acl_table_attr_t, sai_attribute_value_t> m_matches;
-    vector<sai_acl_range_type_t> m_matchRanges;
-    vector<sai_acl_action_type_t> m_acl_actions;
+    string name;
+    vector<sai_acl_bind_point_type_t> bpointTypes;
+    map<sai_acl_table_attr_t, sai_attribute_value_t> matches;
+    // map<sai_acl_table_attr_t, shared_ptr<ISaiAttributeValue>> _matches;
+    vector<int32_t> matchRanges;
+    vector<sai_acl_action_type_t> aclActions;
+};
+
+class AclTableTypeBuilder
+{
+public:
+    AclTableTypeBuilder& withName(string name)
+    {
+        m_tableType.name = name;
+        return *this;
+    }
+
+    AclTableTypeBuilder& withBindPointType(sai_acl_bind_point_type_t bpointType)
+    {
+        m_tableType.bpointTypes.push_back(bpointType);
+        return *this;
+    }
+
+    AclTableTypeBuilder& withMatch(sai_acl_table_attr_t matchField, bool enabled = true)
+    {
+        sai_attribute_value_t value;
+        if (!(matchField >= SAI_ACL_TABLE_ATTR_FIELD_START && matchField <= SAI_ACL_TABLE_ATTR_FIELD_END))
+        {
+            SWSS_LOG_THROW("Invalid match table attribute %d", matchField);
+        }
+        value.booldata = enabled;
+        m_tableType.matches.emplace(matchField, value);
+        return *this;
+    }
+
+    // AclTableTypeBuilder& withMatch(sai_acl_table_attr_t matchField, shared_ptr<ISaiAttributeValue> value)
+    // {
+    //     if (!(matchField >= SAI_ACL_TABLE_ATTR_FIELD_START && matchField <= SAI_ACL_TABLE_ATTR_FIELD_END))
+    //     {
+    //         SWSS_LOG_THROW("Invalid match table attribute %d", matchField);
+    //     }
+    //     m_tableType._matches.emplace(matchField, value);
+    //     return *this;
+    // }
+
+    AclTableTypeBuilder& withRangeMatch(sai_acl_range_type_t rangeType)
+    {
+        sai_attribute_value_t value;
+        m_tableType.matchRanges.push_back(rangeType);
+        value.s32list.count = static_cast<uint32_t>(m_tableType.matchRanges.size());
+        value.s32list.list = m_tableType.matchRanges.data();
+        m_tableType.matches[SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE] = value;
+        return *this;
+    }
+
+    AclTableType build()
+    {
+        auto tableType = m_tableType;
+        m_tableType = AclTableType();
+        return tableType;
+    }
+
+private:
+    AclTableType m_tableType;
 };
 
 class AclRange
@@ -338,7 +397,7 @@ public:
     sai_object_id_t getOid() { return m_oid; }
     string getId() { return id; }
 
-    string getTableTypeName() { return type.m_name; }
+    string getTableTypeName() { return type.name; }
 
     void setDescription(const string &value) { description = value; }
     const string& getDescription() const { return description; }
@@ -369,6 +428,12 @@ public:
     bool clear();
     // Update table subject to changes
     void onUpdate(SubjectType, void *);
+
+    bool hasBindPointType(sai_acl_bind_point_type_t bpointType)
+    {
+        auto it = find(type.bpointTypes.begin(), type.bpointTypes.end(), bpointType);
+        return it != type.bpointTypes.end();
+    }
 
 public:
     string id;
@@ -422,13 +487,17 @@ public:
     bool removeAclTable(string table_id);
     bool updateAclTable(AclTable &currentTable, AclTable &newTable);
     bool updateAclTable(string table_id, AclTable &table);
+    bool addAclTableType(const AclTableType& tableType);
+    bool removeAclTableType(const string& tableTypeName);
     bool addAclRule(shared_ptr<AclRule> aclRule, string table_id);
     bool removeAclRule(string table_id, string rule_id);
     bool updateAclRule(string table_id, string rule_id, string attr_name, void *data, bool oper);
     bool updateAclRule(string table_id, string rule_id, bool enableCounter);
     AclRule* getAclRule(string table_id, string rule_id);
 
-    bool isCombinedMirrorV6Table();
+    bool isCombinedMirrorV6Table() const;
+    bool isAclMirrorV6Supported() const;
+    bool isAclMirrorV4Supported() const;
     bool isAclMirrorTableSupported(string type) const;
     bool isAclActionSupported(acl_stage_type_t stage, sai_acl_action_type_t action) const;
     bool isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const;
@@ -455,6 +524,7 @@ private:
     void doAclTableTypeTask(Consumer &consumer);
     void doTask(SelectableTimer &timer);
     void init(vector<TableConnector>& connectors, PortsOrch *portOrch, MirrorOrch *mirrorOrch, NeighOrch *neighOrch, RouteOrch *routeOrch);
+    void initDefaultTableTypes();
 
     void queryMirrorTableCapability();
     void queryAclActionCapability();

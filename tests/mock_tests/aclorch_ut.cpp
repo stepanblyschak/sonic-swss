@@ -99,7 +99,26 @@ namespace aclorch_test
     TEST_F(AclTest, Create_L3_Acl_Table)
     {
         AclTable acltable;
-        acltable.type.m_name = TABLE_TYPE_L3;
+        AclTableTypeBuilder builder;
+        auto l3TableType = builder.withName(TABLE_TYPE_L3)
+            .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
+            .withBindPointType(SAI_ACL_BIND_POINT_TYPE_LAG)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IP)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMP_TYPE)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMP_CODE)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
+            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
+            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE)
+            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE)
+            .build();
+        acltable.type = l3TableType;
         auto res = createAclTable(acltable);
 
         ASSERT_TRUE(res->ret_val);
@@ -438,14 +457,14 @@ namespace aclorch_test
             fields.push_back({ "SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS", "true" });
             fields.push_back({ "SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE", "2:SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE,SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE" });
 
-            if (acl_table.type.m_name == TABLE_TYPE_L3)
+            if (acl_table.type.name == TABLE_TYPE_L3)
             {
                 fields.push_back({ "SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE", "true" });
                 fields.push_back({ "SAI_ACL_TABLE_ATTR_FIELD_SRC_IP", "true" });
                 fields.push_back({ "SAI_ACL_TABLE_ATTR_FIELD_DST_IP", "true" });
                 fields.push_back({ "SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL", "true" });
             }
-            else if (acl_table.type.m_name == TABLE_TYPE_L3V6)
+            else if (acl_table.type.name == TABLE_TYPE_L3V6)
             {
                 fields.push_back({ "SAI_ACL_TABLE_ATTR_FIELD_SRC_IPV6", "true" });
                 fields.push_back({ "SAI_ACL_TABLE_ATTR_FIELD_DST_IPV6", "true" });
@@ -480,11 +499,11 @@ namespace aclorch_test
             fields.push_back({ "SAI_ACL_ENTRY_ATTR_ADMIN_STATE", "true" });
             fields.push_back({ "SAI_ACL_ENTRY_ATTR_ACTION_COUNTER", counter_id });
 
-            if (acl_table.type.m_name == TABLE_TYPE_L3)
+            if (acl_table.type.name == TABLE_TYPE_L3)
             {
                 fields.push_back({ "SAI_ACL_ENTRY_ATTR_FIELD_SRC_IP", "1.2.3.4&mask:255.255.255.255" });
             }
-            if (acl_table.type.m_name == TABLE_TYPE_L3V6)
+            if (acl_table.type.name == TABLE_TYPE_L3V6)
             {
                 fields.push_back({ "SAI_ACL_ENTRY_ATTR_FIELD_SRC_IPV6", "::1.2.3.4&mask:ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff" });
             }
@@ -636,7 +655,7 @@ namespace aclorch_test
             uint32_t aclorchAclTableBindingCount = 0;
             for (auto const &kv: Portal::AclOrchInternal::getAclTables(aclOrch))
             {
-                if (kv.second.type.m_name == TABLE_TYPE_PFCWD)
+                if (kv.second.type.name == TABLE_TYPE_PFCWD)
                 {
                     aclorchAclTableBindingCount += 1; // port binding only
                 }
@@ -758,14 +777,14 @@ namespace aclorch_test
                 {
                     if (fv.second == TABLE_TYPE_L3)
                     {
-                        if (acl_table.type.m_name != TABLE_TYPE_L3)
+                        if (acl_table.type.name != TABLE_TYPE_L3)
                         {
                             return false;
                         }
                     }
                     else if (fv.second == TABLE_TYPE_L3V6)
                     {
-                        if (acl_table.type.m_name != TABLE_TYPE_L3V6)
+                        if (acl_table.type.name != TABLE_TYPE_L3V6)
                         {
                             return false;
                         }

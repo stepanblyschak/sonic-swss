@@ -783,7 +783,7 @@ void MuxAclHandler::createMuxAclTable(sai_object_id_t port, string strTable)
         return;
     }
 
-    acl_table.type.m_name = TABLE_TYPE_DROP;
+    acl_table.type.name = TABLE_TYPE_DROP;
     acl_table.id = strTable;
     acl_table.link(port);
     acl_table.stage = ACL_STAGE_INGRESS;

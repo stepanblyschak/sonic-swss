@@ -335,12 +335,12 @@ void PfcWdAclHandler::createPfcAclTable(sai_object_id_t port, string strTable, b
 
     if (ingress) 
     {
-        aclTable.type.m_name = TABLE_TYPE_DROP;
+        aclTable.type.name = TABLE_TYPE_DROP;
         aclTable.stage = ACL_STAGE_INGRESS;
     } 
     else 
     {
-        aclTable.type.m_name = TABLE_TYPE_PFCWD;
+        aclTable.type.name = TABLE_TYPE_PFCWD;
         aclTable.stage = ACL_STAGE_EGRESS;
     }
     
