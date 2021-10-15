@@ -104,7 +104,7 @@ bool AclRulePbh::validate()
         return false;
     }
 
-    return true;
+    return AclRule::validate();
 }
 
 void AclRulePbh::onUpdate(SubjectType, void *)

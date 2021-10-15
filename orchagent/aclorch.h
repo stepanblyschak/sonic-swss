@@ -146,6 +146,12 @@ public:
         return *this;
     }
 
+    AclTableTypeBuilder& withAction(sai_acl_action_type_t action)
+    {
+        m_tableType.aclActions.push_back(action);
+        return *this;
+    }
+
     AclTableTypeBuilder& withRangeMatch(sai_acl_range_type_t rangeType)
     {
         sai_attribute_value_t value;
@@ -214,6 +220,8 @@ struct AclRuleCounters
     }
 };
 
+class AclTable;
+
 class AclRule
 {
 public:
@@ -221,7 +229,7 @@ public:
     virtual bool validateAddPriority(string attr_name, string attr_value);
     virtual bool validateAddMatch(string attr_name, string attr_value);
     virtual bool validateAddAction(string attr_name, string attr_value);
-    virtual bool validate() = 0;
+    virtual bool validate();
     bool processIpType(string type, sai_uint32_t &ip_type);
     inline static void setRulePriorities(sai_uint32_t min, sai_uint32_t max)
     {
@@ -274,6 +282,7 @@ protected:
     string m_id;
     string m_tableId;
     sai_object_id_t m_tableOid;
+    const AclTable* m_pTable;
     sai_object_id_t m_ruleOid;
     sai_object_id_t m_counterOid;
     uint32_t m_priority;

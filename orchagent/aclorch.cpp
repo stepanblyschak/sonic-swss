@@ -197,6 +197,7 @@ AclRule::AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounte
     m_createCounter(createCounter)
 {
     m_tableOid = pAclOrch->getTableById(m_tableId);
+    m_pTable = pAclOrch->getTableByOid(m_tableOid);
 }
 
 bool AclRule::validateAddPriority(string attr_name, string attr_value)
@@ -434,17 +435,6 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
         return false;
     }
 
-    auto attrId = aclMatchLookup[attr_name];
-    if (attrId >= SAI_ACL_ENTRY_ATTR_FIELD_START && attrId <= SAI_ACL_ENTRY_ATTR_FIELD_END)
-    {
-        // auto tableAttrId = SAI_ACL_TABLE_ATTR_FIELD_START + (attrId - SAI_ACL_ENTRY_ATTR_FIELD_START);
-
-    }
-    else /* Range Type */
-    {
-
-    }
-
     m_matches[aclMatchLookup[attr_name]] = value;
 
     return true;
@@ -480,6 +470,48 @@ bool AclRule::validateAddAction(string attr_name, string attr_value)
             }
         }
     }
+    return true;
+}
+
+bool AclRule::validate()
+{
+    for (auto matchPair: m_matches)
+    {
+        sai_acl_table_attr_t tableAttrId = SAI_ACL_TABLE_ATTR_END;
+        auto attrId = matchPair.first;
+        if (attrId >= SAI_ACL_ENTRY_ATTR_FIELD_START && attrId <= SAI_ACL_ENTRY_ATTR_FIELD_END)
+        {
+            tableAttrId = static_cast<sai_acl_table_attr_t>(SAI_ACL_TABLE_ATTR_FIELD_START + (attrId - SAI_ACL_ENTRY_ATTR_FIELD_START));
+        }
+        else /* Range Type */
+        {
+            auto rangeType = static_cast<sai_acl_range_attr_t>(tableAttrId);
+            if (find(m_pTable->type.matchRanges.begin(), m_pTable->type.matchRanges.end(), rangeType) == m_pTable->type.matchRanges.end())
+            {
+                return false;
+            }
+            tableAttrId = SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE;
+        }
+
+        if (m_pTable->type.matches.find(tableAttrId) == m_pTable->type.matches.end())
+        {
+            return false;
+        }
+    }
+
+    if (!m_pTable->type.aclActions.empty())
+    {
+        for (auto actionPair: m_actions)
+        {
+            auto attrId = actionPair.first;
+            auto actionType = static_cast<sai_acl_action_type_t>(attrId);
+            if (find(m_pTable->type.aclActions.begin(), m_pTable->type.aclActions.end(), actionType) == m_pTable->type.aclActions.end())
+            {
+                return false;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -1043,7 +1075,7 @@ bool AclRulePacket::validate()
         return false;
     }
 
-    return true;
+    return AclRule::validate();
 }
 
 bool AclRulePacket::create()
@@ -1158,7 +1190,7 @@ bool AclRuleMirror::validate()
         return false;
     }
 
-    return true;
+    return AclRule::validate();
 }
 
 bool AclRuleMirror::create()
@@ -1276,7 +1308,7 @@ bool AclRuleMclag::validate()
         return false;
     }
 
-    return true;
+    return AclRule::validate();
 }
 
 AclTable::AclTable(AclOrch *pAclOrch, string id) noexcept : m_pAclOrch(pAclOrch), id(id)
@@ -1359,8 +1391,9 @@ bool AclTable::validateAddPorts(const unordered_set<string> &value)
 bool AclTable::validate()
 {
     if (stage == ACL_STAGE_UNKNOWN)
+    {
         return false;
-
+    }
     return true;
 }
 
@@ -1728,7 +1761,7 @@ bool AclRuleDTelFlowWatchListEntry::validate()
         return false;
     }
 
-    return true;
+    return AclRule::validate();
 }
 
 bool AclRuleDTelFlowWatchListEntry::create()
@@ -1887,7 +1920,7 @@ bool AclRuleDTelDropWatchListEntry::validate()
         return false;
     }
 
-    return true;
+    return AclRule::validate();
 }
 
 void AclRuleDTelDropWatchListEntry::onUpdate(SubjectType, void *)
@@ -3213,11 +3246,6 @@ void AclOrch::doAclTableTask(Consumer &consumer)
                        break;
                    }
                 }
-                else if (attr_name == ACL_TABLE_SERVICES)
-                {
-                    // TODO: validate control plane ACL table has this attribute
-                    continue;
-                }
                 else
                 {
                     SWSS_LOG_ERROR("Unknown table attribute '%s'", attr_name.c_str());
@@ -3321,8 +3349,8 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
             // Get the ACL table OID
             sai_object_id_t table_oid = getTableById(table_id);
 
-            /* ACL table is not yet created or ACL table is a control plane table */
-            if (table_oid == SAI_NULL_OBJECT_ID || m_AclTables[table_oid].getTableTypeName().empty())
+            /* ACL table is not yet created */
+            if (table_oid == SAI_NULL_OBJECT_ID)
             {
 
                 /* Skip the control plane rules */
@@ -3451,53 +3479,78 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
 
         if (op == SET_COMMAND)
         {
-            AclTableType tableType;
-            tableType.name = key;
-
             bool allAttributesValid = true;
+
+            AclTableTypeBuilder builder;
+            builder.withName(key);
 
             for (auto fieldValue: kfvFieldsValues(keyOpFieldValues))
             {
                 auto field = to_upper(fvField(fieldValue));
                 auto value = to_upper(fvValue(fieldValue));
-                if (field == "MATCHES")
+
+                if (field == ACL_TABLE_TYPE_MATCHES)
                 {
                     auto matchIt = aclTableMatchLookup.find(value);
                     auto matchRangeIt = aclRangeTypeLookup.find(value);
 
-                    if (matchIt != aclTableMatchLookup.end())
-                    {
-                        sai_attribute_value_t saiValue{};
-                        saiValue.booldata = true;
-                        tableType.matches.emplace(matchIt->second, saiValue);
-                    }
-                    else
+                    if (matchIt == aclTableMatchLookup.end())
                     {
                         SWSS_LOG_ERROR("Unknown match %s", value.c_str());
                         allAttributesValid = false;
                         break;
                     }
 
-                    if (matchIt->second == SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE &&
-                        matchRangeIt != aclRangeTypeLookup.end())
+                    if (matchIt->second == SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE)
                     {
-                        // tableType.matchRanges.push_back(matchRangeIt->second);
-                        // auto& saiValue = tableType.matches[matchIt->second];
-                        // saiValue.s32list.count = static_cast<uint32_t>(tableType.matchRanges.size());
-                        // saiValue.s32list.list = reinterpret_cast<int32_t*>(tableType.matchRanges.data());
+                        if (matchRangeIt != aclRangeTypeLookup.end())
+                        {
+                            auto rangeType = matchRangeIt->second;
+                            builder.withRangeMatch(rangeType);
+                        }
+                        else
+                        {
+                            SWSS_LOG_ERROR("Unhandled range type match %s", value.c_str());
+                            allAttributesValid = false;
+                            break;
+                        }
                     }
                     else
                     {
-                        SWSS_LOG_ERROR("Unhandled range type match %s", value.c_str());
+                        auto tableAttrId = matchIt->second;
+                        builder.withMatch(tableAttrId);
+                    }
+                }
+                else if (field == ACL_TABLE_TYPE_ACTIONS)
+                {
+                    sai_acl_entry_attr_t attr = SAI_ACL_ENTRY_ATTR_ACTION_END;
+
+                    auto l3Action = aclL3ActionLookup.find(value);
+                    auto mirrorAction = aclMirrorStageLookup.find(value);
+                    auto dtelAction = aclDTelActionLookup.find(value);
+
+                    if (l3Action != aclL3ActionLookup.end())
+                    {
+                        attr = l3Action->second;
+                    }
+                    else if (mirrorAction != aclMirrorStageLookup.end())
+                    {
+                        attr = mirrorAction->second;
+                    }
+                    else if (dtelAction != aclDTelActionLookup.end())
+                    {
+                        attr = dtelAction->second;
+                    }
+                    else
+                    {
+                        SWSS_LOG_ERROR("Unknown action %s", value.c_str());
                         allAttributesValid = false;
                         break;
                     }
-                }
-                else if (field == "ACTIONS")
-                {
 
+                    builder.withAction(static_cast<sai_acl_action_type_t>(attr - SAI_ACL_ENTRY_ATTR_ACTION_START));
                 }
-                else if (field == "BIND_POINTS")
+                else if (field == ACL_TABLE_TYPE_BPOINT_TYPES)
                 {
                     auto bpointIt = aclBindPointTypeLookup.find(value);
                     if (bpointIt == aclBindPointTypeLookup.end())
@@ -3507,7 +3560,7 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
                         break;
                     }
 
-                    tableType.bpointTypes.push_back(bpointIt->second);
+                    builder.withBindPointType(bpointIt->second);
                 }
                 else
                 {
@@ -3523,7 +3576,7 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
                 break;
             }
 
-            addAclTableType(tableType);
+            addAclTableType(builder.build());
         }
         else if (op == DEL_COMMAND)
         {
@@ -3758,7 +3811,6 @@ sai_status_t AclOrch::createDTelWatchListTables()
     /* Create Flow watchlist ACL table */
 
     flowWLTable.id = TABLE_TYPE_DTEL_FLOW_WATCHLIST;
-    flowWLTable.getTableTypeName() = TABLE_TYPE_DTEL_FLOW_WATCHLIST;
     flowWLTable.description = "Dataplane Telemetry Flow Watchlist table";
 
     attr.id = SAI_ACL_TABLE_ATTR_ACL_STAGE;
@@ -3841,7 +3893,6 @@ sai_status_t AclOrch::createDTelWatchListTables()
     table_attrs.clear();
 
     dropWLTable.id = TABLE_TYPE_DTEL_DROP_WATCHLIST;
-    dropWLTable.getTableTypeName() = TABLE_TYPE_DTEL_DROP_WATCHLIST;
     dropWLTable.description = "Dataplane Telemetry Drop Watchlist table";
 
     attr.id = SAI_ACL_TABLE_ATTR_ACL_STAGE;
