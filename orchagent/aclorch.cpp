@@ -3266,8 +3266,8 @@ void AclOrch::doAclTableTask(Consumer &consumer)
         if (op == SET_COMMAND)
         {
             AclTable newTable(this);
+            string tableTypeName;
             bool bAllAttributesOk = true;
-            bool bRetryOnNextIteration = false;
 
             newTable.id = table_id;
             // Scan all attributes
@@ -3284,13 +3284,7 @@ void AclOrch::doAclTableTask(Consumer &consumer)
                 }
                 else if (attr_name == ACL_TABLE_TYPE)
                 {
-                    if (!processAclTableType(attr_value, newTable))
-                    {
-                        SWSS_LOG_ERROR("Failed to process ACL table %s type",
-                                table_id.c_str());
-                        bRetryOnNextIteration = true;
-                        break;
-                    }
+                    tableTypeName = attr_value;
                 }
                 else if (attr_name == ACL_TABLE_PORTS)
                 {
@@ -3320,11 +3314,14 @@ void AclOrch::doAclTableTask(Consumer &consumer)
                 }
             }
 
-            if (bRetryOnNextIteration)
+            auto tableType = getAclTableType(tableTypeName);
+            if (!tableType)
             {
                 it++;
                 continue;
             }
+
+            newTable.validateAddType(*tableType);
 
             // validate and create/update ACL Table
             if (bAllAttributesOk && newTable.validate())
@@ -3675,21 +3672,6 @@ bool AclOrch::isAclTableTypeUpdated(string table_type, AclTable &t)
         return !(t.getTableType().getName() == TABLE_TYPE_MIRROR || t.getTableType().getName() == TABLE_TYPE_MIRRORV6);
     }
     return (table_type != t.getTableType().getName());
-}
-
-bool AclOrch::processAclTableType(string type, AclTable &table)
-{
-    SWSS_LOG_ENTER();
-
-    auto tableType = getAclTableType(type);
-    if (!tableType)
-    {
-        return false;
-    }
-
-    table.type = *tableType;
-
-    return true;
 }
 
 bool AclOrch::isAclTableStageUpdated(acl_stage_type_t acl_stage, AclTable &t)
