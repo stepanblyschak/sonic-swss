@@ -446,8 +446,6 @@ public:
     map<string, shared_ptr<AclRule>> rules;
     // Set to store the ACL table port alias
     set<string> portSet;
-    // Set to store the not configured ACL table port alias
-    set<string> pendingPortSet;
 
 private:
     sai_object_id_t m_oid = SAI_NULL_OBJECT_ID;

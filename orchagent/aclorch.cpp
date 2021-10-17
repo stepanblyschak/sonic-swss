@@ -1361,13 +1361,13 @@ bool AclTable::validateAddPorts(const unordered_set<string> &value)
     for (const auto &itAlias: value)
     {
         Port port;
+        portSet.emplace(itAlias);
         if (!gPortsOrch->getPort(itAlias, port))
         {
             SWSS_LOG_INFO(
                 "Add unready port %s to pending list for ACL table %s",
                 itAlias.c_str(), id.c_str()
             );
-            pendingPortSet.emplace(itAlias);
             continue;
         }
 
@@ -1382,7 +1382,6 @@ bool AclTable::validateAddPorts(const unordered_set<string> &value)
         }
 
         link(bindPortOid);
-        portSet.emplace(itAlias);
     }
 
     return true;
@@ -1461,13 +1460,10 @@ void AclTable::onUpdate(SubjectType type, void *cntx)
 
     if (update->add)
     {
-        if (pendingPortSet.find(port.m_alias) != pendingPortSet.end())
+        if (portSet.find(port.m_alias) != portSet.end())
         {
             link(bind_port_id);
             bind(bind_port_id);
-
-            pendingPortSet.erase(port.m_alias);
-            portSet.emplace(port.m_alias);
 
             SWSS_LOG_NOTICE("Bound port %s to ACL table %s",
                             port.m_alias.c_str(), id.c_str());
@@ -1481,7 +1477,6 @@ void AclTable::onUpdate(SubjectType type, void *cntx)
             unlink(bind_port_id);
 
             portSet.erase(port.m_alias);
-            pendingPortSet.emplace(port.m_alias);
 
             SWSS_LOG_NOTICE("Unbound port %s from ACL table %s",
                             port.m_alias.c_str(), id.c_str());
@@ -2643,20 +2638,12 @@ void AclOrch::getAddDeletePorts(AclTable    &newT,
     set<string> newPortSet, curPortSet;
 
     // Collect new ports
-    for (auto p : newT.pendingPortSet)
-    {
-        newPortSet.insert(p);
-    }
     for (auto p : newT.portSet)
     {
         newPortSet.insert(p);
     }
 
     // Collect current ports
-    for (auto p : curT.pendingPortSet)
-    {
-        curPortSet.insert(p);
-    }
     for (auto p : curT.portSet)
     {
         curPortSet.insert(p);
@@ -2686,17 +2673,13 @@ bool AclOrch::updateAclTablePorts(AclTable &newTable, AclTable &curTable)
     {
         SWSS_LOG_NOTICE("Deleting port %s from ACL list %s",
                         p.c_str(), curTable.id.c_str());
-        if (curTable.pendingPortSet.find(p) != curTable.pendingPortSet.end())
-        {
-            SWSS_LOG_NOTICE("Removed:%s from pendingPortSet", p.c_str());
-            curTable.pendingPortSet.erase(p);
-        }
-        else if (curTable.portSet.find(p) != curTable.portSet.end())
+        if (curTable.portSet.find(p) != curTable.portSet.end())
         {
             Port port;
+            curTable.portSet.erase(p);
             if (!gPortsOrch->getPort(p, port))
             {
-                SWSS_LOG_ERROR("Unable to retrieve OID for port %s", p.c_str());
+                SWSS_LOG_INFO("Unable to retrieve OID for port %s", p.c_str());
                 continue;
             }
 
@@ -2711,7 +2694,6 @@ bool AclOrch::updateAclTablePorts(AclTable &newTable, AclTable &curTable)
                 curTable.unlink(port_oid);
             }
             SWSS_LOG_NOTICE("Removed:%s from portSet", p.c_str());
-            curTable.portSet.erase(p);
         }
     }
 
@@ -2721,9 +2703,9 @@ bool AclOrch::updateAclTablePorts(AclTable &newTable, AclTable &curTable)
         SWSS_LOG_NOTICE("Adding port %s to ACL list %s",
                         p.c_str(), curTable.id.c_str());
         Port port;
+        curTable.portSet.emplace(p);
         if (!gPortsOrch->getPort(p, port))
         {
-            curTable.pendingPortSet.emplace(p);
             continue;
         }
 
@@ -2733,8 +2715,6 @@ bool AclOrch::updateAclTablePorts(AclTable &newTable, AclTable &curTable)
             // If at all happens, lets catch it here!
             throw runtime_error("updateAclTablePorts: Couldn't find portOID");
         }
-
-        curTable.portSet.emplace(p);
 
         // Link and bind
         SWSS_LOG_NOTICE("Link and Bind:%s", p.c_str());
@@ -3595,33 +3575,10 @@ bool AclOrch::processAclTablePorts(string portList, AclTable &aclTable)
 {
     SWSS_LOG_ENTER();
 
-    auto port_list = tokenize(portList, ',');
-    set<string> ports(port_list.begin(), port_list.end());
-
-    for (auto alias : ports)
-    {
-        Port port;
-        if (!gPortsOrch->getPort(alias, port))
-        {
-            SWSS_LOG_INFO("Add unready port %s to pending list for ACL table %s",
-                    alias.c_str(), aclTable.id.c_str());
-            aclTable.pendingPortSet.emplace(alias);
-            continue;
-        }
-
-        sai_object_id_t bind_port_id;
-        if (!getAclBindPortId(port, bind_port_id))
-        {
-            SWSS_LOG_ERROR("Failed to get port %s bind port ID for ACL table %s",
-                    alias.c_str(), aclTable.id.c_str());
-            return false;
-        }
-
-        aclTable.link(bind_port_id);
-        aclTable.portSet.emplace(alias);
-    }
-
-    return true;
+    unordered_set<string> portSet;
+    auto tempPortList = tokenize(portList, ',');
+    portSet.insert(tempPortList.begin(), tempPortList.end());
+    return aclTable.validateAddPorts(portSet);
 }
 
 bool AclOrch::isAclTableTypeUpdated(string table_type, AclTable &t)
