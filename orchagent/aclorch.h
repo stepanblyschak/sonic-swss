@@ -109,65 +109,36 @@ typedef map<acl_stage_type_t, set<sai_acl_action_type_t>> acl_capabilities_t;
 typedef map<sai_acl_action_type_t, set<int32_t>> acl_action_enum_values_capabilities_t;
 
 class AclOrch;
-
 struct AclTableType
 {
+    string getName() const;
+    const set<sai_acl_bind_point_type_t>& getBindPointTypes() const;
+    const set<sai_acl_table_attr_t>& getMatches() const;
+    const set<sai_acl_range_type_t>& getRangeTypes() const;
+    const set<sai_acl_action_type_t>& getActions() const;
+
+    bool validateAclRuleMatch(sai_acl_entry_attr_t attr) const;
+    bool validateAclRuleAction(sai_acl_entry_attr_t attr) const;
+
+private:
+    friend class AclTableTypeBuilder;
+
     string name;
-    vector<sai_acl_bind_point_type_t> bpointTypes;
-    map<sai_acl_table_attr_t, sai_attribute_value_t> matches;
-    vector<int32_t> matchRanges;
-    vector<sai_acl_action_type_t> aclActions;
+    set<sai_acl_bind_point_type_t> bpointTypes;
+    set<sai_acl_table_attr_t> enabledMatches;
+    set<sai_acl_range_type_t> rangeTypes;
+    set<sai_acl_action_type_t> aclAcitons;
 };
 
 class AclTableTypeBuilder
 {
 public:
-    AclTableTypeBuilder& withName(string name)
-    {
-        m_tableType.name = name;
-        return *this;
-    }
-
-    AclTableTypeBuilder& withBindPointType(sai_acl_bind_point_type_t bpointType)
-    {
-        m_tableType.bpointTypes.push_back(bpointType);
-        return *this;
-    }
-
-    AclTableTypeBuilder& withMatch(sai_acl_table_attr_t matchField, bool enabled = true)
-    {
-        sai_attribute_value_t value;
-        if (!(matchField >= SAI_ACL_TABLE_ATTR_FIELD_START && matchField <= SAI_ACL_TABLE_ATTR_FIELD_END))
-        {
-            SWSS_LOG_THROW("Invalid match table attribute %d", matchField);
-        }
-        value.booldata = enabled;
-        m_tableType.matches.emplace(matchField, value);
-        return *this;
-    }
-
-    AclTableTypeBuilder& withAction(sai_acl_action_type_t action)
-    {
-        m_tableType.aclActions.push_back(action);
-        return *this;
-    }
-
-    AclTableTypeBuilder& withRangeMatch(sai_acl_range_type_t rangeType)
-    {
-        sai_attribute_value_t value;
-        m_tableType.matchRanges.push_back(rangeType);
-        value.s32list.count = static_cast<uint32_t>(m_tableType.matchRanges.size());
-        value.s32list.list = m_tableType.matchRanges.data();
-        m_tableType.matches[SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE] = value;
-        return *this;
-    }
-
-    AclTableType build()
-    {
-        auto tableType = m_tableType;
-        m_tableType = AclTableType();
-        return tableType;
-    }
+    AclTableTypeBuilder& withName(string name);
+    AclTableTypeBuilder& withBindPointType(sai_acl_bind_point_type_t bpointType);
+    AclTableTypeBuilder& withMatch(sai_acl_table_attr_t matchField);
+    AclTableTypeBuilder& withAction(sai_acl_action_type_t action);
+    AclTableTypeBuilder& withRangeMatch(sai_acl_range_type_t rangeType);
+    AclTableType build();
 
 private:
     AclTableType m_tableType;
@@ -281,7 +252,6 @@ protected:
     AclOrch *m_pAclOrch;
     string m_id;
     string m_tableId;
-    sai_object_id_t m_tableOid;
     const AclTable* m_pTable;
     sai_object_id_t m_ruleOid;
     sai_object_id_t m_counterOid;
@@ -392,15 +362,15 @@ public:
     AclTable() = default;
     ~AclTable() = default;
 
-    sai_object_id_t getOid() { return m_oid; }
+    sai_object_id_t getOid() const { return m_oid; }
     string getId() { return id; }
 
-    string getTableTypeName() { return type.name; }
+    const AclTableType& getTableType() const { return type; }
 
     void setDescription(const string &value) { description = value; }
     const string& getDescription() const { return description; }
 
-    bool validateAddType(const string &value);
+    bool validateAddType(const AclTableType &tableType);
     bool validateAddStage(const acl_stage_type_t &value);
     bool validateAddPorts(const unordered_set<string> &value);
     bool validate();
@@ -426,12 +396,6 @@ public:
     bool clear();
     // Update table subject to changes
     void onUpdate(SubjectType, void *);
-
-    bool hasBindPointType(sai_acl_bind_point_type_t bpointType)
-    {
-        auto it = find(type.bpointTypes.begin(), type.bpointTypes.end(), bpointType);
-        return it != type.bpointTypes.end();
-    }
 
 public:
     string id;
@@ -465,8 +429,11 @@ public:
     ~AclOrch();
     void update(SubjectType, void *);
 
+    const AclTable* getAclTable(const string& tableId);
     sai_object_id_t getTableById(string table_id);
     const AclTable* getTableByOid(sai_object_id_t oid) const;
+
+    const AclTableType* getAclTableType(const string& tableTypeName) const;
 
     static swss::Table& getCountersTable()
     {

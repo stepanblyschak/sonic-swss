@@ -783,10 +783,12 @@ void MuxAclHandler::createMuxAclTable(sai_object_id_t port, string strTable)
         return;
     }
 
-    acl_table.type.name = TABLE_TYPE_DROP;
+    auto dropType = gAclOrch->getAclTableType(TABLE_TYPE_DROP);
+    assert(dropType);
+    acl_table.validateAddType(*dropType);
     acl_table.id = strTable;
     acl_table.link(port);
-    acl_table.stage = ACL_STAGE_INGRESS;
+    acl_table.validateAddStage(ACL_STAGE_INGRESS);
     gAclOrch->addAclTable(acl_table);
 }
 

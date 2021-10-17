@@ -33,8 +33,6 @@ extern "C" {
 #define TABLE_TYPE_MUX                  "MUX"
 #define TABLE_TYPE_DROP                 "DROP"
 
-#define TABLE_TYPE_PBH "PBH"
-
 typedef enum
 {
     ACL_STAGE_UNKNOWN,
