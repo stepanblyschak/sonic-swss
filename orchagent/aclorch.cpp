@@ -15,10 +15,7 @@
 using namespace std;
 using namespace swss;
 
-mutex AclOrch::m_countersMutex;
-map<acl_range_properties_t, AclRange*> AclRange::m_ranges;
-condition_variable AclOrch::m_sleepGuard;
-bool AclOrch::m_bCollectCounters = true;
+map<AclRangePropertiesT, AclRange*> AclRange::m_ranges;
 sai_uint32_t AclRule::m_minPriority = 0;
 sai_uint32_t AclRule::m_maxPriority = 0;
 
@@ -37,7 +34,7 @@ extern CrmOrch *gCrmOrch;
 
 const int TCP_PROTOCOL_NUM = 6; // TCP protocol number
 
-acl_rule_attr_lookup_t aclMatchLookup =
+AclRuleAttrLookupT aclMatchLookup =
 {
     { MATCH_IN_PORTS,          SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS },
     { MATCH_OUT_PORTS,         SAI_ACL_ENTRY_ATTR_FIELD_OUT_PORTS },
@@ -68,32 +65,32 @@ acl_rule_attr_lookup_t aclMatchLookup =
     { MATCH_INNER_L4_DST_PORT, SAI_ACL_ENTRY_ATTR_FIELD_INNER_L4_DST_PORT }
 };
 
-static acl_range_type_lookup_t aclRangeTypeLookup =
+static AclRangeTypeLookupT aclRangeTypeLookup =
 {
     { MATCH_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE },
     { MATCH_L4_DST_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE },
 };
 
-static acl_bind_point_type_lookup_t aclBindPointTypeLookup =
+static AclBindPointTypeLookupT aclBindPointTypeLookup =
 {
     { BIND_POINT_TYPE_PORT,        SAI_ACL_BIND_POINT_TYPE_PORT },
     { BIND_POINT_TYPE_PORTCHANNEL, SAI_ACL_BIND_POINT_TYPE_LAG  },
 };
 
-static acl_rule_attr_lookup_t aclL3ActionLookup =
+static AclRuleAttrLookupT aclL3ActionLookup =
 {
     { ACTION_PACKET_ACTION,                    SAI_ACL_ENTRY_ATTR_ACTION_PACKET_ACTION },
     { ACTION_REDIRECT_ACTION,                  SAI_ACL_ENTRY_ATTR_ACTION_REDIRECT },
     { ACTION_DO_NOT_NAT_ACTION,                SAI_ACL_ENTRY_ATTR_ACTION_NO_NAT },
 };
 
-static acl_rule_attr_lookup_t aclMirrorStageLookup =
+static AclRuleAttrLookupT aclMirrorStageLookup =
 {
     { ACTION_MIRROR_INGRESS_ACTION, SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_INGRESS},
     { ACTION_MIRROR_EGRESS_ACTION,  SAI_ACL_ENTRY_ATTR_ACTION_MIRROR_EGRESS},
 };
 
-static acl_rule_attr_lookup_t aclDTelActionLookup =
+static AclRuleAttrLookupT aclDTelActionLookup =
 {
     { ACTION_DTEL_FLOW_OP,                  SAI_ACL_ENTRY_ATTR_ACTION_ACL_DTEL_FLOW_OP },
     { ACTION_DTEL_INT_SESSION,              SAI_ACL_ENTRY_ATTR_ACTION_DTEL_INT_SESSION },
@@ -103,13 +100,13 @@ static acl_rule_attr_lookup_t aclDTelActionLookup =
     { ACTION_DTEL_REPORT_ALL_PACKETS,       SAI_ACL_ENTRY_ATTR_ACTION_DTEL_REPORT_ALL_PACKETS }
 };
 
-static acl_packet_action_lookup_t aclPacketActionLookup =
+static AclPacketActionLookupT aclPacketActionLookup =
 {
     { PACKET_ACTION_FORWARD, SAI_PACKET_ACTION_FORWARD },
     { PACKET_ACTION_DROP,    SAI_PACKET_ACTION_DROP },
 };
 
-static acl_dtel_flow_op_type_lookup_t aclDTelFlowOpTypeLookup =
+static AclDtelFlowOpTypeLookupT aclDTelFlowOpTypeLookup =
 {
     { DTEL_FLOW_OP_NOP,                SAI_ACL_DTEL_FLOW_OP_NOP },
     { DTEL_FLOW_OP_POSTCARD,           SAI_ACL_DTEL_FLOW_OP_POSTCARD },
@@ -123,7 +120,7 @@ static acl_stage_type_lookup_t aclStageLookUp =
     {STAGE_EGRESS,  ACL_STAGE_EGRESS }
 };
 
-static const acl_capabilities_t defaultAclActionsSupported =
+static const AclCapabilitiesT defaultAclActionsSupported =
 {
     {
         ACL_STAGE_INGRESS,
@@ -149,7 +146,7 @@ static const acl_capabilities_t defaultAclActionsSupported =
     }
 };
 
-static acl_ip_type_lookup_t aclIpTypeLookup =
+static AclIpTypeLookupT aclIpTypeLookup =
 {
     { IP_TYPE_ANY,         SAI_ACL_IP_TYPE_ANY },
     { IP_TYPE_IP,          SAI_ACL_IP_TYPE_IP },
@@ -2035,7 +2032,7 @@ AclRange *AclRange::create(sai_acl_range_type_t type, int min, int max)
     sai_status_t status;
     sai_object_id_t range_oid = SAI_NULL_OBJECT_ID;
 
-    acl_range_properties_t rangeProperties = make_tuple(type, min, max);
+    AclRangePropertiesT rangeProperties = make_tuple(type, min, max);
     auto range_it = m_ranges.find(rangeProperties);
     if (range_it == m_ranges.end())
     {
@@ -2541,7 +2538,7 @@ void AclOrch::initDefaultAclActionCapabilities(acl_stage_type_t stage)
 
 template<typename AclActionAttrLookupT>
 void AclOrch::queryAclActionAttrEnumValues(const string &action_name,
-                                           const acl_rule_attr_lookup_t& ruleAttrLookupMap,
+                                           const AclRuleAttrLookupT& ruleAttrLookupMap,
                                            const AclActionAttrLookupT lookupMap)
 {
     vector<FieldValueTuple> fvVector;
@@ -2654,9 +2651,6 @@ AclOrch::~AclOrch()
         m_dTelOrch->detach(this);
     }
 
-    m_bCollectCounters = false;
-    m_sleepGuard.notify_all();
-
     deleteDTelWatchListTables();
 }
 
@@ -2670,8 +2664,6 @@ void AclOrch::update(SubjectType type, void *cntx)
     {
         return;
     }
-
-    unique_lock<mutex> lock(m_countersMutex);
 
     // ACL table deals with port change
     // ACL rule deals with mirror session change and int session change
@@ -2704,12 +2696,10 @@ void AclOrch::doTask(Consumer &consumer)
 
     if (table_name == CFG_ACL_TABLE_TABLE_NAME || table_name == APP_ACL_TABLE_TABLE_NAME)
     {
-        unique_lock<mutex> lock(m_countersMutex);
         doAclTableTask(consumer);
     }
     else if (table_name == CFG_ACL_RULE_TABLE_NAME || table_name == APP_ACL_RULE_TABLE_NAME)
     {
-        unique_lock<mutex> lock(m_countersMutex);
         doAclRuleTask(consumer);
     }
     else if (table_name == "CFG_ACL_TABLE_TYPE_TABLE_NAME" || table_name == "APP_ACL_TABLE_TYPE_TABLE_NAME")

@@ -7,7 +7,6 @@
 #include <mutex>
 #include <tuple>
 #include <map>
-#include <condition_variable>
 
 #include "orch.h"
 #include "switchorch.h"
@@ -97,48 +96,48 @@
 #define RULE_OPER_ADD           0
 #define RULE_OPER_DELETE        1
 
-typedef map<string, sai_acl_entry_attr_t> acl_rule_attr_lookup_t;
-typedef map<string, sai_acl_range_type_t> acl_range_type_lookup_t;
-typedef map<string, sai_acl_bind_point_type_t> acl_bind_point_type_lookup_t;
-typedef map<string, sai_acl_ip_type_t> acl_ip_type_lookup_t;
-typedef map<string, sai_acl_dtel_flow_op_t> acl_dtel_flow_op_type_lookup_t;
-typedef map<string, sai_packet_action_t> acl_packet_action_lookup_t;
-typedef tuple<sai_acl_range_type_t, int, int> acl_range_properties_t;
-typedef map<sai_acl_action_type_t, set<int32_t>> acl_action_enum_values_capabilities_t;
 
 class AclOrch;
 
 struct AclActionCapabilities
 {
-    set<sai_acl_action_type_t> actionList;
+    std::set<sai_acl_action_type_t> actionList;
     bool isActionListMandatoryOnTableCreation {false};
 };
 
-typedef map<acl_stage_type_t, AclActionCapabilities> acl_capabilities_t;
+using AclRuleAttrLookupT = std::map<std::string, sai_acl_entry_attr_t>;
+using AclRangeTypeLookupT = std::map<std::string, sai_acl_range_type_t>;
+using AclBindPointTypeLookupT = std::map<std::string, sai_acl_bind_point_type_t>;
+using AclIpTypeLookupT = std::map<std::string, sai_acl_ip_type_t>;
+using AclDtelFlowOpTypeLookupT = std::map<std::string, sai_acl_dtel_flow_op_t>;
+using AclPacketActionLookupT = std::map<std::string, sai_packet_action_t>;
+using AclRangePropertiesT = std::tuple<sai_acl_range_type_t, int, int>;
+using AclActionEnumValuesCapabilitiesT = std::map<sai_acl_action_type_t, std::set<int32_t>>;
+using AclCapabilitiesT = std::map<acl_stage_type_t, AclActionCapabilities>;
 
 class AclTableType
 {
 public:
-    string getName() const;
-    const set<sai_acl_bind_point_type_t>& getBindPointTypes() const;
-    const set<sai_acl_table_attr_t>& getMatches() const;
-    const set<sai_acl_range_type_t>& getRangeTypes() const;
-    const set<sai_acl_action_type_t>& getActions() const;
+    std::string getName() const;
+    const std::set<sai_acl_bind_point_type_t>& getBindPointTypes() const;
+    const std::set<sai_acl_table_attr_t>& getMatches() const;
+    const std::set<sai_acl_range_type_t>& getRangeTypes() const;
+    const std::set<sai_acl_action_type_t>& getActions() const;
 
 private:
     friend class AclTableTypeBuilder;
 
-    string name;
-    set<sai_acl_bind_point_type_t> bpointTypes;
-    set<sai_acl_table_attr_t> enabledMatches;
-    set<sai_acl_range_type_t> rangeTypes;
-    set<sai_acl_action_type_t> aclAcitons;
+    std::string name;
+    std::set<sai_acl_bind_point_type_t> bpointTypes;
+    std::set<sai_acl_table_attr_t> enabledMatches;
+    std::set<sai_acl_range_type_t> rangeTypes;
+    std::set<sai_acl_action_type_t> aclAcitons;
 };
 
 class AclTableTypeBuilder
 {
 public:
-    AclTableTypeBuilder& withName(string name);
+    AclTableTypeBuilder& withName(std::string name);
     AclTableTypeBuilder& withBindPointType(sai_acl_bind_point_type_t bpointType);
     AclTableTypeBuilder& withEnabledMatch(sai_acl_table_attr_t matchField);
     AclTableTypeBuilder& withAction(sai_acl_action_type_t action);
@@ -168,7 +167,7 @@ private:
     int m_min;
     int m_max;
     sai_acl_range_type_t m_type;
-    static map<acl_range_properties_t, AclRange*> m_ranges;
+    static std::map<AclRangePropertiesT, AclRange*> m_ranges;
 };
 
 struct AclRuleCounters
@@ -201,12 +200,12 @@ class AclTable;
 class AclRule
 {
 public:
-    AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounter = true);
-    virtual bool validateAddPriority(string attr_name, string attr_value);
-    virtual bool validateAddMatch(string attr_name, string attr_value);
-    virtual bool validateAddAction(string attr_name, string attr_value);
+    AclRule(AclOrch *pAclOrch, std::string rule, std::string table, bool createCounter = true);
+    virtual bool validateAddPriority(std::string attr_name, std::string attr_value);
+    virtual bool validateAddMatch(std::string attr_name, std::string attr_value);
+    virtual bool validateAddAction(std::string attr_name, std::string attr_value);
     virtual bool validate();
-    bool processIpType(string type, sai_uint32_t &ip_type);
+    bool processIpType(std::string type, sai_uint32_t &ip_type);
     inline static void setRulePriorities(sai_uint32_t min, sai_uint32_t max)
     {
         m_minPriority = min;
@@ -222,12 +221,12 @@ public:
     virtual bool disableCounter();
     virtual AclRuleCounters getCounters();
 
-    string getId()
+    std::string getId()
     {
         return m_id;
     }
 
-    string getTableId()
+    std::string getTableId()
     {
         return m_tableId;
     }
@@ -242,7 +241,7 @@ public:
         return m_inPorts;
     }
 
-    static shared_ptr<AclRule> makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple&);
+    static shared_ptr<AclRule> makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const std::string& rule, const std::string& table, const KeyOpFieldsValuesTuple&);
     virtual ~AclRule() {}
 
 protected:
@@ -253,14 +252,14 @@ protected:
     static sai_uint32_t m_minPriority;
     static sai_uint32_t m_maxPriority;
     AclOrch *m_pAclOrch;
-    string m_id;
-    string m_tableId;
+    std::string m_id;
+    std::string m_tableId;
     const AclTable* m_pTable;
     sai_object_id_t m_ruleOid;
     sai_object_id_t m_counterOid;
     uint32_t m_priority;
-    map <sai_acl_entry_attr_t, sai_attribute_value_t> m_matches;
-    map <sai_acl_entry_attr_t, sai_attribute_value_t> m_actions;
+    std::map <sai_acl_entry_attr_t, sai_attribute_value_t> m_matches;
+    std::map <sai_acl_entry_attr_t, sai_attribute_value_t> m_actions;
 
     vector<sai_object_id_t> m_inPorts;
     vector<sai_object_id_t> m_outPorts;
@@ -272,29 +271,29 @@ private:
 class AclRulePacket: public AclRule
 {
 public:
-    AclRulePacket(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = true);
+    AclRulePacket(AclOrch *m_pAclOrch, std::string rule, std::string table, bool createCounter = true);
 
     bool create() override;
     bool remove() override;
 
-    bool validateAddAction(string attr_name, string attr_value);
+    bool validateAddAction(std::string attr_name, std::string attr_value);
     bool validate();
     void onUpdate(SubjectType, void *) override;
 
 protected:
-    sai_object_id_t getRedirectObjectId(const string& redirect_param);
+    sai_object_id_t getRedirectObjectId(const std::string& redirect_param);
     void decreaseNextHopRefCount();
 
 private:
-    string m_redirect_target_next_hop;
-    string m_redirect_target_next_hop_group;
+    std::string m_redirect_target_next_hop;
+    std::string m_redirect_target_next_hop_group;
 };
 
 class AclRuleMirror: public AclRule
 {
 public:
-    AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, string rule, string table);
-    bool validateAddAction(string attr_name, string attr_value);
+    AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, std::string rule, std::string table);
+    bool validateAddAction(std::string attr_name, std::string attr_value);
     bool validate();
     bool create();
     bool remove();
@@ -303,7 +302,7 @@ public:
 
 protected:
     bool m_state {false};
-    string m_sessionName;
+    std::string m_sessionName;
     AclRuleCounters counters;
     MirrorOrch *m_pMirrorOrch {nullptr};
 };
@@ -311,8 +310,8 @@ protected:
 class AclRuleDTelFlowWatchListEntry: public AclRule
 {
 public:
-    AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table);
-    bool validateAddAction(string attr_name, string attr_value);
+    AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, std::string rule, std::string table);
+    bool validateAddAction(std::string attr_name, std::string attr_value);
     bool validate();
     bool create();
     bool remove();
@@ -320,7 +319,7 @@ public:
 
 protected:
     DTelOrch *m_pDTelOrch;
-    string m_intSessionId;
+    std::string m_intSessionId;
     bool INT_enabled;
     bool INT_session_valid;
 };
@@ -328,8 +327,8 @@ protected:
 class AclRuleDTelDropWatchListEntry: public AclRule
 {
 public:
-    AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table);
-    bool validateAddAction(string attr_name, string attr_value);
+    AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, std::string rule, std::string table);
+    bool validateAddAction(std::string attr_name, std::string attr_value);
     bool validate();
     void onUpdate(SubjectType, void *) override;
 
@@ -340,23 +339,23 @@ protected:
 class AclTable
 {
 public:
-    AclTable(AclOrch *pAclOrch, string id) noexcept;
+    AclTable(AclOrch *pAclOrch, std::string id) noexcept;
     AclTable(AclOrch *pAclOrch) noexcept;
 
     AclTable() = default;
     ~AclTable() = default;
 
     sai_object_id_t getOid() const { return m_oid; }
-    string getId() const { return id; }
+    std::string getId() const { return id; }
 
     const AclTableType& getTableType() const { return type; }
 
-    void setDescription(const string &value) { description = value; }
-    const string& getDescription() const { return description; }
+    void setDescription(const std::string &value) { description = value; }
+    const std::string& getDescription() const { return description; }
 
     bool validateAddType(const AclTableType &tableType);
     bool validateAddStage(const acl_stage_type_t &value);
-    bool validateAddPorts(const unordered_set<string> &value);
+    bool validateAddPorts(const std::unordered_set<std::string> &value);
 
     bool validateAclRuleMatch(sai_attribute_t attr) const;
     bool validateAclRuleAction(sai_attribute_t attr) const;
@@ -379,15 +378,15 @@ public:
     // Add or overwrite a rule into the ACL table
     bool add(shared_ptr<AclRule> newRule);
     // Remove a rule from the ACL table
-    bool remove(string rule_id);
+    bool remove(std::string rule_id);
     // Remove all rules from the ACL table
     bool clear();
     // Update table subject to changes
     void onUpdate(SubjectType, void *);
 
 public:
-    string id;
-    string description;
+    std::string id;
+    std::string description;
 
     AclTableType type;
     acl_stage_type_t stage = ACL_STAGE_INGRESS;
@@ -395,9 +394,9 @@ public:
     // Map port oid to group member oid
     std::map<sai_object_id_t, sai_object_id_t> ports;
     // Map rule name to rule data
-    map<string, shared_ptr<AclRule>> rules;
+    std::map<std::string, shared_ptr<AclRule>> rules;
     // Set to store the ACL table port alias
-    set<string> portSet;
+    std::set<std::string> portSet;
 
 private:
     sai_object_id_t m_oid = SAI_NULL_OBJECT_ID;
@@ -417,11 +416,11 @@ public:
     ~AclOrch();
     void update(SubjectType, void *);
 
-    const AclTable* getAclTable(const string& tableId);
-    sai_object_id_t getTableById(string table_id);
+    const AclTable* getAclTable(const std::string& tableId);
+    sai_object_id_t getTableById(std::string table_id);
     const AclTable* getTableByOid(sai_object_id_t oid) const;
 
-    const AclTableType* getAclTableType(const string& tableTypeName) const;
+    const AclTableType* getAclTableType(const std::string& tableTypeName) const;
 
     static swss::Table& getCountersTable()
     {
@@ -435,33 +434,33 @@ public:
     DTelOrch *m_dTelOrch;
 
     bool addAclTable(AclTable &aclTable);
-    bool removeAclTable(string table_id);
+    bool removeAclTable(std::string table_id);
     bool updateAclTable(AclTable &currentTable, AclTable &newTable);
-    bool updateAclTable(string table_id, AclTable &table);
+    bool updateAclTable(std::string table_id, AclTable &table);
     bool addAclTableType(const AclTableType& tableType);
-    bool removeAclTableType(const string& tableTypeName);
-    bool addAclRule(shared_ptr<AclRule> aclRule, string table_id);
-    bool removeAclRule(string table_id, string rule_id);
-    bool updateAclRule(string table_id, string rule_id, string attr_name, void *data, bool oper);
-    bool updateAclRule(string table_id, string rule_id, bool enableCounter);
-    AclRule* getAclRule(string table_id, string rule_id);
+    bool removeAclTableType(const std::string& tableTypeName);
+    bool addAclRule(shared_ptr<AclRule> aclRule, std::string table_id);
+    bool removeAclRule(std::string table_id, std::string rule_id);
+    bool updateAclRule(std::string table_id, std::string rule_id, std::string attr_name, void *data, bool oper);
+    bool updateAclRule(std::string table_id, std::string rule_id, bool enableCounter);
+    AclRule* getAclRule(std::string table_id, std::string rule_id);
 
     bool isCombinedMirrorV6Table() const;
     bool isAclMirrorV6Supported() const;
     bool isAclMirrorV4Supported() const;
-    bool isAclMirrorTableSupported(string type) const;
+    bool isAclMirrorTableSupported(std::string type) const;
     bool isAclActionListMandatoryOnTableCreation(acl_stage_type_t stage) const;
     bool isAclActionSupported(acl_stage_type_t stage, sai_acl_action_type_t action) const;
     bool isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const;
 
     bool m_isCombinedMirrorV6Table = true;
-    map<string, bool> m_mirrorTableCapabilities;
+    std::map<std::string, bool> m_mirrorTableCapabilities;
     
     // Get the OID for the ACL bind point for a given port
     static bool getAclBindPortId(Port& port, sai_object_id_t& port_id);
 
     using Orch::doTask;  // Allow access to the basic doTask
-    map<sai_object_id_t, AclTable>  getAclTables()
+    std::map<sai_object_id_t, AclTable>  getAclTables()
     {
         return m_AclTables;
     }
@@ -482,8 +481,8 @@ private:
     void putAclActionCapabilityInDB(acl_stage_type_t);
 
     template<typename AclActionAttrLookupT>
-    void queryAclActionAttrEnumValues(const string& action_name,
-                                      const acl_rule_attr_lookup_t& ruleAttrLookupMap,
+    void queryAclActionAttrEnumValues(const std::string& action_name,
+                                      const AclRuleAttrLookupT& ruleAttrLookupMap,
                                       const AclActionAttrLookupT lookupMap);
 
     static void collectCountersThread(AclOrch *pAclOrch);
@@ -492,34 +491,31 @@ private:
     sai_status_t bindAclTable(AclTable &aclTable, bool bind = true);
     sai_status_t deleteUnbindAclTable(sai_object_id_t table_oid);
 
-    bool isAclTableTypeUpdated(string table_type, AclTable &aclTable);
-    bool processAclTableType(string type, AclTable &table);
+    bool isAclTableTypeUpdated(std::string table_type, AclTable &aclTable);
+    bool processAclTableType(std::string type, AclTable &table);
     bool isAclTableStageUpdated(acl_stage_type_t acl_stage, AclTable &aclTable);
-    bool processAclTableStage(string stage, acl_stage_type_t &acl_stage);
-    bool processAclTablePorts(string portList, AclTable &aclTable);
+    bool processAclTableStage(std::string stage, acl_stage_type_t &acl_stage);
+    bool processAclTablePorts(std::string portList, AclTable &aclTable);
     bool validateAclTable(AclTable &aclTable);
     bool updateAclTablePorts(AclTable &newTable, AclTable &curTable);
     void getAddDeletePorts(AclTable    &newT,
                            AclTable    &curT,
-                           set<string> &addSet,
-                           set<string> &delSet);
+                           std::set<std::string> &addSet,
+                           std::set<std::string> &delSet);
     void createDTelWatchListTables();
     void deleteDTelWatchListTables();
 
-    map<string, AclTableType> m_AclTableTypes;
-    map<sai_object_id_t, AclTable> m_AclTables;
+    std::map<std::string, AclTableType> m_AclTableTypes;
+    std::map<sai_object_id_t, AclTable> m_AclTables;
 
-    static mutex m_countersMutex;
-    static condition_variable m_sleepGuard;
-    static bool m_bCollectCounters;
     static DBConnector m_db;
     static Table m_countersTable;
 
-    map<acl_stage_type_t, string> m_mirrorTableId;
-    map<acl_stage_type_t, string> m_mirrorV6TableId;
+    std::map<acl_stage_type_t, std::string> m_mirrorTableId;
+    std::map<acl_stage_type_t, std::string> m_mirrorV6TableId;
 
-    acl_capabilities_t m_aclCapabilities;
-    acl_action_enum_values_capabilities_t m_aclEnumActionCapabilities;
+    AclCapabilitiesT m_aclCapabilities;
+    AclActionEnumValuesCapabilitiesT m_aclEnumActionCapabilities;
 };
 
 #endif /* SWSS_ACLORCH_H */
