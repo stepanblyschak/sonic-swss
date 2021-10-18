@@ -127,16 +127,24 @@ static const acl_capabilities_t defaultAclActionsSupported =
 {
     {
         ACL_STAGE_INGRESS,
+        AclActionCapabilities
         {
-            SAI_ACL_ACTION_TYPE_PACKET_ACTION,
-            SAI_ACL_ACTION_TYPE_MIRROR_INGRESS,
-            SAI_ACL_ACTION_TYPE_NO_NAT
+            {
+                SAI_ACL_ACTION_TYPE_PACKET_ACTION,
+                SAI_ACL_ACTION_TYPE_MIRROR_INGRESS,
+                SAI_ACL_ACTION_TYPE_NO_NAT
+            },
+            false
         }
     },
     {
         ACL_STAGE_EGRESS,
+        AclActionCapabilities
         {
-            SAI_ACL_ACTION_TYPE_PACKET_ACTION
+            {
+                SAI_ACL_ACTION_TYPE_PACKET_ACTION
+            },
+            false
         }
     }
 };
@@ -1392,6 +1400,16 @@ bool AclTable::validate()
     {
         return false;
     }
+
+    if (m_pAclOrch->isAclActionListMandatoryOnTableCreation(stage))
+    {
+        if (type.getActions().empty())
+        {
+            SWSS_LOG_ERROR("Action list for table %s is mandatory", getId().c_str());
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -2431,9 +2449,11 @@ void AclOrch::queryAclActionCapability()
                 for (size_t i = 0; i < static_cast<size_t>(attr.value.aclcapability.action_list.count); i++)
                 {
                     auto action = static_cast<sai_acl_action_type_t>(action_list[i]);
-                    m_aclCapabilities[stage].insert(action);
+                    m_aclCapabilities[stage].actionList.insert(action);
                     SWSS_LOG_INFO("    %s", sai_serialize_enum(action, &sai_metadata_enum_sai_acl_action_type_t).c_str());
                 }
+
+                m_aclCapabilities[stage].isActionListMandatoryOnTableCreation = attr.value.aclcapability.is_action_list_mandatory;
             }
             else
             {
@@ -2481,7 +2501,7 @@ void AclOrch::putAclActionCapabilityInDB(acl_stage_type_t stage)
     auto stage_str = (stage == ACL_STAGE_INGRESS ? STAGE_INGRESS : STAGE_EGRESS);
 
     auto field = std::string("ACL_ACTIONS") + '|' + stage_str;
-    auto& acl_action_set = m_aclCapabilities[stage];
+    auto& acl_action_set = m_aclCapabilities[stage].actionList;
 
     string delimiter;
     ostringstream acl_action_value_stream;
@@ -2509,9 +2529,9 @@ void AclOrch::initDefaultAclActionCapabilities(acl_stage_type_t stage)
 
     SWSS_LOG_INFO("Assumed %s %zu actions to be supported:",
             stage == ACL_STAGE_INGRESS ? STAGE_INGRESS : STAGE_EGRESS,
-            m_aclCapabilities[stage].size());
+            m_aclCapabilities[stage].actionList.size());
 
-    for (auto action: m_aclCapabilities[stage])
+    for (auto action: m_aclCapabilities[stage].actionList)
     {
         SWSS_LOG_INFO("    %s", sai_serialize_enum(action, &sai_metadata_enum_sai_acl_action_type_t).c_str());
     }
@@ -3209,6 +3229,16 @@ bool AclOrch::isAclMirrorTableSupported(string type) const
     return cit->second;
 }
 
+bool AclOrch::isAclActionListMandatoryOnTableCreation(acl_stage_type_t stage) const
+{
+    const auto& it = m_aclCapabilities.find(stage);
+    if (it == m_aclCapabilities.cend())
+    {
+        return false;
+    }
+    return it->second.isActionListMandatoryOnTableCreation;
+}
+
 bool AclOrch::isAclActionSupported(acl_stage_type_t stage, sai_acl_action_type_t action) const
 {
     const auto& it = m_aclCapabilities.find(stage);
@@ -3216,7 +3246,7 @@ bool AclOrch::isAclActionSupported(acl_stage_type_t stage, sai_acl_action_type_t
     {
         return false;
     }
-    return it->second.find(action) != it->second.cend();
+    return it->second.actionList.find(action) != it->second.actionList.cend();
 }
 
 bool AclOrch::isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const

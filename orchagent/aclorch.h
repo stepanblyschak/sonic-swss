@@ -104,10 +104,17 @@ typedef map<string, sai_acl_ip_type_t> acl_ip_type_lookup_t;
 typedef map<string, sai_acl_dtel_flow_op_t> acl_dtel_flow_op_type_lookup_t;
 typedef map<string, sai_packet_action_t> acl_packet_action_lookup_t;
 typedef tuple<sai_acl_range_type_t, int, int> acl_range_properties_t;
-typedef map<acl_stage_type_t, set<sai_acl_action_type_t>> acl_capabilities_t;
 typedef map<sai_acl_action_type_t, set<int32_t>> acl_action_enum_values_capabilities_t;
 
 class AclOrch;
+
+struct AclActionCapabilities
+{
+    set<sai_acl_action_type_t> actionList;
+    bool isActionListMandatoryOnTableCreation {false};
+};
+
+typedef map<acl_stage_type_t, AclActionCapabilities> acl_capabilities_t;
 
 class AclTableType
 {
@@ -443,6 +450,7 @@ public:
     bool isAclMirrorV6Supported() const;
     bool isAclMirrorV4Supported() const;
     bool isAclMirrorTableSupported(string type) const;
+    bool isAclActionListMandatoryOnTableCreation(acl_stage_type_t stage) const;
     bool isAclActionSupported(acl_stage_type_t stage, sai_acl_action_type_t action) const;
     bool isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const;
 
