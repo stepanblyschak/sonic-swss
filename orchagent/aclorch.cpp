@@ -296,6 +296,10 @@ AclRule::AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounte
     m_createCounter(createCounter)
 {
     m_pTable = pAclOrch->getAclTable(table);
+    if (!m_pTable)
+    {
+        SWSS_LOG_THROW("Failed to find ACL table %s. ACL table must exists at this point", table.c_str());
+    }
 }
 
 bool AclRule::validateAddPriority(string attr_name, string attr_value)
@@ -3546,76 +3550,89 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
 
                 if (field == ACL_TABLE_TYPE_MATCHES)
                 {
-                    auto matchIt = aclMatchLookup.find(value);
-                    auto matchRangeIt = aclRangeTypeLookup.find(value);
+                    auto matches = tokenize(value, ',');
+                    for (const auto& match: matches)
+                    {
+                        auto matchIt = aclMatchLookup.find(match);
+                        auto matchRangeIt = aclRangeTypeLookup.find(match);
 
-                    if (matchIt == aclMatchLookup.end())
-                    {
-                        SWSS_LOG_ERROR("Unknown match %s", value.c_str());
-                        allAttributesValid = false;
-                        break;
-                    }
 
-                    if (matchIt->second >= SAI_ACL_ENTRY_ATTR_FIELD_START && matchIt->second <= SAI_ACL_ENTRY_ATTR_FIELD_END)
-                    {
-                        auto tableAttrId = AclEntryFieldToAclTableField(matchIt->second);
-                        builder.withEnabledMatch(tableAttrId);
-                    }
-                    else /* range type */
-                    {
-                        if (matchRangeIt != aclRangeTypeLookup.end())
+                        if (matchIt == aclMatchLookup.end())
                         {
-                            auto rangeType = matchRangeIt->second;
-                            builder.withRangeMatch(rangeType);
-                        }
-                        else
-                        {
-                            SWSS_LOG_ERROR("Unhandled range type match %s", value.c_str());
+                            SWSS_LOG_ERROR("Unknown match %s", match.c_str());
                             allAttributesValid = false;
                             break;
+                        }
+
+                        if (matchIt->second >= SAI_ACL_ENTRY_ATTR_FIELD_START && matchIt->second <= SAI_ACL_ENTRY_ATTR_FIELD_END)
+                        {
+                            auto tableAttrId = AclEntryFieldToAclTableField(matchIt->second);
+                            builder.withEnabledMatch(tableAttrId);
+                        }
+                        else /* range type */
+                        {
+                            if (matchRangeIt != aclRangeTypeLookup.end())
+                            {
+                                auto rangeType = matchRangeIt->second;
+                                builder.withRangeMatch(rangeType);
+                            }
+                            else
+                            {
+                                SWSS_LOG_ERROR("Unhandled range type match %s", match.c_str());
+                                allAttributesValid = false;
+                                break;
+                            }
                         }
                     }
                 }
                 else if (field == ACL_TABLE_TYPE_ACTIONS)
                 {
-                    sai_acl_entry_attr_t attr = SAI_ACL_ENTRY_ATTR_ACTION_END;
+                    auto actions = tokenize(value, ',');
+                    for (const auto& action: actions)
+                    {
+                        sai_acl_entry_attr_t attr = SAI_ACL_ENTRY_ATTR_ACTION_END;
 
-                    auto l3Action = aclL3ActionLookup.find(value);
-                    auto mirrorAction = aclMirrorStageLookup.find(value);
-                    auto dtelAction = aclDTelActionLookup.find(value);
+                        auto l3Action = aclL3ActionLookup.find(action);
+                        auto mirrorAction = aclMirrorStageLookup.find(action);
+                        auto dtelAction = aclDTelActionLookup.find(action);
 
-                    if (l3Action != aclL3ActionLookup.end())
-                    {
-                        attr = l3Action->second;
-                    }
-                    else if (mirrorAction != aclMirrorStageLookup.end())
-                    {
-                        attr = mirrorAction->second;
-                    }
-                    else if (dtelAction != aclDTelActionLookup.end())
-                    {
-                        attr = dtelAction->second;
-                    }
-                    else
-                    {
-                        SWSS_LOG_ERROR("Unknown action %s", value.c_str());
-                        allAttributesValid = false;
-                        break;
-                    }
+                        if (l3Action != aclL3ActionLookup.end())
+                        {
+                            attr = l3Action->second;
+                        }
+                        else if (mirrorAction != aclMirrorStageLookup.end())
+                        {
+                            attr = mirrorAction->second;
+                        }
+                        else if (dtelAction != aclDTelActionLookup.end())
+                        {
+                            attr = dtelAction->second;
+                        }
+                        else
+                        {
+                            SWSS_LOG_ERROR("Unknown action %s", action.c_str());
+                            allAttributesValid = false;
+                            break;
+                        }
 
-                    builder.withAction(static_cast<sai_acl_action_type_t>(attr - SAI_ACL_ENTRY_ATTR_ACTION_START));
+                        builder.withAction(static_cast<sai_acl_action_type_t>(attr - SAI_ACL_ENTRY_ATTR_ACTION_START));
+                    }
                 }
                 else if (field == ACL_TABLE_TYPE_BPOINT_TYPES)
                 {
-                    auto bpointIt = aclBindPointTypeLookup.find(value);
-                    if (bpointIt == aclBindPointTypeLookup.end())
+                    auto bpointTypes = tokenize(value, ',');
+                    for (const auto& bpointType: bpointTypes)
                     {
-                        SWSS_LOG_ERROR("Unknown bind point %s", value.c_str());
-                        allAttributesValid = false;
-                        break;
-                    }
+                        auto bpointIt = aclBindPointTypeLookup.find(bpointType);
+                        if (bpointIt == aclBindPointTypeLookup.end())
+                        {
+                            SWSS_LOG_ERROR("Unknown bind point %s", bpointType.c_str());
+                            allAttributesValid = false;
+                            break;
+                        }
 
-                    builder.withBindPointType(bpointIt->second);
+                        builder.withBindPointType(bpointIt->second);
+                    }
                 }
                 else
                 {
@@ -3640,8 +3657,9 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
         else
         {
             SWSS_LOG_ERROR("Unknown operation type %s", op.c_str());
-            it = consumer.m_toSync.erase(it);
         }
+
+        it = consumer.m_toSync.erase(it);
     }
 
 }
