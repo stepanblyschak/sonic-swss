@@ -478,6 +478,16 @@ bool AclRule::processIpType(string type, sai_uint32_t &ip_type)
 
 bool AclRule::create()
 {
+    if (m_createCounter && !createCounter())
+    {
+        return false;
+    }
+
+    return createRule();
+}
+
+bool AclRule::createRule()
+{
     SWSS_LOG_ENTER();
 
     sai_object_id_t table_oid = m_pAclOrch->getTableById(m_tableId);
@@ -487,11 +497,6 @@ bool AclRule::create()
 
     sai_attribute_t attr;
     sai_status_t status;
-
-    if (m_createCounter && !createCounter())
-    {
-        return false;
-    }
 
     // store table oid this rule belongs to
     attr.id = SAI_ACL_ENTRY_ATTR_TABLE_ID;
@@ -1284,26 +1289,16 @@ bool AclRuleMirror::validate()
     return true;
 }
 
-bool AclRuleMirror::create()
+bool AclRuleMirror::createRule()
 {
     SWSS_LOG_ENTER();
-
-    if (!createCounter())
-    {
-        return false;
-    }
 
     return activate();
 }
 
-bool AclRuleMirror::remove()
+bool AclRuleMirror::removeRule()
 {
-    if (!deactivate())
-    {
-        return false;
-    }
-
-    return AclRule::remove();
+    return deactivate();
 }
 
 bool AclRuleMirror::activate()
@@ -1341,7 +1336,7 @@ bool AclRuleMirror::activate()
         it.second.aclaction.parameter.objlist.count = 1;
     }
 
-    if (!AclRule::create())
+    if (!AclRule::createRule())
     {
         return false;
     }
@@ -2141,26 +2136,16 @@ bool AclRuleDTelFlowWatchListEntry::validate()
     return true;
 }
 
-bool AclRuleDTelFlowWatchListEntry::create()
+bool AclRuleDTelFlowWatchListEntry::createRule()
 {
     SWSS_LOG_ENTER();
-
-    if (!createCounter())
-    {
-        return false;
-    }
 
     return activate();
 }
 
-bool AclRuleDTelFlowWatchListEntry::remove()
+bool AclRuleDTelFlowWatchListEntry::removeRule()
 {
-    if (!deactivate())
-    {
-        return false;
-    }
-
-    return AclRule::remove();
+    return deactivate();
 }
 
 bool AclRuleDTelFlowWatchListEntry::activate()
@@ -2177,7 +2162,7 @@ bool AclRuleDTelFlowWatchListEntry::activate()
         return true;
     }
 
-    return AclRule::create();
+    return AclRule::createRule();
 }
 
 bool AclRuleDTelFlowWatchListEntry::deactivate()

@@ -182,6 +182,7 @@ public:
 
 protected:
     virtual bool createCounter();
+    virtual bool createRule();
     virtual bool removeCounter();
     virtual bool removeRanges();
     virtual bool removeRule();
@@ -253,8 +254,8 @@ public:
     bool validateAddAction(string attr_name, string attr_value);
     bool validateAddMatch(string attr_name, string attr_value);
     bool validate();
-    bool create();
-    bool remove();
+    bool createRule();
+    bool removeRule();
     void update(SubjectType, void *);
 
     bool activate();
@@ -272,8 +273,8 @@ public:
     AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table, acl_table_type_t type);
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
-    bool create();
-    bool remove();
+    bool createRule();
+    bool removeRule();
     void update(SubjectType, void *);
 
     bool activate();
