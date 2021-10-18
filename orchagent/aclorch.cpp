@@ -3564,17 +3564,18 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
                             break;
                         }
 
-                        if (matchIt->second >= SAI_ACL_ENTRY_ATTR_FIELD_START && matchIt->second <= SAI_ACL_ENTRY_ATTR_FIELD_END)
+                        auto saiMatchAttr = matchIt->second;
+                        if (isAclEntryFieldAttribute(saiMatchAttr))
                         {
-                            auto tableAttrId = AclEntryFieldToAclTableField(matchIt->second);
+                            auto tableAttrId = AclEntryFieldToAclTableField(saiMatchAttr);
                             builder.withEnabledMatch(tableAttrId);
                         }
                         else /* range type */
                         {
                             if (matchRangeIt != aclRangeTypeLookup.end())
                             {
-                                auto rangeType = matchRangeIt->second;
-                                builder.withRangeMatch(rangeType);
+                                auto saiRangeType = matchRangeIt->second;
+                                builder.withRangeMatch(saiRangeType);
                             }
                             else
                             {
@@ -3590,7 +3591,7 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
                     auto actions = tokenize(value, ',');
                     for (const auto& action: actions)
                     {
-                        sai_acl_entry_attr_t attr = SAI_ACL_ENTRY_ATTR_ACTION_END;
+                        sai_acl_entry_attr_t saiActionAttr = SAI_ACL_ENTRY_ATTR_ACTION_END;
 
                         auto l3Action = aclL3ActionLookup.find(action);
                         auto mirrorAction = aclMirrorStageLookup.find(action);
@@ -3598,15 +3599,15 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
 
                         if (l3Action != aclL3ActionLookup.end())
                         {
-                            attr = l3Action->second;
+                            saiActionAttr = l3Action->second;
                         }
                         else if (mirrorAction != aclMirrorStageLookup.end())
                         {
-                            attr = mirrorAction->second;
+                            saiActionAttr = mirrorAction->second;
                         }
                         else if (dtelAction != aclDTelActionLookup.end())
                         {
-                            attr = dtelAction->second;
+                            saiActionAttr = dtelAction->second;
                         }
                         else
                         {
@@ -3615,7 +3616,7 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
                             break;
                         }
 
-                        builder.withAction(static_cast<sai_acl_action_type_t>(attr - SAI_ACL_ENTRY_ATTR_ACTION_START));
+                        builder.withAction(AclEntryActionToAclAction(saiActionAttr));
                     }
                 }
                 else if (field == ACL_TABLE_TYPE_BPOINT_TYPES)
@@ -3631,7 +3632,8 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
                             break;
                         }
 
-                        builder.withBindPointType(bpointIt->second);
+                        auto saiBpointType = bpointIt->second;
+                        builder.withBindPointType(saiBpointType);
                     }
                 }
                 else
