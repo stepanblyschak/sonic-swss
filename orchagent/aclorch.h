@@ -503,8 +503,8 @@ private:
                            AclTable    &curT,
                            set<string> &addSet,
                            set<string> &delSet);
-    sai_status_t createDTelWatchListTables();
-    sai_status_t deleteDTelWatchListTables();
+    void createDTelWatchListTables();
+    void deleteDTelWatchListTables();
 
     map<string, AclTableType> m_AclTableTypes;
     map<sai_object_id_t, AclTable> m_AclTables;

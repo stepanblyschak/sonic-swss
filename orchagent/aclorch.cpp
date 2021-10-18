@@ -3850,218 +3850,61 @@ sai_status_t AclOrch::bindAclTable(AclTable &aclTable, bool bind)
     return status;
 }
 
-sai_status_t AclOrch::createDTelWatchListTables()
+void AclOrch::createDTelWatchListTables()
 {
     SWSS_LOG_ENTER();
 
-    AclTable flowWLTable, dropWLTable;
-    sai_object_id_t table_oid;
+    AclTableTypeBuilder builder;
 
-    sai_status_t status;
-    sai_attribute_t attr;
-    vector<sai_attribute_t> table_attrs;
+    AclTable flowWLTable(this, TABLE_TYPE_DTEL_FLOW_WATCHLIST);
+    AclTable dropWLTable(this, TABLE_TYPE_DTEL_DROP_WATCHLIST);
 
-    /* Create Flow watchlist ACL table */
+    flowWLTable.validateAddStage(ACL_STAGE_INGRESS);
+    flowWLTable.validateAddType(builder
+        .withBindPointType(SAI_ACL_BIND_POINT_TYPE_SWITCH)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IP)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_TUNNEL_VNI)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_INNER_ETHER_TYPE)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_INNER_SRC_IP)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_INNER_DST_IP)
+        .withAction(SAI_ACL_ACTION_TYPE_ACL_DTEL_FLOW_OP)
+        .withAction(SAI_ACL_ACTION_TYPE_DTEL_INT_SESSION)
+        .withAction(SAI_ACL_ACTION_TYPE_DTEL_REPORT_ALL_PACKETS)
+        .withAction(SAI_ACL_ACTION_TYPE_DTEL_FLOW_SAMPLE_PERCENT)
+        .build()
+    );
+    flowWLTable.setDescription("Dataplane Telemetry Flow Watchlist table");
 
-    flowWLTable.id = TABLE_TYPE_DTEL_FLOW_WATCHLIST;
-    flowWLTable.description = "Dataplane Telemetry Flow Watchlist table";
+    dropWLTable.validateAddStage(ACL_STAGE_INGRESS);
+    dropWLTable.validateAddType(builder
+        .withBindPointType(SAI_ACL_BIND_POINT_TYPE_SWITCH)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IP)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
+        .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL)
+        .withAction(SAI_ACL_ACTION_TYPE_DTEL_DROP_REPORT_ENABLE)
+        .withAction(SAI_ACL_ACTION_TYPE_DTEL_TAIL_DROP_REPORT_ENABLE)
+        .build()
+    );
+    dropWLTable.setDescription("Dataplane Telemetry Drop Watchlist table");
 
-    attr.id = SAI_ACL_TABLE_ATTR_ACL_STAGE;
-    attr.value.s32 = SAI_ACL_STAGE_INGRESS;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_ACL_BIND_POINT_TYPE_LIST;
-    vector<int32_t> bpoint_list;
-    bpoint_list.push_back(SAI_ACL_BIND_POINT_TYPE_SWITCH);
-    attr.value.s32list.count = 1;
-    attr.value.s32list.list = bpoint_list.data();
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_SRC_IP;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_DST_IP;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_TUNNEL_VNI;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_INNER_ETHER_TYPE;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_INNER_SRC_IP;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_INNER_DST_IP;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_ACL_ACTION_TYPE_LIST;
-    int32_t acl_action_list[4];
-    acl_action_list[0] = SAI_ACL_ACTION_TYPE_ACL_DTEL_FLOW_OP;
-    acl_action_list[1] = SAI_ACL_ACTION_TYPE_DTEL_INT_SESSION;
-    acl_action_list[2] = SAI_ACL_ACTION_TYPE_DTEL_REPORT_ALL_PACKETS;
-    acl_action_list[3] = SAI_ACL_ACTION_TYPE_DTEL_FLOW_SAMPLE_PERCENT;
-    attr.value.s32list.count = 4;
-    attr.value.s32list.list = acl_action_list;
-    table_attrs.push_back(attr);
-
-    status = sai_acl_api->create_acl_table(&table_oid, gSwitchId, (uint32_t)table_attrs.size(), table_attrs.data());
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Failed to create table %s", flowWLTable.description.c_str());
-        if (handleSaiCreateStatus(SAI_API_ACL, status) != task_success)
-        {
-            return status;
-        }
-    }
-
-    gCrmOrch->incCrmAclUsedCounter(CrmResourceType::CRM_ACL_TABLE, SAI_ACL_STAGE_INGRESS, SAI_ACL_BIND_POINT_TYPE_SWITCH);
-    m_AclTables[table_oid] = flowWLTable;
-    SWSS_LOG_INFO("Successfully created ACL table %s, oid: %" PRIx64, flowWLTable.description.c_str(), table_oid);
-
-    /* Create Drop watchlist ACL table */
-
-    table_attrs.clear();
-
-    dropWLTable.id = TABLE_TYPE_DTEL_DROP_WATCHLIST;
-    dropWLTable.description = "Dataplane Telemetry Drop Watchlist table";
-
-    attr.id = SAI_ACL_TABLE_ATTR_ACL_STAGE;
-    attr.value.s32 = SAI_ACL_STAGE_INGRESS;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_ACL_BIND_POINT_TYPE_LIST;
-    bpoint_list.clear();
-    bpoint_list.push_back(SAI_ACL_BIND_POINT_TYPE_SWITCH);
-    attr.value.s32list.count = 1;
-    attr.value.s32list.list = bpoint_list.data();
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_SRC_IP;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_DST_IP;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL;
-    attr.value.booldata = true;
-    table_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_TABLE_ATTR_ACL_ACTION_TYPE_LIST;
-    acl_action_list[0] = SAI_ACL_ACTION_TYPE_DTEL_DROP_REPORT_ENABLE;
-    acl_action_list[1] = SAI_ACL_ACTION_TYPE_DTEL_TAIL_DROP_REPORT_ENABLE;
-    attr.value.s32list.count = 2;
-    attr.value.s32list.list = acl_action_list;
-    table_attrs.push_back(attr);
-
-    status = sai_acl_api->create_acl_table(&table_oid, gSwitchId, (uint32_t)table_attrs.size(), table_attrs.data());
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Failed to create table %s", dropWLTable.description.c_str());
-        if (handleSaiCreateStatus(SAI_API_ACL, status) != task_success)
-        {
-            return status;
-        }
-    }
-
-    gCrmOrch->incCrmAclUsedCounter(CrmResourceType::CRM_ACL_TABLE, SAI_ACL_STAGE_INGRESS, SAI_ACL_BIND_POINT_TYPE_SWITCH);
-    m_AclTables[table_oid] = dropWLTable;
-    SWSS_LOG_INFO("Successfully created ACL table %s, oid: %" PRIx64, dropWLTable.description.c_str(), table_oid);
-
-    return SAI_STATUS_SUCCESS;
+    addAclTable(flowWLTable);
+    addAclTable(dropWLTable);
 }
 
-sai_status_t AclOrch::deleteDTelWatchListTables()
+void AclOrch::deleteDTelWatchListTables()
 {
     SWSS_LOG_ENTER();
 
-    AclTable flowWLTable(this), dropWLTable(this);
-    sai_object_id_t table_oid;
-    string table_id = TABLE_TYPE_DTEL_FLOW_WATCHLIST;
-
-    sai_status_t status;
-
-    table_oid = getTableById(table_id);
-
-    if (table_oid == SAI_NULL_OBJECT_ID)
-    {
-        SWSS_LOG_INFO("Failed to find ACL table %s", table_id.c_str());
-        return SAI_STATUS_FAILURE;
-    }
-
-    status = sai_acl_api->remove_acl_table(table_oid);
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Failed to delete table %s", table_id.c_str());
-        if (handleSaiRemoveStatus(SAI_API_ACL, status) != task_success)
-        {
-            return status;
-        }
-    }
-
-    gCrmOrch->decCrmAclUsedCounter(CrmResourceType::CRM_ACL_TABLE, SAI_ACL_STAGE_INGRESS, SAI_ACL_BIND_POINT_TYPE_SWITCH, table_oid);
-    m_AclTables.erase(table_oid);
-
-    table_id = TABLE_TYPE_DTEL_DROP_WATCHLIST;
-
-    table_oid = getTableById(table_id);
-
-    if (table_oid == SAI_NULL_OBJECT_ID)
-    {
-        SWSS_LOG_INFO("Failed to find ACL table %s", table_id.c_str());
-        return SAI_STATUS_FAILURE;
-    }
-
-    status = sai_acl_api->remove_acl_table(table_oid);
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Failed to delete table %s", table_id.c_str());
-        if (handleSaiRemoveStatus(SAI_API_ACL, status) != task_success)
-        {
-            return status;
-        }
-    }
-
-    gCrmOrch->decCrmAclUsedCounter(CrmResourceType::CRM_ACL_TABLE, SAI_ACL_STAGE_INGRESS, SAI_ACL_BIND_POINT_TYPE_SWITCH, table_oid);
-    m_AclTables.erase(table_oid);
-
-    return SAI_STATUS_SUCCESS;
+    removeAclTable(TABLE_TYPE_DTEL_FLOW_WATCHLIST);
+    removeAclTable(TABLE_TYPE_DTEL_DROP_WATCHLIST);
 }
 
 bool AclOrch::getAclBindPortId(Port &port, sai_object_id_t &port_id)
