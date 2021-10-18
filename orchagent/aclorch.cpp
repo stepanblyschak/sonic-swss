@@ -1171,16 +1171,6 @@ void AclRulePacket::decreaseNextHopRefCount()
     return;
 }
 
-AclRulePfcwd::AclRulePfcwd(AclOrch *aclOrch, string rule, string table, bool createCounter) :
-        AclRulePacket(aclOrch, rule, table, createCounter)
-{
-}
-
-AclRuleMux::AclRuleMux(AclOrch *aclOrch, string rule, string table, bool createCounter) :
-        AclRulePacket(aclOrch, rule, table, createCounter)
-{
-}
-
 AclRuleMirror::AclRuleMirror(AclOrch *aclOrch, MirrorOrch *mirror, string rule, string table) :
         AclRule(aclOrch, rule, table),
         m_state(false),
@@ -1328,23 +1318,6 @@ void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
         SWSS_LOG_INFO("Deactivating mirroring ACL %s for session %s", m_id.c_str(), m_sessionName.c_str());
         remove();
     }
-}
-
-AclRuleMclag::AclRuleMclag(AclOrch *aclOrch, string rule, string table, bool createCounter) :
-        AclRulePacket(aclOrch, rule, table, createCounter)
-{
-}
-
-bool AclRuleMclag::validate()
-{
-    SWSS_LOG_ENTER();
-
-    if (m_matches.size() == 0)
-    {
-        return false;
-    }
-
-    return AclRule::validate();
 }
 
 AclTable::AclTable(AclOrch *pAclOrch, string id) noexcept : m_pAclOrch(pAclOrch), id(id)

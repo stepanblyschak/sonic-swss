@@ -98,7 +98,6 @@
 #define RULE_OPER_DELETE        1
 
 typedef map<string, sai_acl_entry_attr_t> acl_rule_attr_lookup_t;
-typedef map<string, sai_acl_table_attr_t> acl_table_attr_lookup_t;
 typedef map<string, sai_acl_range_type_t> acl_range_type_lookup_t;
 typedef map<string, sai_acl_bind_point_type_t> acl_bind_point_type_lookup_t;
 typedef map<string, sai_acl_ip_type_t> acl_ip_type_lookup_t;
@@ -109,6 +108,7 @@ typedef map<acl_stage_type_t, set<sai_acl_action_type_t>> acl_capabilities_t;
 typedef map<sai_acl_action_type_t, set<int32_t>> acl_action_enum_values_capabilities_t;
 
 class AclOrch;
+
 class AclTableType
 {
 public:
@@ -283,18 +283,6 @@ private:
     string m_redirect_target_next_hop_group;
 };
 
-class AclRulePfcwd: public AclRulePacket
-{
-public:
-    AclRulePfcwd(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = false);
-};
-
-class AclRuleMux: public AclRulePacket
-{
-public:
-    AclRuleMux(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = false);
-};
-
 class AclRuleMirror: public AclRule
 {
 public:
@@ -340,13 +328,6 @@ public:
 
 protected:
     DTelOrch *m_pDTelOrch;
-};
-
-class AclRuleMclag: public AclRulePacket
-{
-public:
-    AclRuleMclag(AclOrch *m_pAclOrch, string rule, string table, bool createCounter = false);
-    bool validate();
 };
 
 class AclTable

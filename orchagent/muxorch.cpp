@@ -715,8 +715,8 @@ MuxAclHandler::MuxAclHandler(sai_object_id_t port, string alias)
 
         // First time handling of Mux Table, create ACL table, and bind
         createMuxAclTable(port, table_name);
-        shared_ptr<AclRuleMux> newRule =
-                make_shared<AclRuleMux>(gAclOrch, rule_name, table_name);
+        shared_ptr<AclRulePacket> newRule =
+                make_shared<AclRulePacket>(gAclOrch, rule_name, table_name);
         createMuxAclRule(newRule, table_name);
     }
     else
@@ -726,8 +726,8 @@ MuxAclHandler::MuxAclHandler(sai_object_id_t port, string alias)
         AclRule* rule = gAclOrch->getAclRule(table_name, rule_name);
         if (rule == nullptr)
         {
-            shared_ptr<AclRuleMux> newRule =
-                    make_shared<AclRuleMux>(gAclOrch, rule_name, table_name);
+            shared_ptr<AclRulePacket> newRule =
+                    make_shared<AclRulePacket>(gAclOrch, rule_name, table_name);
             createMuxAclRule(newRule, table_name);
         }
         else
@@ -792,7 +792,7 @@ void MuxAclHandler::createMuxAclTable(sai_object_id_t port, string strTable)
     gAclOrch->addAclTable(acl_table);
 }
 
-void MuxAclHandler::createMuxAclRule(shared_ptr<AclRuleMux> rule, string strTable)
+void MuxAclHandler::createMuxAclRule(shared_ptr<AclRulePacket> rule, string strTable)
 {
     SWSS_LOG_ENTER();
 
