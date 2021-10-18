@@ -174,7 +174,7 @@ namespace aclorch_test
         void doAclTableTypeTask(const deque<KeyOpFieldsValuesTuple> &entries)
         {
             auto consumer = unique_ptr<Consumer>(new Consumer(
-                new swss::ConsumerStateTable(config_db, "CFG_ACL_TABLE_TYPE_TABLE_NAME", 1, 1), m_aclOrch, "CFG_ACL_TABLE_TYPE_TABLE_NAME"));
+                new swss::ConsumerStateTable(config_db, CFG_ACL_TABLE_TYPE_TABLE_NAME, 1, 1), m_aclOrch, CFG_ACL_TABLE_TYPE_TABLE_NAME));
 
             consumer->addToSync(entries);
             static_cast<Orch *>(m_aclOrch)->doTask(*consumer);

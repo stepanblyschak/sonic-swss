@@ -2873,7 +2873,7 @@ void AclOrch::doTask(Consumer &consumer)
     {
         doAclRuleTask(consumer);
     }
-    else if (table_name == "CFG_ACL_TABLE_TYPE_TABLE_NAME" || table_name == "APP_ACL_TABLE_TYPE_TABLE_NAME")
+    else if (table_name == CFG_ACL_TABLE_TYPE_TABLE_NAME || table_name == APP_ACL_TABLE_TYPE_TABLE_NAME)
     {
         doAclTableTypeTask(consumer);
     }
