@@ -3344,7 +3344,6 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, bool enableCounter)
             rule_id.c_str(),
             table_id.c_str()
         );
-        registerFlexCounter(*rule);
         return false;
     }
 
