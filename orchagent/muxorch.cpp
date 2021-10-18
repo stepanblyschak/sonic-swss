@@ -768,7 +768,7 @@ void MuxAclHandler::createMuxAclTable(sai_object_id_t port, string strTable)
 
     auto inserted = acl_table_.emplace(piecewise_construct,
                                        std::forward_as_tuple(strTable),
-                                       std::forward_as_tuple());
+                                       std::forward_as_tuple(gAclOrch, strTable));
 
     assert(inserted.second);
 
@@ -785,10 +785,9 @@ void MuxAclHandler::createMuxAclTable(sai_object_id_t port, string strTable)
 
     auto dropType = gAclOrch->getAclTableType(TABLE_TYPE_DROP);
     assert(dropType);
-    acl_table.validateAddType(*dropType);
-    acl_table.id = strTable;
+    acl_table.setTableType(*dropType);
     acl_table.link(port);
-    acl_table.validateAddStage(ACL_STAGE_INGRESS);
+    acl_table.setStage(ACL_STAGE_INGRESS);
     gAclOrch->addAclTable(acl_table);
 }
 

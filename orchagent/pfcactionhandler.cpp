@@ -305,7 +305,7 @@ void PfcWdAclHandler::clear()
     for (auto& tablepair: m_aclTables)
     {
         auto& table = tablepair.second;
-        gAclOrch->removeAclTable(table.getId());
+        gAclOrch->removeAclTable(table.getName());
     }
 }
 
@@ -315,7 +315,7 @@ void PfcWdAclHandler::createPfcAclTable(sai_object_id_t port, string strTable, b
 
     auto inserted = m_aclTables.emplace(piecewise_construct,
         std::forward_as_tuple(strTable),
-        std::forward_as_tuple());
+        std::forward_as_tuple(gAclOrch, strTable));
 
     assert(inserted.second);
 
@@ -331,21 +331,20 @@ void PfcWdAclHandler::createPfcAclTable(sai_object_id_t port, string strTable, b
     }
 
     aclTable.link(port);
-    aclTable.id = strTable;
 
     if (ingress) 
     {
         auto dropType = gAclOrch->getAclTableType(TABLE_TYPE_DROP);
         assert(dropType);
-        aclTable.validateAddType(*dropType);
-        aclTable.validateAddStage(ACL_STAGE_INGRESS);
+        aclTable.setTableType(*dropType);
+        aclTable.setStage(ACL_STAGE_INGRESS);
     } 
     else 
     {
         auto pfcwdType = gAclOrch->getAclTableType(TABLE_TYPE_PFCWD);
         assert(pfcwdType);
-        aclTable.validateAddType(*pfcwdType);
-        aclTable.validateAddStage(ACL_STAGE_EGRESS);
+        aclTable.setTableType(*pfcwdType);
+        aclTable.setStage(ACL_STAGE_EGRESS);
     }
     
     gAclOrch->addAclTable(aclTable);

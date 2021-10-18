@@ -191,13 +191,13 @@ bool PbhOrch::createPbhTable(const PbhTable &table)
         .withEnabledMatch(SAI_ACL_TABLE_ATTR_FIELD_INNER_ETHER_TYPE)
         .build();
 
-    if (!pbhTable.validateAddType(pbhTableType))
+    if (!pbhTable.setTableType(pbhTableType))
     {
         SWSS_LOG_ERROR("Failed to configure PBH table(%s) type", table.key.c_str());
         return false;
     }
 
-    if (!pbhTable.validateAddStage(acl_stage_type_t::ACL_STAGE_INGRESS))
+    if (!pbhTable.setStage(AclStageTypeT::ACL_STAGE_INGRESS))
     {
         SWSS_LOG_ERROR("Failed to configure PBH table(%s) stage", table.key.c_str());
         return false;
@@ -205,7 +205,7 @@ bool PbhOrch::createPbhTable(const PbhTable &table)
 
     if (table.interface_list.is_set)
     {
-        if (!pbhTable.validateAddPorts(table.interface_list.value))
+        if (!pbhTable.addPorts(table.interface_list.value))
         {
             SWSS_LOG_ERROR("Failed to configure PBH table(%s) ports", table.key.c_str());
             return false;
@@ -256,7 +256,7 @@ bool PbhOrch::updatePbhTable(const PbhTable &table)
 
     if (table.interface_list.is_set)
     {
-        if (!pbhTable.validateAddPorts(table.interface_list.value))
+        if (!pbhTable.addPorts(table.interface_list.value))
         {
             SWSS_LOG_ERROR("Failed to configure PBH table(%s) ports", table.key.c_str());
             return false;

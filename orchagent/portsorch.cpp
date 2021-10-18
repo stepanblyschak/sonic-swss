@@ -1316,7 +1316,7 @@ bool PortsOrch::bindUnbindAclTableGroup(Port &port,
 
 bool PortsOrch::unbindRemoveAclTableGroup(sai_object_id_t  port_oid,
                                           sai_object_id_t  acl_table_oid,
-                                          acl_stage_type_t acl_stage)
+                                          AclStageTypeT acl_stage)
 {
     SWSS_LOG_ENTER();
 
@@ -1392,7 +1392,7 @@ bool PortsOrch::unbindRemoveAclTableGroup(sai_object_id_t  port_oid,
 bool PortsOrch::createBindAclTableGroup(sai_object_id_t  port_oid,
                                         sai_object_id_t  acl_table_oid,
                                         sai_object_id_t  &group_oid,
-                                        acl_stage_type_t acl_stage)
+                                        AclStageTypeT acl_stage)
 {
     SWSS_LOG_ENTER();
 
@@ -1488,7 +1488,7 @@ bool PortsOrch::createBindAclTableGroup(sai_object_id_t  port_oid,
 bool PortsOrch::unbindAclTable(sai_object_id_t  port_oid,
                                sai_object_id_t  acl_table_oid,
                                sai_object_id_t  acl_group_member_oid,
-                               acl_stage_type_t acl_stage)
+                               AclStageTypeT acl_stage)
 {
 
     /*
@@ -1526,7 +1526,7 @@ bool PortsOrch::unbindAclTable(sai_object_id_t  port_oid,
 bool PortsOrch::bindAclTable(sai_object_id_t  port_oid,
                              sai_object_id_t  table_oid,
                              sai_object_id_t  &group_member_oid,
-                             acl_stage_type_t acl_stage)
+                             AclStageTypeT acl_stage)
 {
     SWSS_LOG_ENTER();
     /*

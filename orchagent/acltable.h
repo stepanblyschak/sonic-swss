@@ -38,6 +38,6 @@ typedef enum
     ACL_STAGE_UNKNOWN,
     ACL_STAGE_INGRESS,
     ACL_STAGE_EGRESS
-} acl_stage_type_t;
+} AclStageTypeT;
 
-typedef std::unordered_map<std::string, acl_stage_type_t> acl_stage_type_lookup_t;
+typedef std::unordered_map<std::string, AclStageTypeT> acl_stage_type_lookup_t;

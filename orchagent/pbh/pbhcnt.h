@@ -9,6 +9,7 @@ extern "C" {
 
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
 #include <string>
 
 #include "ipaddress.h"
@@ -43,7 +44,7 @@ public:
     PbhTable(const std::string &key, const std::string &op) noexcept;
 
     struct {
-        std::unordered_set<std::string> value;
+        std::set<std::string> value;
         bool is_set = false;
     } interface_list;
 

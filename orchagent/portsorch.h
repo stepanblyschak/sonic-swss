@@ -106,18 +106,18 @@ public:
     bool createBindAclTableGroup(sai_object_id_t  port_oid,
                    sai_object_id_t  acl_table_oid,
                    sai_object_id_t  &group_oid,
-                   acl_stage_type_t acl_stage = ACL_STAGE_EGRESS);
+                   AclStageTypeT acl_stage = ACL_STAGE_EGRESS);
     bool unbindRemoveAclTableGroup(sai_object_id_t  port_oid,
                                    sai_object_id_t  acl_table_oid,
-                                   acl_stage_type_t acl_stage);
+                                   AclStageTypeT acl_stage);
     bool bindAclTable(sai_object_id_t  id,
                       sai_object_id_t  table_oid,
                       sai_object_id_t  &group_member_oid,
-                      acl_stage_type_t acl_stage = ACL_STAGE_INGRESS);
+                      AclStageTypeT acl_stage = ACL_STAGE_INGRESS);
     bool unbindAclTable(sai_object_id_t  port_oid,
                         sai_object_id_t  acl_table_oid,
                         sai_object_id_t  acl_group_member_oid,
-                        acl_stage_type_t acl_stage);
+                        AclStageTypeT acl_stage);
     bool bindUnbindAclTableGroup(Port &port,
                                  bool ingress,
                                  bool bind);

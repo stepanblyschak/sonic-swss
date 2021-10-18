@@ -467,7 +467,7 @@ bool PbhHelper::parsePbhTableInterfaceList(PbhTable &table, const std::string &f
         return false;
     }
 
-    table.interface_list.value = std::unordered_set<std::string>(ifList.cbegin(), ifList.cend());
+    table.interface_list.value = std::set<std::string>(ifList.cbegin(), ifList.cend());
     table.interface_list.is_set = true;
 
     if (table.interface_list.value.size() != ifList.size())

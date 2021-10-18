@@ -98,7 +98,7 @@ namespace aclorch_test
 
     TEST_F(AclTest, Create_L3_Acl_Table)
     {
-        AclTable acltable;
+        AclTable acltable(nullptr); /* this test won't trigger a call to gAclOrch so it's nullptr */
         AclTableTypeBuilder builder;
         auto l3TableType = builder.withName(TABLE_TYPE_L3)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
@@ -118,7 +118,7 @@ namespace aclorch_test
             .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE)
             .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE)
             .build();
-        acltable.validateAddType(l3TableType);
+        acltable.setTableType(l3TableType);
         auto res = createAclTable(acltable);
 
         ASSERT_TRUE(res->ret_val);
@@ -1390,8 +1390,14 @@ namespace aclorch_test
                         aclTableTypeName,
                         SET_COMMAND,
                         {
-                            { ACL_TABLE_TYPE_MATCHES, "SRC_IP,ETHER_TYPE,L4_SRC_PORT_RANGE" },
-                            { ACL_TABLE_TYPE_BPOINT_TYPES, "PORT,PORTCHANNEL" },
+                            {
+                                ACL_TABLE_TYPE_MATCHES,
+                                string(MATCH_SRC_IP) +  comma + MATCH_ETHER_TYPE + comma + MATCH_L4_SRC_PORT_RANGE
+                            },
+                            {
+                                ACL_TABLE_TYPE_BPOINT_TYPES,
+                                string(BIND_POINT_TYPE_PORT) + comma + BIND_POINT_TYPE_PORTCHANNEL
+                            },
                         }
                     }
                 }
@@ -1423,9 +1429,9 @@ namespace aclorch_test
                         aclTableName + "|" + aclRuleName,
                         SET_COMMAND,
                         {
-                            { "SRC_IP", "1.1.1.1/32" },
-                            { "L4_DST_PORT_RANGE", "80..100" },
-                            { "PACKET_ACTION", "DROP" },
+                            { MATCH_SRC_IP, "1.1.1.1/32" },
+                            { MATCH_L4_DST_PORT_RANGE, "80..100" },
+                            { ACTION_PACKET_ACTION, PACKET_ACTION_DROP },
                         }
                     }
                 }
@@ -1442,9 +1448,9 @@ namespace aclorch_test
                         aclTableName + "|" + aclRuleName,
                         SET_COMMAND,
                         {
-                            { "SRC_IP", "1.1.1.1/32" },
-                            { "DST_IP", "2.2.2.2/32" },
-                            { "PACKET_ACTION", "DROP" },
+                            { MATCH_SRC_IP, "1.1.1.1/32" },
+                            { MATCH_DST_IP, "2.2.2.2/32" },
+                            { ACTION_PACKET_ACTION, PACKET_ACTION_DROP },
                         }
                     }
                 }
@@ -1461,8 +1467,8 @@ namespace aclorch_test
                         aclTableName + "|" + aclRuleName,
                         SET_COMMAND,
                         {
-                            { "SRC_IP", "1.1.1.1/32" },
-                            { "PACKET_ACTION", "DROP" },
+                            { MATCH_SRC_IP, "1.1.1.1/32" },
+                            { ACTION_PACKET_ACTION, PACKET_ACTION_DROP },
                         }
                     }
                 }
@@ -1533,9 +1539,18 @@ namespace aclorch_test
                         aclTableTypeName,
                         SET_COMMAND,
                         {
-                            { ACL_TABLE_TYPE_MATCHES, "ETHER_TYPE,L4_SRC_PORT_RANGE,L4_DST_PORT_RANGE" },
-                            { ACL_TABLE_TYPE_BPOINT_TYPES, "PORTCHANNEL" },
-                            { ACL_TABLE_TYPE_ACTIONS, "MIRROR_INGRESS_ACTION" }
+                            {
+                                ACL_TABLE_TYPE_MATCHES,
+                                string(MATCH_ETHER_TYPE) + comma + MATCH_L4_SRC_PORT_RANGE + comma + MATCH_L4_SRC_PORT_RANGE
+                            },
+                            {
+                                ACL_TABLE_TYPE_BPOINT_TYPES,
+                                BIND_POINT_TYPE_PORTCHANNEL
+                            },
+                            {
+                                ACL_TABLE_TYPE_ACTIONS,
+                                ACTION_MIRROR_INGRESS_ACTION
+                            }
                         }
                     }
                 }
@@ -1581,8 +1596,8 @@ namespace aclorch_test
                         aclTableName + "|" + aclRuleName,
                         SET_COMMAND,
                         {
-                            { "ETHER_TYPE", "2048" },
-                            { "PACKET_ACTION", "DROP" },
+                            { MATCH_ETHER_TYPE, "2048" },
+                            { ACTION_PACKET_ACTION, PACKET_ACTION_DROP },
                         }
                     }
                 }
@@ -1592,7 +1607,8 @@ namespace aclorch_test
         // Packet action is not supported on this table
         ASSERT_FALSE(orch->getAclRule(aclTableName, aclRuleName));
 
-        gMirrorOrch->createEntry("s0", {});
+        const auto testSessionName = "test_session";
+        gMirrorOrch->createEntry(testSessionName, {});
         orch->doAclRuleTask(
             deque<KeyOpFieldsValuesTuple>(
                 {
@@ -1600,8 +1616,8 @@ namespace aclorch_test
                         aclTableName + "|" + aclRuleName,
                         SET_COMMAND,
                         {
-                            { "ETHER_TYPE", "2048" },
-                            { "MIRROR_INGRESS_ACTION", "s0" },
+                            { MATCH_ETHER_TYPE, "2048" },
+                            { ACTION_MIRROR_INGRESS_ACTION, testSessionName },
                         }
                     }
                 }

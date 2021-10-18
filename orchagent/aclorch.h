@@ -113,7 +113,7 @@ using AclDtelFlowOpTypeLookupT = std::map<std::string, sai_acl_dtel_flow_op_t>;
 using AclPacketActionLookupT = std::map<std::string, sai_packet_action_t>;
 using AclRangePropertiesT = std::tuple<sai_acl_range_type_t, int, int>;
 using AclActionEnumValuesCapabilitiesT = std::map<sai_acl_action_type_t, std::set<int32_t>>;
-using AclCapabilitiesT = std::map<acl_stage_type_t, AclActionCapabilities>;
+using AclCapabilitiesT = std::map<AclStageTypeT, AclActionCapabilities>;
 
 class AclTableType
 {
@@ -342,26 +342,32 @@ public:
     AclTable(AclOrch *pAclOrch, std::string id) noexcept;
     AclTable(AclOrch *pAclOrch) noexcept;
 
-    AclTable() = default;
-    ~AclTable() = default;
+    sai_object_id_t getOid() const;
+    std::string getName() const;
+    const AclTableType& getTableType() const;
+    const std::string& getDescription() const;
+    AclStageTypeT getStage() const;
+    AclRule* getAclRule(std::string ruleName) const;
+    const std::set<std::string>& getPorts() const;
 
-    sai_object_id_t getOid() const { return m_oid; }
-    std::string getId() const { return id; }
+    bool isOneOfDefaultL3MirrorTables() const;
+    bool isDefaultMirrorV4Table() const;
+    bool isDefaultMirrorV6Table() const;
+    bool isOneOfDefaultV6Tables() const;
 
-    const AclTableType& getTableType() const { return type; }
+    void setDescription(const std::string &value);
+    bool setTableType(const AclTableType &tableType);
+    bool setStage(const AclStageTypeT &value);
+    bool addPorts(const std::set<std::string> &value);
+    bool removePorts(const std::set<std::string> &value);
 
-    void setDescription(const std::string &value) { description = value; }
-    const std::string& getDescription() const { return description; }
+    bool validate() const;
 
-    bool validateAddType(const AclTableType &tableType);
-    bool validateAddStage(const acl_stage_type_t &value);
-    bool validateAddPorts(const std::unordered_set<std::string> &value);
+    bool create();
+    bool remove();
 
     bool validateAclRuleMatch(sai_attribute_t attr) const;
     bool validateAclRuleAction(sai_attribute_t attr) const;
-
-    bool validate();
-    bool create();
 
     // Bind the ACL table to a port which is already linked
     bool bind(sai_object_id_t portOid);
@@ -383,24 +389,23 @@ public:
     bool clear();
     // Update table subject to changes
     void onUpdate(SubjectType, void *);
+    // Update table based on port change update 
+    void onPortChangeUpdate(const PortUpdate& update);
 
-public:
+private:
+    /* ACL table configuration properties */
     std::string id;
     std::string description;
-
+    std::set<std::string> portSet;
     AclTableType type;
-    acl_stage_type_t stage = ACL_STAGE_INGRESS;
+    AclStageTypeT stage {ACL_STAGE_INGRESS};
 
+    AclOrch *m_pAclOrch = nullptr;
+    sai_object_id_t m_oid = SAI_NULL_OBJECT_ID;
     // Map port oid to group member oid
     std::map<sai_object_id_t, sai_object_id_t> ports;
     // Map rule name to rule data
     std::map<std::string, shared_ptr<AclRule>> rules;
-    // Set to store the ACL table port alias
-    std::set<std::string> portSet;
-
-private:
-    sai_object_id_t m_oid = SAI_NULL_OBJECT_ID;
-    AclOrch *m_pAclOrch = nullptr;
 };
 
 class AclOrch : public Orch, public Observer
@@ -449,16 +454,13 @@ public:
     bool isAclMirrorV6Supported() const;
     bool isAclMirrorV4Supported() const;
     bool isAclMirrorTableSupported(std::string type) const;
-    bool isAclActionListMandatoryOnTableCreation(acl_stage_type_t stage) const;
-    bool isAclActionSupported(acl_stage_type_t stage, sai_acl_action_type_t action) const;
+    bool isAclActionListMandatoryOnTableCreation(AclStageTypeT stage) const;
+    bool isAclActionSupported(AclStageTypeT stage, sai_acl_action_type_t action) const;
     bool isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const;
 
     bool m_isCombinedMirrorV6Table = true;
     std::map<std::string, bool> m_mirrorTableCapabilities;
     
-    // Get the OID for the ACL bind point for a given port
-    static bool getAclBindPortId(Port& port, sai_object_id_t& port_id);
-
     using Orch::doTask;  // Allow access to the basic doTask
     std::map<sai_object_id_t, AclTable>  getAclTables()
     {
@@ -477,31 +479,25 @@ private:
 
     void queryMirrorTableCapability();
     void queryAclActionCapability();
-    void initDefaultAclActionCapabilities(acl_stage_type_t);
-    void putAclActionCapabilityInDB(acl_stage_type_t);
+    void initDefaultAclActionCapabilities(AclStageTypeT);
+    void putAclActionCapabilityInDB(AclStageTypeT);
 
     template<typename AclActionAttrLookupT>
     void queryAclActionAttrEnumValues(const std::string& action_name,
                                       const AclRuleAttrLookupT& ruleAttrLookupMap,
                                       const AclActionAttrLookupT lookupMap);
 
-    static void collectCountersThread(AclOrch *pAclOrch);
-
     bool createBindAclTable(AclTable &aclTable, sai_object_id_t &table_oid);
-    sai_status_t bindAclTable(AclTable &aclTable, bool bind = true);
-    sai_status_t deleteUnbindAclTable(sai_object_id_t table_oid);
+    bool bindAclTable(AclTable &aclTable, bool bind = true);
+    bool deleteUnbindAclTable(sai_object_id_t table_oid);
 
     bool isAclTableTypeUpdated(std::string table_type, AclTable &aclTable);
     bool processAclTableType(std::string type, AclTable &table);
-    bool isAclTableStageUpdated(acl_stage_type_t acl_stage, AclTable &aclTable);
-    bool processAclTableStage(std::string stage, acl_stage_type_t &acl_stage);
+    bool isAclTableStageUpdated(AclStageTypeT acl_stage, AclTable &aclTable);
+    bool processAclTableStage(std::string stage, AclTable &aclTable);
     bool processAclTablePorts(std::string portList, AclTable &aclTable);
     bool validateAclTable(AclTable &aclTable);
     bool updateAclTablePorts(AclTable &newTable, AclTable &curTable);
-    void getAddDeletePorts(AclTable    &newT,
-                           AclTable    &curT,
-                           std::set<std::string> &addSet,
-                           std::set<std::string> &delSet);
     void createDTelWatchListTables();
     void deleteDTelWatchListTables();
 
@@ -511,8 +507,8 @@ private:
     static DBConnector m_db;
     static Table m_countersTable;
 
-    std::map<acl_stage_type_t, std::string> m_mirrorTableId;
-    std::map<acl_stage_type_t, std::string> m_mirrorV6TableId;
+    std::map<AclStageTypeT, std::string> m_mirrorTableId;
+    std::map<AclStageTypeT, std::string> m_mirrorV6TableId;
 
     AclCapabilitiesT m_aclCapabilities;
     AclActionEnumValuesCapabilitiesT m_aclEnumActionCapabilities;
