@@ -358,11 +358,11 @@ void PfcWdAclHandler::createPfcAclRule(shared_ptr<AclRulePacket> rule, uint8_t q
 
     attr_name = RULE_PRIORITY;
     attr_value = "999";
-    rule->validateAddPriority(attr_name, attr_value);
+    rule->setPriority(attr_name, attr_value);
 
     attr_name = MATCH_TC;
     attr_value = to_string(queueId);
-    rule->validateAddMatch(attr_name, attr_value);
+    rule->setMatch(attr_name, attr_value);
 
     // Add MATCH_IN_PORTS as match criteria for ingress table
     if (strTable == INGRESS_TABLE_DROP) 
@@ -377,12 +377,12 @@ void PfcWdAclHandler::createPfcAclRule(shared_ptr<AclRulePacket> rule, uint8_t q
         }
 
         attr_value = p.m_alias;
-        rule->validateAddMatch(attr_name, attr_value);
+        rule->setMatch(attr_name, attr_value);
     }
 
     attr_name = ACTION_PACKET_ACTION;
     attr_value = PACKET_ACTION_DROP;
-    rule->validateAddAction(attr_name, attr_value);
+    rule->setAction(attr_name, attr_value);
 
     gAclOrch->addAclRule(rule, strTable);
 }

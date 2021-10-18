@@ -483,7 +483,7 @@ AclRule::AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounte
     }
 }
 
-bool AclRule::validateAddPriority(string attr_name, string attr_value)
+bool AclRule::setPriority(string attr_name, string attr_value)
 {
     bool status = false;
 
@@ -502,7 +502,7 @@ bool AclRule::validateAddPriority(string attr_name, string attr_value)
     return status;
 }
 
-bool AclRule::validateAddMatch(string attr_name, string attr_value)
+bool AclRule::setMatch(string attr_name, string attr_value)
 {
     SWSS_LOG_ENTER();
 
@@ -723,7 +723,7 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
     return true;
 }
 
-bool AclRule::validateAddAction(string attr_name, string attr_value)
+bool AclRule::setAction(string attr_name, string attr_value)
 {
     return true;
 }
@@ -1162,7 +1162,7 @@ AclRulePacket::AclRulePacket(AclOrch *aclOrch, string rule, string table, bool c
 {
 }
 
-bool AclRulePacket::validateAddAction(string attr_name, string _attr_value)
+bool AclRulePacket::setAction(string attr_name, string _attr_value)
 {
     SWSS_LOG_ENTER();
 
@@ -1236,7 +1236,7 @@ bool AclRulePacket::validateAddAction(string attr_name, string _attr_value)
 
     m_actions[aclL3ActionLookup[action_str]] = value;
 
-    return AclRule::validateAddAction(attr_name, attr_value);
+    return AclRule::setAction(attr_name, attr_value);
 }
 
 // This method should return sai attribute id of the redirect destination
@@ -1389,7 +1389,7 @@ AclRuleMirror::AclRuleMirror(AclOrch *aclOrch, MirrorOrch *mirror, string rule, 
 {
 }
 
-bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
+bool AclRuleMirror::setAction(string attr_name, string attr_value)
 {
     SWSS_LOG_ENTER();
 
@@ -1415,7 +1415,7 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
     // insert placeholder value, we'll set the session oid in AclRuleMirror::create()
     m_actions[action] = sai_attribute_value_t{};
 
-    return AclRule::validateAddAction(attr_name, attr_value);
+    return AclRule::setAction(attr_name, attr_value);
 }
 
 bool AclRuleMirror::validate()
@@ -2100,7 +2100,7 @@ AclRuleDTelFlowWatchListEntry::AclRuleDTelFlowWatchListEntry(AclOrch *aclOrch, D
 {
 }
 
-bool AclRuleDTelFlowWatchListEntry::validateAddAction(string attr_name, string attr_val)
+bool AclRuleDTelFlowWatchListEntry::setAction(string attr_name, string attr_val)
 {
     SWSS_LOG_ENTER();
 
@@ -2181,7 +2181,7 @@ bool AclRuleDTelFlowWatchListEntry::validateAddAction(string attr_name, string a
 
     m_actions[aclDTelActionLookup[attr_name]] = value;
 
-    return AclRule::validateAddAction(attr_name, attr_value);
+    return AclRule::setAction(attr_name, attr_value);
 }
 
 bool AclRuleDTelFlowWatchListEntry::validate()
@@ -2315,7 +2315,7 @@ AclRuleDTelDropWatchListEntry::AclRuleDTelDropWatchListEntry(AclOrch *aclOrch, D
 {
 }
 
-bool AclRuleDTelDropWatchListEntry::validateAddAction(string attr_name, string attr_val)
+bool AclRuleDTelDropWatchListEntry::setAction(string attr_name, string attr_val)
 {
     SWSS_LOG_ENTER();
 
@@ -2340,7 +2340,7 @@ bool AclRuleDTelDropWatchListEntry::validateAddAction(string attr_name, string a
 
     m_actions[aclDTelActionLookup[attr_name]] = value;
 
-    return AclRule::validateAddAction(attr_name, attr_value);
+    return AclRule::setAction(attr_name, attr_value);
 }
 
 bool AclRuleDTelDropWatchListEntry::validate()
@@ -3040,7 +3040,6 @@ void AclOrch::doTask(Consumer &consumer)
 
 bool AclOrch::updateAclTablePorts(AclTable &newTable, AclTable &curTable)
 {
-    // sai_object_id_t    port_oid = SAI_NULL_OBJECT_ID;
     set<string> addPortSet, removedPortSet;
 
     SWSS_LOG_ENTER();
@@ -3072,18 +3071,18 @@ bool AclOrch::updateAclTable(AclTable &currentTable, AclTable &newTable)
     return true;
 }
 
-bool AclOrch::updateAclTable(string table_id, AclTable &table)
+bool AclOrch::updateAclTable(string table_id, AclTable &newTable)
 {
     SWSS_LOG_ENTER();
 
-    auto tableOid = getTableById(table_id);
-    if (tableOid == SAI_NULL_OBJECT_ID)
+    auto curTable = getAclTable(table_id);
+    if (!curTable)
     {
         SWSS_LOG_ERROR("Failed to update ACL table %s: object doesn't exist", table_id.c_str());
         return false;
     }
 
-    if (!updateAclTable(m_AclTables.at(tableOid), table))
+    if (!updateAclTable(*curTable, newTable))
     {
         SWSS_LOG_ERROR("Failed to update ACL table %s", table_id.c_str());
         return false;
@@ -3096,12 +3095,11 @@ bool AclOrch::addAclTable(AclTable &newTable)
 {
     SWSS_LOG_ENTER();
 
-    string table_id = newTable.getName();
-
-    sai_object_id_t table_oid = getTableById(table_id);
+    auto table_id = newTable.getName();
     auto table_stage = newTable.getStage();
 
-    if (table_oid != SAI_NULL_OBJECT_ID)
+    auto curTable = getAclTable(table_id);
+    if (curTable)
     {
         /* If ACL table exists, remove the table first.*/
         if (!removeAclTable(table_id))
@@ -3168,10 +3166,10 @@ bool AclOrch::addAclTable(AclTable &newTable)
         }
     }
 
-    if (createBindAclTable(newTable, table_oid))
+    if (createBindAclTable(newTable))
     {
-        m_AclTables.insert(make_pair(table_oid, newTable));
-        SWSS_LOG_NOTICE("Created ACL table %s oid:%" PRIx64, newTable.getName().c_str(), table_oid);
+        m_AclTables.insert(make_pair(newTable.getOid(), newTable));
+        SWSS_LOG_NOTICE("Created ACL table %s oid:%" PRIx64, newTable.getName().c_str(), newTable.getOid());
 
         // Mark the existence of the mirror table
         if (newTable.isDefaultMirrorV4Table())
@@ -3196,29 +3194,30 @@ bool AclOrch::removeAclTable(string table_id)
 {
     SWSS_LOG_ENTER();
 
-    sai_object_id_t table_oid = getTableById(table_id);
-    if (table_oid == SAI_NULL_OBJECT_ID)
+    auto table = getAclTable(table_id);
+    if (!table)
     {
         SWSS_LOG_WARN("Skip deleting ACL table %s. Table does not exist.", table_id.c_str());
         return true;
     }
 
-    auto& table = m_AclTables.at(table_oid);
-
     /* If ACL rules associate with this table, remove the rules first.*/
-    bool suc = table.clear();
-    if (!suc) return false;
-
-    if (!deleteUnbindAclTable(table_oid))
+    if (!table->clear())
     {
-        SWSS_LOG_ERROR("Failed to delete ACL table %s.", table_id.c_str());
         return false;
     }
 
-    auto stage = m_AclTables.at(table_oid).getStage();
+    if (!deleteUnbindAclTable(table->getOid()))
+    {
+        SWSS_LOG_ERROR("Failed to delete ACL table %s.", table_id.c_str());
+        return false;
+    };
 
     SWSS_LOG_NOTICE("Successfully deleted ACL table %s", table_id.c_str());
-    m_AclTables.erase(table_oid);
+
+    m_AclTables.erase(table->getOid());
+
+    auto stage = table->getStage();
 
     // Clear mirror table information
     // If the v4 and v6 ACL mirror tables are combined together,
@@ -3277,40 +3276,38 @@ bool AclOrch::removeAclTableType(const string& tableTypeName)
 
 bool AclOrch::addAclRule(shared_ptr<AclRule> newRule, string table_id)
 {
-    sai_object_id_t table_oid = getTableById(table_id);
-    if (table_oid == SAI_NULL_OBJECT_ID)
+    auto table = getAclTable(table_id);
+    if (!table)
     {
         SWSS_LOG_ERROR("Failed to add ACL rule in ACL table %s. Table doesn't exist", table_id.c_str());
         return false;
     }
 
-    return m_AclTables.at(table_oid).add(newRule);
+    return table->add(newRule);
 }
 
 bool AclOrch::removeAclRule(string table_id, string rule_id)
 {
-    sai_object_id_t table_oid = getTableById(table_id);
-    if (table_oid == SAI_NULL_OBJECT_ID)
+    auto table = getAclTable(table_id);
+    if (!table)
     {
         SWSS_LOG_WARN("Skip removing rule %s from ACL table %s. Table does not exist", rule_id.c_str(), table_id.c_str());
         return true;
     }
 
-    return m_AclTables.at(table_oid).remove(rule_id);
+    return table->remove(rule_id);
 }
 
 AclRule* AclOrch::getAclRule(string table_id, string rule_id)
 {
-    sai_object_id_t table_oid = getTableById(table_id);
-    if (table_oid == SAI_NULL_OBJECT_ID)
+    auto table = getAclTable(table_id);
+    if (!table)
     {
         SWSS_LOG_INFO("Table %s does not exist", table_id.c_str());
         return nullptr;
     }
 
-    auto table = m_AclTables.at(table_oid);
-    auto rule = table.getAclRule(rule_id);
-
+    auto rule = table->getAclRule(rule_id);
     if (!rule)
     {
         SWSS_LOG_INFO("Rule %s doesn't exist", rule_id.c_str());
@@ -3323,16 +3320,16 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, string attr_name, v
 {
     SWSS_LOG_ENTER();
 
-    sai_object_id_t table_oid = getTableById(table_id);
     string attr_value;
 
-    if (table_oid == SAI_NULL_OBJECT_ID)
+    auto table = getAclTable(table_id);
+    if (!table)
     {
         SWSS_LOG_ERROR("Failed to update ACL rule in ACL table %s. Table doesn't exist", table_id.c_str());
         return false;
     }
 
-    auto rule = m_AclTables.at(table_oid).getAclRule(rule_id);
+    auto rule = table->getAclRule(rule_id);
     if (!rule)
     {
         SWSS_LOG_ERROR("Failed to update ACL rule in ACL table %s. Rule doesn't exist", rule_id.c_str());
@@ -3375,7 +3372,7 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, string attr_name, v
                 attr_value.pop_back();
             }
 
-            rule->validateAddMatch(MATCH_IN_PORTS, attr_value);
+            rule->setMatch(MATCH_IN_PORTS, attr_value);
             rule->updateInPorts();
         }
         break;
@@ -3392,8 +3389,8 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, bool enableCounter)
 {
     SWSS_LOG_ENTER();
 
-    auto tableOid = getTableById(table_id);
-    if (tableOid == SAI_NULL_OBJECT_ID)
+    auto table = getAclTable(table_id);
+    if (!table)
     {
         SWSS_LOG_ERROR(
             "Failed to update ACL rule %s: ACL table %s doesn't exist",
@@ -3403,7 +3400,7 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, bool enableCounter)
         return false;
     }
 
-    auto rule = m_AclTables.at(tableOid).getAclRule(rule_id);
+    auto rule = table->getAclRule(rule_id);
     if (!rule)
     {
         SWSS_LOG_ERROR(
@@ -3579,15 +3576,13 @@ void AclOrch::doAclTableTask(Consumer &consumer)
                 // update the table. Otherwise delete and re-create
                 // Condition 1: Table's TYPE and STAGE hasn't changed
 
-                sai_object_id_t table_oid = getTableById(table_id);
-                if (table_oid != SAI_NULL_OBJECT_ID &&
-                    !isAclTableTypeUpdated(newTable.getTableType().getName(),
-                                           m_AclTables.at(table_oid)) &&
-                    !isAclTableStageUpdated(newTable.getStage(),
-                                            m_AclTables.at(table_oid)))
+                auto curTable = getAclTable(table_id);
+                if (curTable &&
+                    !isAclTableTypeUpdated(newTable.getTableType().getName(), *curTable) &&
+                    !isAclTableStageUpdated(newTable.getStage(), *curTable))
                 {
                     // Update the existing table using the info in newTable
-                    if (updateAclTable(m_AclTables.at(table_oid), newTable))
+                    if (updateAclTable(*curTable, newTable))
                     {
                         SWSS_LOG_NOTICE("Successfully updated existing ACL table %s",
                                         table_id.c_str());
@@ -3611,8 +3606,7 @@ void AclOrch::doAclTableTask(Consumer &consumer)
             else
             {
                 it = consumer.m_toSync.erase(it);
-                SWSS_LOG_ERROR("Failed to create ACL table %s, invalid configuration",
-                        table_id.c_str());
+                SWSS_LOG_ERROR("Failed to create ACL table %s, invalid configuration", table_id.c_str());
             }
         }
         else if (op == DEL_COMMAND)
@@ -3658,18 +3652,16 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
             bool bAllAttributesOk = true;
             shared_ptr<AclRule> newRule;
 
-            // Get the ACL table OID
-            sai_object_id_t table_oid = getTableById(table_id);
+            auto table = getAclTable(table_id);
 
             /* ACL table is not yet created */
-            if (table_oid == SAI_NULL_OBJECT_ID)
+            if (!table)
             {
                 SWSS_LOG_INFO("Wait for ACL table %s to be created", table_id.c_str());
                 it++;
                 continue;
             }
 
-            auto table = m_AclTables.at(table_oid);
             try
             {
                 newRule = AclRule::makeShared(this, m_mirrorOrch, m_dTelOrch, rule_id, table_id, t);
@@ -3680,6 +3672,7 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
                 it = consumer.m_toSync.erase(it);
                 return;
             }
+
             bool bHasTCPFlag = false;
             bool bHasIPProtocol = false;
             for (const auto& itr : kfvFieldsValues(t))
@@ -3696,15 +3689,15 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
                 {
                     bHasIPProtocol = true;
                 }
-                if (newRule->validateAddPriority(attr_name, attr_value))
+                if (newRule->setPriority(attr_name, attr_value))
                 {
                     SWSS_LOG_INFO("Added priority attribute");
                 }
-                else if (newRule->validateAddMatch(attr_name, attr_value))
+                else if (newRule->setMatch(attr_name, attr_value))
                 {
                     SWSS_LOG_INFO("Added match attribute '%s'", attr_name.c_str());
                 }
-                else if (newRule->validateAddAction(attr_name, attr_value))
+                else if (newRule->setAction(attr_name, attr_value))
                 {
                     SWSS_LOG_INFO("Added action attribute '%s'", attr_name.c_str());
                 }
@@ -3720,7 +3713,7 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
             if (bHasTCPFlag && !bHasIPProtocol)
             {
                 string attr_name;
-                if (table.isOneOfDefaultV6Tables())
+                if (table->isOneOfDefaultV6Tables())
                 {
                     attr_name = MATCH_NEXT_HEADER;
                 }
@@ -3730,7 +3723,7 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
 
                 }
                 string attr_value = std::to_string(TCP_PROTOCOL_NUM);
-                if (newRule->validateAddMatch(attr_name, attr_value))
+                if (newRule->setMatch(attr_name, attr_value))
                 {
                     SWSS_LOG_INFO("Automatically added match attribute '%s : %s'", attr_name.c_str(), attr_value.c_str());
                 }
@@ -3802,7 +3795,6 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
 
         it = consumer.m_toSync.erase(it);
     }
-
 }
 
 bool AclOrch::processAclTablePorts(string portList, AclTable &aclTable)
@@ -3886,16 +3878,16 @@ sai_object_id_t AclOrch::getTableById(string table_id)
     return SAI_NULL_OBJECT_ID;
 }
 
-const AclTable* AclOrch::getAclTable(const string& tableId)
+AclTable* AclOrch::getAclTable(const string& tableId)
 {
     auto oid = getTableById(tableId);
     return getTableByOid(oid);
 }
 
-const AclTable *AclOrch::getTableByOid(sai_object_id_t oid) const
+AclTable *AclOrch::getTableByOid(sai_object_id_t oid)
 {
-   const auto& it = m_AclTables.find(oid);
-   if (it == m_AclTables.cend())
+   auto it = m_AclTables.find(oid);
+   if (it == m_AclTables.end())
    {
        return nullptr;
    }
@@ -3914,14 +3906,23 @@ const AclTableType* AclOrch::getAclTableType(const string& tableTypeName) const
     return &it->second;
 }
 
-bool AclOrch::createBindAclTable(AclTable &aclTable, sai_object_id_t &table_oid)
+swss::Table& AclOrch::getCountersTable()
+{
+    return m_countersTable;
+}
+
+map<sai_object_id_t, AclTable>  AclOrch::getAclTables()
+{
+    return m_AclTables;
+}
+
+bool AclOrch::createBindAclTable(AclTable &aclTable)
 {
     SWSS_LOG_ENTER();
 
     bool suc = aclTable.create();
     if (!suc) return false;
 
-    table_oid = aclTable.getOid();
     if (!bindAclTable(aclTable))
     {
         SWSS_LOG_ERROR("Failed to bind table %s to ports", aclTable.getName().c_str());

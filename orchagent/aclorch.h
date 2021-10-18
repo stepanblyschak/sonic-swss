@@ -215,9 +215,9 @@ class AclRule
 {
 public:
     AclRule(AclOrch *pAclOrch, std::string rule, std::string table, bool createCounter = true);
-    virtual bool validateAddPriority(std::string attr_name, std::string attr_value);
-    virtual bool validateAddMatch(std::string attr_name, std::string attr_value);
-    virtual bool validateAddAction(std::string attr_name, std::string attr_value);
+    virtual bool setPriority(std::string attr_name, std::string attr_value);
+    virtual bool setMatch(std::string attr_name, std::string attr_value);
+    virtual bool setAction(std::string attr_name, std::string attr_value);
     virtual bool validate();
     bool processIpType(std::string type, sai_uint32_t &ip_type);
     inline static void setRulePriorities(sai_uint32_t min, sai_uint32_t max)
@@ -275,7 +275,7 @@ public:
     bool create() override;
     bool remove() override;
 
-    bool validateAddAction(std::string attr_name, std::string attr_value);
+    bool setAction(std::string attr_name, std::string attr_value);
     bool validate();
     void onUpdate(SubjectType, void *) override;
 
@@ -292,7 +292,7 @@ class AclRuleMirror: public AclRule
 {
 public:
     AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, std::string rule, std::string table);
-    bool validateAddAction(std::string attr_name, std::string attr_value);
+    bool setAction(std::string attr_name, std::string attr_value);
     bool validate();
     bool create();
     bool remove();
@@ -310,7 +310,7 @@ class AclRuleDTelFlowWatchListEntry: public AclRule
 {
 public:
     AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, std::string rule, std::string table);
-    bool validateAddAction(std::string attr_name, std::string attr_value);
+    bool setAction(std::string attr_name, std::string attr_value);
     bool validate();
     bool create();
     bool remove();
@@ -327,7 +327,7 @@ class AclRuleDTelDropWatchListEntry: public AclRule
 {
 public:
     AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, std::string rule, std::string table);
-    bool validateAddAction(std::string attr_name, std::string attr_value);
+    bool setAction(std::string attr_name, std::string attr_value);
     bool validate();
     void onUpdate(SubjectType, void *) override;
 
@@ -418,18 +418,14 @@ public:
             RouteOrch               *routeOrch,
             DTelOrch                *m_dTelOrch = NULL);
     ~AclOrch();
+
     void update(SubjectType, void *);
 
-    const AclTable* getAclTable(const std::string& tableId);
+    AclTable* getAclTable(const std::string& tableId);
     sai_object_id_t getTableById(std::string table_id);
-    const AclTable* getTableByOid(sai_object_id_t oid) const;
-
+    AclTable* getTableByOid(sai_object_id_t oid);
     const AclTableType* getAclTableType(const std::string& tableTypeName) const;
-
-    static swss::Table& getCountersTable()
-    {
-        return m_countersTable;
-    }
+    static swss::Table& getCountersTable();
 
     // FIXME: Add getters for them? I'd better to add a common directory of orch objects and use it everywhere
     MirrorOrch *m_mirrorOrch;
@@ -456,15 +452,9 @@ public:
     bool isAclActionListMandatoryOnTableCreation(AclStageTypeT stage) const;
     bool isAclActionSupported(AclStageTypeT stage, sai_acl_action_type_t action) const;
     bool isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const;
-
-    bool m_isCombinedMirrorV6Table = true;
-    std::map<std::string, bool> m_mirrorTableCapabilities;
     
     using Orch::doTask;  // Allow access to the basic doTask
-    std::map<sai_object_id_t, AclTable>  getAclTables()
-    {
-        return m_AclTables;
-    }
+    std::map<sai_object_id_t, AclTable>  getAclTables();
 
 private:
     SwitchOrch *m_switchOrch;
@@ -486,7 +476,7 @@ private:
                                       const AclRuleAttrLookupT& ruleAttrLookupMap,
                                       const AclActionAttrLookupT lookupMap);
 
-    bool createBindAclTable(AclTable &aclTable, sai_object_id_t &table_oid);
+    bool createBindAclTable(AclTable &aclTable);
     bool bindAclTable(AclTable &aclTable, bool bind = true);
     bool deleteUnbindAclTable(sai_object_id_t table_oid);
 
@@ -499,6 +489,9 @@ private:
     bool updateAclTablePorts(AclTable &newTable, AclTable &curTable);
     void createDTelWatchListTables();
     void deleteDTelWatchListTables();
+
+    bool m_isCombinedMirrorV6Table = true;
+    std::map<std::string, bool> m_mirrorTableCapabilities;
 
     std::map<std::string, AclTableType> m_AclTableTypes;
     std::map<sai_object_id_t, AclTable> m_AclTables;
