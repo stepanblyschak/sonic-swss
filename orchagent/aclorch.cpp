@@ -333,6 +333,140 @@ AclTableType AclTableTypeBuilder::build()
     return tableType;
 }
 
+bool AclTableTypeParser::parse(const std::string& key,
+                               const vector<swss::FieldValueTuple>& fieldValues,
+                               AclTableTypeBuilder& builder)
+{
+    builder.withName(key);
+
+    for (const auto& fieldValue: fieldValues)
+    {
+        auto field = to_upper(fvField(fieldValue));
+        auto value = to_upper(fvValue(fieldValue));
+        if (field == ACL_TABLE_TYPE_MATCHES)
+        {
+            if (!parseAclTableTypeMatches(value, builder))
+            {
+                return false;
+            }
+        }
+        else if (field == ACL_TABLE_TYPE_ACTIONS)
+        {
+            if (!parseAclTableTypeActions(value, builder))
+            {
+                return false;
+            }
+        }
+        else if (field == ACL_TABLE_TYPE_BPOINT_TYPES)
+        {
+            if (!parseAclTableTypeBindPointTypes(value, builder))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            SWSS_LOG_ERROR("Unknown field %s: value %s", field.c_str(), value.c_str());
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool AclTableTypeParser::parseAclTableTypeMatches(const std::string& value, AclTableTypeBuilder& builder)
+{
+    auto matches = tokenize(value, comma);
+    for (const auto& match: matches)
+    {
+        auto matchIt = aclMatchLookup.find(match);
+        auto matchRangeIt = aclRangeTypeLookup.find(match);
+
+
+        if (matchIt == aclMatchLookup.end())
+        {
+            SWSS_LOG_ERROR("Unknown match %s", match.c_str());
+            return false;
+        }
+
+        auto saiMatchAttr = matchIt->second;
+        if (isAclEntryFieldAttribute(saiMatchAttr))
+        {
+            auto tableAttrId = AclEntryFieldToAclTableField(saiMatchAttr);
+            builder.withEnabledMatch(tableAttrId);
+        }
+        else /* range type */
+        {
+            if (matchRangeIt != aclRangeTypeLookup.end())
+            {
+                auto saiRangeType = matchRangeIt->second;
+                builder.withRangeMatch(saiRangeType);
+            }
+            else
+            {
+                SWSS_LOG_ERROR("Unhandled range type match %s", match.c_str());
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+bool AclTableTypeParser::parseAclTableTypeActions(const std::string& value, AclTableTypeBuilder& builder)
+{
+    auto actions = tokenize(value, comma); 
+    for (const auto& action: actions)
+    {
+        sai_acl_entry_attr_t saiActionAttr = SAI_ACL_ENTRY_ATTR_ACTION_END;
+
+        auto l3Action = aclL3ActionLookup.find(action);
+        auto mirrorAction = aclMirrorStageLookup.find(action);
+        auto dtelAction = aclDTelActionLookup.find(action);
+
+        if (l3Action != aclL3ActionLookup.end())
+        {
+            saiActionAttr = l3Action->second;
+        }
+        else if (mirrorAction != aclMirrorStageLookup.end())
+        {
+            saiActionAttr = mirrorAction->second;
+        }
+        else if (dtelAction != aclDTelActionLookup.end())
+        {
+            saiActionAttr = dtelAction->second;
+        }
+        else
+        {
+            SWSS_LOG_ERROR("Unknown action %s", action.c_str());
+            return false;
+        }
+
+        builder.withAction(AclEntryActionToAclAction(saiActionAttr));
+    }
+
+    return true;
+}
+
+bool AclTableTypeParser::parseAclTableTypeBindPointTypes(const std::string& value, AclTableTypeBuilder& builder)
+{
+    auto bpointTypes = tokenize(value, comma);
+    for (const auto& bpointType: bpointTypes)
+    {
+        auto bpointIt = aclBindPointTypeLookup.find(bpointType);
+        if (bpointIt == aclBindPointTypeLookup.end())
+        {
+            SWSS_LOG_ERROR("Unknown bind point %s", bpointType.c_str());
+            return false;
+        }
+
+        auto saiBpointType = bpointIt->second;
+        builder.withBindPointType(saiBpointType);
+    }
+
+    return true;
+}
+
 AclRule::AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounter) :
     m_pAclOrch(pAclOrch),
     m_id(rule),
@@ -792,6 +926,27 @@ AclRuleCounters AclRule::getCounters()
 
     return AclRuleCounters(counter_attr[0].value.u64, counter_attr[1].value.u64);
 }
+
+string AclRule::getId() const
+{
+    return m_id;
+}
+
+string AclRule::getTableId() const
+{
+    return m_tableId;
+}
+
+sai_object_id_t AclRule::getCounterOid() const
+{
+    return m_counterOid;
+}
+
+vector<sai_object_id_t> AclRule::getInPorts() const
+{
+    return m_inPorts;
+}
+
 
 shared_ptr<AclRule> AclRule::makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple& data)
 {
@@ -3092,6 +3247,12 @@ bool AclOrch::addAclTableType(const AclTableType& tableType)
 {
     SWSS_LOG_ENTER();
 
+    if (tableType.getName().empty())
+    {
+        SWSS_LOG_ERROR("Received table type without a name");
+        return false;
+    }
+
     if (m_AclTableTypes.find(tableType.getName()) != m_AclTableTypes.end())
     {
         SWSS_LOG_ERROR("Table type %s already exists", tableType.getName().c_str());
@@ -3621,116 +3782,11 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
 
         if (op == SET_COMMAND)
         {
-            bool allAttributesValid = true;
-
             AclTableTypeBuilder builder;
-            builder.withName(key);
-
-            for (auto fieldValue: kfvFieldsValues(keyOpFieldValues))
+            if (!AclTableTypeParser().parse(key, kfvFieldsValues(keyOpFieldValues), builder))
             {
-                auto field = to_upper(fvField(fieldValue));
-                auto value = to_upper(fvValue(fieldValue));
-
-                if (field == ACL_TABLE_TYPE_MATCHES)
-                {
-                    auto matches = tokenize(value, comma);
-                    for (const auto& match: matches)
-                    {
-                        auto matchIt = aclMatchLookup.find(match);
-                        auto matchRangeIt = aclRangeTypeLookup.find(match);
-
-
-                        if (matchIt == aclMatchLookup.end())
-                        {
-                            SWSS_LOG_ERROR("Unknown match %s", match.c_str());
-                            allAttributesValid = false;
-                            break;
-                        }
-
-                        auto saiMatchAttr = matchIt->second;
-                        if (isAclEntryFieldAttribute(saiMatchAttr))
-                        {
-                            auto tableAttrId = AclEntryFieldToAclTableField(saiMatchAttr);
-                            builder.withEnabledMatch(tableAttrId);
-                        }
-                        else /* range type */
-                        {
-                            if (matchRangeIt != aclRangeTypeLookup.end())
-                            {
-                                auto saiRangeType = matchRangeIt->second;
-                                builder.withRangeMatch(saiRangeType);
-                            }
-                            else
-                            {
-                                SWSS_LOG_ERROR("Unhandled range type match %s", match.c_str());
-                                allAttributesValid = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-                else if (field == ACL_TABLE_TYPE_ACTIONS)
-                {
-                    auto actions = tokenize(value, comma); 
-                    for (const auto& action: actions)
-                    {
-                        sai_acl_entry_attr_t saiActionAttr = SAI_ACL_ENTRY_ATTR_ACTION_END;
-
-                        auto l3Action = aclL3ActionLookup.find(action);
-                        auto mirrorAction = aclMirrorStageLookup.find(action);
-                        auto dtelAction = aclDTelActionLookup.find(action);
-
-                        if (l3Action != aclL3ActionLookup.end())
-                        {
-                            saiActionAttr = l3Action->second;
-                        }
-                        else if (mirrorAction != aclMirrorStageLookup.end())
-                        {
-                            saiActionAttr = mirrorAction->second;
-                        }
-                        else if (dtelAction != aclDTelActionLookup.end())
-                        {
-                            saiActionAttr = dtelAction->second;
-                        }
-                        else
-                        {
-                            SWSS_LOG_ERROR("Unknown action %s", action.c_str());
-                            allAttributesValid = false;
-                            break;
-                        }
-
-                        builder.withAction(AclEntryActionToAclAction(saiActionAttr));
-                    }
-                }
-                else if (field == ACL_TABLE_TYPE_BPOINT_TYPES)
-                {
-                    auto bpointTypes = tokenize(value, comma);
-                    for (const auto& bpointType: bpointTypes)
-                    {
-                        auto bpointIt = aclBindPointTypeLookup.find(bpointType);
-                        if (bpointIt == aclBindPointTypeLookup.end())
-                        {
-                            SWSS_LOG_ERROR("Unknown bind point %s", bpointType.c_str());
-                            allAttributesValid = false;
-                            break;
-                        }
-
-                        auto saiBpointType = bpointIt->second;
-                        builder.withBindPointType(saiBpointType);
-                    }
-                }
-                else
-                {
-                    SWSS_LOG_ERROR("Unknown field %s", field.c_str());
-                    allAttributesValid = false;
-                    break;
-                }
-            }
-
-            if (!allAttributesValid)
-            {
-                it = consumer.m_toSync.erase(it);
-                break;
+                SWSS_LOG_ERROR("Failed to parse ACL table type configuration %s", key.c_str());
+                continue;
             }
 
             addAclTableType(builder.build());

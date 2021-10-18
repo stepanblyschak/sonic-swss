@@ -148,6 +148,20 @@ private:
     AclTableType m_tableType;
 };
 
+class AclTableTypeParser
+{
+public:
+    bool parse(
+        const std::string& key,
+        const vector<swss::FieldValueTuple>& fieldValues,
+        AclTableTypeBuilder& builder
+    );
+private:
+    bool parseAclTableTypeMatches(const std::string& value, AclTableTypeBuilder& builder);
+    bool parseAclTableTypeActions(const std::string& value, AclTableTypeBuilder& builder);
+    bool parseAclTableTypeBindPointTypes(const std::string& value, AclTableTypeBuilder& builder);
+};
+
 class AclRange
 {
 public:
@@ -221,25 +235,10 @@ public:
     virtual bool disableCounter();
     virtual AclRuleCounters getCounters();
 
-    std::string getId()
-    {
-        return m_id;
-    }
-
-    std::string getTableId()
-    {
-        return m_tableId;
-    }
-
-    sai_object_id_t getCounterOid()
-    {
-        return m_counterOid;
-    }
-
-    vector<sai_object_id_t> getInPorts() 
-    {
-        return m_inPorts;
-    }
+    std::string getId() const;
+    std::string getTableId() const;
+    sai_object_id_t getCounterOid() const;
+    vector<sai_object_id_t> getInPorts() const;
 
     static shared_ptr<AclRule> makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const std::string& rule, const std::string& table, const KeyOpFieldsValuesTuple&);
     virtual ~AclRule() {}
