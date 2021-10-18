@@ -3426,15 +3426,6 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
             /* ACL table is not yet created */
             if (table_oid == SAI_NULL_OBJECT_ID)
             {
-
-                /* Skip the control plane rules */
-                if (m_ctrlAclTables.find(table_id) != m_ctrlAclTables.end())
-                {
-                    SWSS_LOG_INFO("Skip control plane ACL rule %s", key.c_str());
-                    it = consumer.m_toSync.erase(it);
-                    continue;
-                }
-
                 SWSS_LOG_INFO("Wait for ACL table %s to be created", table_id.c_str());
                 it++;
                 continue;

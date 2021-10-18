@@ -508,8 +508,6 @@ private:
 
     map<string, AclTableType> m_AclTableTypes;
     map<sai_object_id_t, AclTable> m_AclTables;
-    // TODO: Move all ACL tables into one map: name -> instance
-    map<string, AclTable> m_ctrlAclTables;
 
     static mutex m_countersMutex;
     static condition_variable m_sleepGuard;
