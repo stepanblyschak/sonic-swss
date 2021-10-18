@@ -115,6 +115,40 @@ using AclRangePropertiesT = std::tuple<sai_acl_range_type_t, int, int>;
 using AclActionEnumValuesCapabilitiesT = std::map<sai_acl_action_type_t, std::set<int32_t>>;
 using AclCapabilitiesT = std::map<AclStageTypeT, AclActionCapabilities>;
 
+class AclCapability
+{
+public:
+    AclCapability(SwitchOrch* switchOrch);
+
+    bool isCombinedMirrorV6Table() const;
+    bool isAclMirrorV6Supported() const;
+    bool isAclMirrorV4Supported() const;
+    bool isAclMirrorTableSupported(std::string type) const;
+    bool isAclActionListMandatoryOnTableCreation(AclStageTypeT stage) const;
+    bool isAclActionSupported(AclStageTypeT stage, sai_acl_action_type_t action) const;
+    bool isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const;
+    
+private:
+    void queryMirrorTableCapability();
+    void queryAclActionCapability();
+    void initDefaultAclActionCapabilities(AclStageTypeT);
+    void putAclActionCapabilityInDB(AclStageTypeT);
+
+    template<typename AclActionAttrLookupT>
+    void queryAclActionAttrEnumValues(const std::string& action_name,
+                                      const AclRuleAttrLookupT& ruleAttrLookupMap,
+                                      const AclActionAttrLookupT lookupMap);
+
+private:
+    SwitchOrch *m_switchOrch = nullptr;
+
+    bool m_isCombinedMirrorV6Table = true;
+    std::map<std::string, bool> m_mirrorTableCapabilities;
+
+    AclCapabilitiesT m_aclCapabilities;
+    AclActionEnumValuesCapabilitiesT m_aclEnumActionCapabilities;
+};
+
 class AclTableType
 {
 public:
@@ -444,15 +478,8 @@ public:
     bool updateAclRule(std::string table_id, std::string rule_id, std::string attr_name, void *data, bool oper);
     bool updateAclRule(std::string table_id, std::string rule_id, bool enableCounter);
     AclRule* getAclRule(std::string table_id, std::string rule_id);
+    const AclCapability& getCapability() const;
 
-    bool isCombinedMirrorV6Table() const;
-    bool isAclMirrorV6Supported() const;
-    bool isAclMirrorV4Supported() const;
-    bool isAclMirrorTableSupported(std::string type) const;
-    bool isAclActionListMandatoryOnTableCreation(AclStageTypeT stage) const;
-    bool isAclActionSupported(AclStageTypeT stage, sai_acl_action_type_t action) const;
-    bool isAclActionEnumValueSupported(sai_acl_action_type_t action, sai_acl_action_parameter_t param) const;
-    
     using Orch::doTask;  // Allow access to the basic doTask
     std::map<sai_object_id_t, AclTable>  getAclTables();
 
@@ -465,16 +492,6 @@ private:
     void doTask(SelectableTimer &timer);
     void init(vector<TableConnector>& connectors, PortsOrch *portOrch, MirrorOrch *mirrorOrch, NeighOrch *neighOrch, RouteOrch *routeOrch);
     void initDefaultTableTypes();
-
-    void queryMirrorTableCapability();
-    void queryAclActionCapability();
-    void initDefaultAclActionCapabilities(AclStageTypeT);
-    void putAclActionCapabilityInDB(AclStageTypeT);
-
-    template<typename AclActionAttrLookupT>
-    void queryAclActionAttrEnumValues(const std::string& action_name,
-                                      const AclRuleAttrLookupT& ruleAttrLookupMap,
-                                      const AclActionAttrLookupT lookupMap);
 
     bool createBindAclTable(AclTable &aclTable);
     bool bindAclTable(AclTable &aclTable, bool bind = true);
@@ -490,20 +507,16 @@ private:
     void createDTelWatchListTables();
     void deleteDTelWatchListTables();
 
-    bool m_isCombinedMirrorV6Table = true;
-    std::map<std::string, bool> m_mirrorTableCapabilities;
-
     std::map<std::string, AclTableType> m_AclTableTypes;
     std::map<sai_object_id_t, AclTable> m_AclTables;
 
     static DBConnector m_db;
     static Table m_countersTable;
 
+    AclCapability capability;
+
     std::map<AclStageTypeT, std::string> m_mirrorTableId;
     std::map<AclStageTypeT, std::string> m_mirrorV6TableId;
-
-    AclCapabilitiesT m_aclCapabilities;
-    AclActionEnumValuesCapabilitiesT m_aclEnumActionCapabilities;
 };
 
 #endif /* SWSS_ACLORCH_H */
