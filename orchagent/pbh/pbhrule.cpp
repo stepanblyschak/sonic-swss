@@ -3,7 +3,7 @@
 #include "pbhrule.h"
 
 AclRulePbh::AclRulePbh(AclOrch *pAclOrch, string rule, string table, bool createCounter) :
-    AclRule(pAclOrch, rule, table, ACL_TABLE_PBH, createCounter)
+    AclRule(pAclOrch, rule, table, createCounter)
 {
 }
 
@@ -83,12 +83,6 @@ bool AclRulePbh::validateAddAction(const sai_attribute_t &attr)
         return false;
     }
 
-    if (!AclRule::isActionSupported(attrId))
-    {
-        SWSS_LOG_ERROR("Action %s is not supported by ASIC", attrName.c_str());
-        return false;
-    }
-
     m_actions[attrId] = attr.value;
 
     return true;
@@ -104,7 +98,7 @@ bool AclRulePbh::validate()
         return false;
     }
 
-    return true;
+    return AclRule::validate();
 }
 
 void AclRulePbh::update(SubjectType, void *)
