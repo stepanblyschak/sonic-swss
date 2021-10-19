@@ -248,11 +248,18 @@ class AclTable;
 class AclRule
 {
 public:
-    AclRule(AclOrch *pAclOrch, std::string rule, std::string table, bool createCounter = true);
-    virtual bool setPriority(std::string attr_name, std::string attr_value);
-    virtual bool setMatch(std::string attr_name, std::string attr_value);
-    virtual bool setAction(std::string attr_name, std::string attr_value);
-    virtual bool validate();
+    AclRule(
+        AclOrch *pAclOrch,
+        std::string rule,
+        std::string table,
+        bool createCounter = true
+    );
+    virtual ~AclRule() = default;
+
+    virtual bool setPriority(std::string field, std::string value);
+    virtual bool setMatch(std::string field, std::string value);
+    virtual bool setAction(std::string field, std::string value);
+
     bool processIpType(std::string type, sai_uint32_t &ip_type);
     inline static void setRulePriorities(sai_uint32_t min, sai_uint32_t max)
     {
@@ -262,11 +269,14 @@ public:
 
     virtual bool create();
     virtual bool remove();
+    virtual bool validate();
+
     virtual void onUpdate(SubjectType, void *) = 0;
     virtual void updateInPorts();
 
     virtual bool enableCounter();
     virtual bool disableCounter();
+
     virtual AclRuleCounters getCounters();
 
     std::string getId() const;
@@ -274,8 +284,15 @@ public:
     sai_object_id_t getCounterOid() const;
     vector<sai_object_id_t> getInPorts() const;
 
-    static shared_ptr<AclRule> makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const std::string& rule, const std::string& table, const KeyOpFieldsValuesTuple&);
-    virtual ~AclRule() {}
+    static shared_ptr<AclRule> makeShared(
+        AclOrch *acl,
+        MirrorOrch *mirror,
+        DTelOrch *dtel,
+        const std::string& rule,
+        const std::string& table,
+        const swss::KeyOpFieldsValuesTuple& kofvt
+    );
+
 
 protected:
     virtual bool createCounter();
@@ -284,18 +301,22 @@ protected:
 
     static sai_uint32_t m_minPriority;
     static sai_uint32_t m_maxPriority;
+
+    uint32_t m_priority;
+
+    std::map<sai_acl_entry_attr_t, sai_attribute_value_t> m_matches;
+    std::map<sai_acl_entry_attr_t, sai_attribute_value_t> m_actions;
+
+    vector<sai_object_id_t> m_inPorts;
+    vector<sai_object_id_t> m_outPorts;
+
     AclOrch *m_pAclOrch;
     std::string m_id;
     std::string m_tableId;
     const AclTable* m_pTable;
+
     sai_object_id_t m_ruleOid;
     sai_object_id_t m_counterOid;
-    uint32_t m_priority;
-    std::map <sai_acl_entry_attr_t, sai_attribute_value_t> m_matches;
-    std::map <sai_acl_entry_attr_t, sai_attribute_value_t> m_actions;
-
-    vector<sai_object_id_t> m_inPorts;
-    vector<sai_object_id_t> m_outPorts;
 
 private:
     bool m_createCounter;
@@ -304,13 +325,19 @@ private:
 class AclRulePacket: public AclRule
 {
 public:
-    AclRulePacket(AclOrch *m_pAclOrch, std::string rule, std::string table, bool createCounter = true);
+    AclRulePacket(
+        AclOrch *pAclOrch,
+        std::string rule,
+        std::string table,
+        bool createCounter = true
+    );
 
     bool create() override;
     bool remove() override;
+    bool validate() override;
 
-    bool setAction(std::string attr_name, std::string attr_value);
-    bool validate();
+    bool setAction(std::string field, std::string value) override;
+
     void onUpdate(SubjectType, void *) override;
 
 protected:
@@ -325,13 +352,22 @@ private:
 class AclRuleMirror: public AclRule
 {
 public:
-    AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, std::string rule, std::string table);
-    bool setAction(std::string attr_name, std::string attr_value);
-    bool validate();
-    bool create();
-    bool remove();
+    AclRuleMirror(
+        AclOrch *pAclOrch,
+        MirrorOrch *pMirrorOrch,
+        std::string rule,
+        std::string table
+    );
+
+    bool create() override;
+    bool remove() override;
+    bool validate() override;
+
+    bool setAction(std::string field, std::string value) override;
+
     void onUpdate(SubjectType, void *) override;
-    AclRuleCounters getCounters();
+
+    AclRuleCounters getCounters() override;
 
 protected:
     bool m_state {false};
@@ -343,14 +379,22 @@ protected:
 class AclRuleDTelFlowWatchListEntry: public AclRule
 {
 public:
-    AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, std::string rule, std::string table);
-    bool setAction(std::string attr_name, std::string attr_value);
-    bool validate();
-    bool create();
-    bool remove();
+    AclRuleDTelFlowWatchListEntry(
+        AclOrch *pAclOrch,
+        DTelOrch *pDTelOrch,
+        std::string rule,
+        std::string table
+    );
+
+    bool create() override;
+    bool remove() override;
+    bool validate() override;
+
+    bool setAction(std::string field, std::string value) override;
+
     void onUpdate(SubjectType, void *) override;
 
-protected:
+private:
     DTelOrch *m_pDTelOrch;
     std::string m_intSessionId;
     bool INT_enabled;
@@ -360,12 +404,20 @@ protected:
 class AclRuleDTelDropWatchListEntry: public AclRule
 {
 public:
-    AclRuleDTelDropWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, std::string rule, std::string table);
-    bool setAction(std::string attr_name, std::string attr_value);
+    AclRuleDTelDropWatchListEntry(
+        AclOrch *pAclOrch,
+        DTelOrch *pDTelOrch,
+        std::string rule,
+        std::string table
+    );
+
     bool validate();
+
+    bool setAction(std::string field, std::string value) override;
+
     void onUpdate(SubjectType, void *) override;
 
-protected:
+private:
     DTelOrch *m_pDTelOrch;
 };
 
@@ -445,12 +497,12 @@ class AclOrch : public Orch, public Observer
 {
 public:
     AclOrch(vector<TableConnector>& connectors,
-            SwitchOrch              *m_switchOrch,
+            SwitchOrch              *switchOrch,
             PortsOrch               *portOrch,
             MirrorOrch              *mirrorOrch,
             NeighOrch               *neighOrch,
             RouteOrch               *routeOrch,
-            DTelOrch                *m_dTelOrch = NULL);
+            DTelOrch                *dTelOrch = nullptr);
     ~AclOrch();
 
     void update(SubjectType, void *);
@@ -475,7 +527,7 @@ public:
     bool removeAclTableType(const std::string& tableTypeName);
     bool addAclRule(shared_ptr<AclRule> aclRule, std::string table_id);
     bool removeAclRule(std::string table_id, std::string rule_id);
-    bool updateAclRule(std::string table_id, std::string rule_id, std::string attr_name, void *data, bool oper);
+    bool updateAclRule(std::string table_id, std::string rule_id, std::string field, void *data, bool oper);
     bool updateAclRule(std::string table_id, std::string rule_id, bool enableCounter);
     AclRule* getAclRule(std::string table_id, std::string rule_id);
     const AclCapability& getCapability() const;
