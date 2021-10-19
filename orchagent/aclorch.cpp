@@ -1510,11 +1510,6 @@ bool AclTable::validateAddPorts(const unordered_set<string> &value)
 
 bool AclTable::validate()
 {
-    if (type.getName() == TABLE_TYPE_CTRLPLANE)
-    {
-        return true;
-    }
-
     if (stage == ACL_STAGE_UNKNOWN)
     {
         return false;
@@ -2538,9 +2533,6 @@ void AclOrch::initDefaultTableTypes()
                 .build()
         );
     }
-
-	// Placeholder for control plane tables
-    addAclTableType(builder.withName(TABLE_TYPE_CTRLPLANE).build());
 }
 
 void AclOrch::queryAclActionCapability()
@@ -3016,13 +3008,6 @@ bool AclOrch::addAclTable(AclTable &newTable)
     SWSS_LOG_ENTER();
 
     string table_id = newTable.id;
-    if (newTable.type.getName() == TABLE_TYPE_CTRLPLANE)
-    {
-        m_ctrlAclTables.emplace(table_id, newTable);
-        SWSS_LOG_NOTICE("Created control plane ACL table %s", newTable.id.c_str());
-        return true;
-    }
-
     sai_object_id_t table_oid = getTableById(table_id);
     auto table_stage = newTable.stage;
 
@@ -3619,15 +3604,6 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
             /* ACL table is not yet created or ACL table is a control plane table */
             if (table_oid == SAI_NULL_OBJECT_ID)
             {
-
-                /* Skip the control plane rules */
-                if (m_ctrlAclTables.find(table_id) != m_ctrlAclTables.end())
-                {
-                    SWSS_LOG_INFO("Skip control plane ACL rule %s", key.c_str());
-                    it = consumer.m_toSync.erase(it);
-                    continue;
-                }
-
                 SWSS_LOG_INFO("Wait for ACL table %s to be created", table_id.c_str());
                 it++;
                 continue;

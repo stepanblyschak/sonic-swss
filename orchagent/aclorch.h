@@ -509,8 +509,6 @@ private:
     void deleteDTelWatchListTables();
 
     map<sai_object_id_t, AclTable> m_AclTables;
-    // TODO: Move all ACL tables into one map: name -> instance
-    map<string, AclTable> m_ctrlAclTables;
     map<string, AclTableType> m_AclTableTypes;
 
     static mutex m_countersMutex;
