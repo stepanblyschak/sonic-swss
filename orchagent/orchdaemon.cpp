@@ -329,7 +329,9 @@ bool OrchDaemon::init()
         dtel_orch = new DTelOrch(m_configDb, dtel_tables, gPortsOrch);
         m_orchList.push_back(dtel_orch);
     }
-    gAclOrch = new AclOrch(acl_table_connectors, gSwitchOrch, gPortsOrch, gMirrorOrch, gNeighOrch, gRouteOrch, dtel_orch);
+
+    gAclOrch = new AclOrch(acl_table_connectors, m_stateDb,
+        gSwitchOrch, gPortsOrch, gMirrorOrch, gNeighOrch, gRouteOrch, dtel_orch);
 
     vector<string> mlag_tables = {
         { CFG_MCLAG_TABLE_NAME },
