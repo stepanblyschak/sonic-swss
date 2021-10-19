@@ -550,15 +550,12 @@ class TestAclCrmUtilization:
 class TestAclRuleValidation:
     """Test class for cases that check if orchagent corectly validates ACL rules input."""
 
-    SWITCH_CAPABILITY_TABLE = "SWITCH_CAPABILITY"
+    ACL_STAGE_CAPABILITY_TABLE_NAME = "ACL_STAGE_CAPABILITY_TABLE"
+    ACL_ACTION_LIST_FIELD_NAME = "action_list"
 
     def get_acl_actions_supported(self, dvs_acl, stage):
-        switch_id = dvs_acl.state_db.wait_for_n_keys(self.SWITCH_CAPABILITY_TABLE, 1)[0]
-        switch = dvs_acl.state_db.wait_for_entry(self.SWITCH_CAPABILITY_TABLE, switch_id)
-
-        field = "ACL_ACTIONS|{}".format(stage.upper())
-
-        supported_actions = switch.get(field, None)
+        switch = dvs_acl.state_db.wait_for_entry(self.ACL_STAGE_CAPABILITY_TABLE_NAME, stage.upper())
+        supported_actions = switch.get(self.ACL_ACTION_LIST_FIELD_NAME, None)
 
         if supported_actions:
             supported_actions = supported_actions.split(",")
