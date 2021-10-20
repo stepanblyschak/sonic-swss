@@ -494,10 +494,9 @@ private:
     sai_status_t deleteUnbindAclTable(sai_object_id_t table_oid);
 
     bool isAclTableTypeUpdated(string table_type, AclTable &aclTable);
-    bool processAclTableType(string type, AclTable &aclTable);
     bool isAclTableStageUpdated(acl_stage_type_t acl_stage, AclTable &aclTable);
     bool processAclTableStage(string stage, acl_stage_type_t &acl_stage);
-	bool processAclTableType(string type, string &out_table_type);
+    bool processAclTableType(string type, string &out_table_type);
     bool processAclTablePorts(string portList, AclTable &aclTable);
     bool validateAclTable(AclTable &aclTable);
     bool updateAclTablePorts(AclTable &newTable, AclTable &curTable);
