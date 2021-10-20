@@ -2746,11 +2746,9 @@ void AclOrch::queryAclActionAttrEnumValues(const string &action_name,
         }
 
         fvVector.emplace_back(field, acl_action_value_stream.str());
-        for (const auto& stage: {STAGE_INGRESS, STAGE_EGRESS})
-        {
-            m_aclStageCapabilityTable.set(stage, fvVector);
-        }
     }
+
+    m_switchOrch->set_switch_capability(fvVec)
 }
 
 sai_acl_action_type_t AclOrch::getAclActionFromAclEntry(sai_acl_entry_attr_t attr)
