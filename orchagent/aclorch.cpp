@@ -62,13 +62,19 @@ acl_rule_attr_lookup_t aclMatchLookup =
     { MATCH_ICMP_CODE,         SAI_ACL_ENTRY_ATTR_FIELD_ICMP_CODE },
     { MATCH_ICMPV6_TYPE,       SAI_ACL_ENTRY_ATTR_FIELD_ICMPV6_TYPE },
     { MATCH_ICMPV6_CODE,       SAI_ACL_ENTRY_ATTR_FIELD_ICMPV6_CODE },
-    { MATCH_L4_SRC_PORT_RANGE, (sai_acl_entry_attr_t)SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE },
-    { MATCH_L4_DST_PORT_RANGE, (sai_acl_entry_attr_t)SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE },
+    { MATCH_L4_SRC_PORT_RANGE, SAI_ACL_ENTRY_ATTR_FIELD_ACL_RANGE_TYPE },
+    { MATCH_L4_DST_PORT_RANGE, SAI_ACL_ENTRY_ATTR_FIELD_ACL_RANGE_TYPE },
     { MATCH_TUNNEL_VNI,        SAI_ACL_ENTRY_ATTR_FIELD_TUNNEL_VNI },
     { MATCH_INNER_ETHER_TYPE,  SAI_ACL_ENTRY_ATTR_FIELD_INNER_ETHER_TYPE },
     { MATCH_INNER_IP_PROTOCOL, SAI_ACL_ENTRY_ATTR_FIELD_INNER_IP_PROTOCOL },
     { MATCH_INNER_L4_SRC_PORT, SAI_ACL_ENTRY_ATTR_FIELD_INNER_L4_SRC_PORT },
     { MATCH_INNER_L4_DST_PORT, SAI_ACL_ENTRY_ATTR_FIELD_INNER_L4_DST_PORT }
+};
+
+static acl_range_type_lookup_t aclRangeTypeLookup =
+{
+    { MATCH_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE },
+    { MATCH_L4_DST_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE },
 };
 
 static acl_bind_point_type_lookup_t aclBindPointTypeLookup =
@@ -160,19 +166,9 @@ static acl_ip_type_lookup_t aclIpTypeLookup =
     { IP_TYPE_ARP_REPLY,   SAI_ACL_IP_TYPE_ARP_REPLY }
 };
 
-static bool isAclEntryFieldAttribute(sai_acl_entry_attr_t attr)
-{
-    return attr >= SAI_ACL_ENTRY_ATTR_FIELD_START && attr <= SAI_ACL_ENTRY_ATTR_FIELD_END;
-}
-
-static bool isAclEntryActionAttribute(sai_acl_entry_attr_t attr)
-{
-    return attr >= SAI_ACL_ENTRY_ATTR_ACTION_START && attr <= SAI_ACL_ENTRY_ATTR_ACTION_END;
-}
-
 static sai_acl_table_attr_t AclEntryFieldToAclTableField(sai_acl_entry_attr_t attr)
 {
-    if (!isAclEntryFieldAttribute(attr))
+    if (!IS_ATTR_ID_IN_RANGE(attr, ACL_ENTRY, FIELD))
     {
         SWSS_LOG_THROW("ACL entry attribute is not a in a range of SAI_ACL_ENTRY_ATTR_FIELD_* attribute: %d", attr);
     }
@@ -181,21 +177,11 @@ static sai_acl_table_attr_t AclEntryFieldToAclTableField(sai_acl_entry_attr_t at
 
 static sai_acl_action_type_t AclEntryActionToAclAction(sai_acl_entry_attr_t attr)
 {
-    if (!isAclEntryActionAttribute(attr))
+    if (!IS_ATTR_ID_IN_RANGE(attr, ACL_ENTRY, ACTION))
     {
         SWSS_LOG_THROW("ACL entry attribute is not a in a range of SAI_ACL_ENTRY_ATTR_ACTION_* attribute: %d", attr);
     }
     return static_cast<sai_acl_action_type_t>(attr - SAI_ACL_ENTRY_ATTR_ACTION_START);
-}
-
-static bool isAttributeValueEnum(sai_object_type_t objectType, sai_attr_id_t attr)
-{
-    const auto* meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
-    if (!meta)
-    {
-        SWSS_LOG_THROW("Metadata null pointer returned by sai_metadata_get_attr_metadata");
-    }
-    return meta->isenum;
 }
 
 string getAttributeIdName(sai_object_type_t objectType, sai_attr_id_t attr)
@@ -208,6 +194,93 @@ string getAttributeIdName(sai_object_type_t objectType, sai_attr_id_t attr)
     return meta->attridname;
 }
 
+AclTableMatchInterface::AclTableMatchInterface(sai_acl_table_attr_t matchField):
+    m_matchField(matchField)
+{
+    if (!IS_ATTR_ID_IN_RANGE(m_matchField, ACL_TABLE, FIELD))
+    {
+        SWSS_LOG_THROW("Invalid match table attribute %d", m_matchField);
+    }
+}
+
+sai_acl_table_attr_t AclTableMatchInterface::getId() const
+{
+    return m_matchField;
+}
+
+AclTableMatch::AclTableMatch(sai_acl_table_attr_t matchField):
+    AclTableMatchInterface(matchField)
+{
+    const auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_TABLE, getId());
+    if (!meta)
+    {
+        SWSS_LOG_THROW("Failed to get metadata for attribute for SAI_OBJECT_TYPE_ACL_TABLE: attribute %d", getId());
+    }
+
+    if (meta->attrvaluetype != SAI_ATTR_VALUE_TYPE_BOOL)
+    {
+        SWSS_LOG_THROW("This API does not allow to set match with a non boolean value type");
+    }
+}
+
+sai_attribute_t AclTableMatch::toSaiAttribute()
+{
+    return sai_attribute_t{
+        .id = getId(),
+        .value = {
+            .booldata = true,
+        },
+    };
+}
+
+bool AclTableMatch::validateAclRuleMatch(const AclRule& rule) const
+{
+    // no need to validate rule configuration
+    return true;
+}
+
+AclTableRangeMatch::AclTableRangeMatch(set<sai_acl_range_type_t> rangeTypes):
+    AclTableMatchInterface(SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE),
+    m_rangeList(rangeTypes.begin(), rangeTypes.end())
+{
+}
+
+sai_attribute_t AclTableRangeMatch::toSaiAttribute()
+{
+    return sai_attribute_t{
+        .id = getId(),
+        .value = {
+            .s32list = {
+                .count = static_cast<uint32_t>(m_rangeList.size()),
+                .list = m_rangeList.data(),
+            },
+        },
+    };
+}
+
+bool AclTableRangeMatch::validateAclRuleMatch(const AclRule& rule) const
+{
+    const auto& ruleMatches = rule.getMatches();
+    for (const auto& rangeIt: aclRangeTypeLookup)
+    {
+        auto rangeType = rangeIt.second;
+        if (ruleMatches.find(static_cast<sai_acl_entry_attr_t>(rangeType)) == ruleMatches.end())
+        {
+            continue;
+        }
+
+        if (find(m_rangeList.begin(), m_rangeList.end(), rangeType) == m_rangeList.end())
+        {
+            SWSS_LOG_ERROR("Range match %s is not supported on table %s",
+                sai_metadata_get_acl_range_type_name(rangeType), rule.getTableId().c_str());
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
 string AclTableType::getName() const
 {
     return m_name;
@@ -218,14 +291,9 @@ const set<sai_acl_bind_point_type_t>& AclTableType::getBindPointTypes() const
     return m_bpointTypes;
 }
 
-const set<sai_acl_table_attr_t>& AclTableType::getMatches() const
+const map<sai_acl_table_attr_t, shared_ptr<AclTableMatchInterface>>& AclTableType::getMatches() const
 {
-    return m_enabledMatches;
-}
-
-const set<sai_acl_range_type_t>& AclTableType::getRangeTypes() const
-{
-    return m_rangeTypes;
+    return m_matches;
 }
 
 const set<sai_acl_action_type_t>& AclTableType::getActions() const
@@ -245,37 +313,15 @@ AclTableTypeBuilder& AclTableTypeBuilder::withBindPointType(sai_acl_bind_point_t
     return *this;
 }
 
-AclTableTypeBuilder& AclTableTypeBuilder::withMatch(sai_acl_table_attr_t matchField)
+AclTableTypeBuilder& AclTableTypeBuilder::withMatch(shared_ptr<AclTableMatchInterface> match)
 {
-    if (!(matchField >= SAI_ACL_TABLE_ATTR_FIELD_START && matchField <= SAI_ACL_TABLE_ATTR_FIELD_END))
-    {
-        SWSS_LOG_THROW("Invalid match table attribute %d", matchField);
-    }
-
-    const auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_TABLE, matchField);
-    if (!meta)
-    {
-        SWSS_LOG_THROW("Failed to get metadata for attribute for SAI_OBJECT_TYPE_ACL_TABLE: attribute %d", matchField);
-    }
-
-    if (meta->attrvaluetype != SAI_ATTR_VALUE_TYPE_BOOL)
-    {
-        SWSS_LOG_THROW("This API does not allow to set match with a non boolean value type");
-    }
-
-    m_tableType.m_enabledMatches.insert(matchField);
+    m_tableType.m_matches.emplace(match->getId(), match);
     return *this;
 }
 
 AclTableTypeBuilder& AclTableTypeBuilder::withAction(sai_acl_action_type_t action)
 {
     m_tableType.m_aclAcitons.insert(action);
-    return *this;
-}
-
-AclTableTypeBuilder& AclTableTypeBuilder::withRangeMatch(sai_acl_range_type_t rangeType)
-{
-    m_tableType.m_rangeTypes.insert(rangeType);
     return *this;
 }
 
@@ -296,6 +342,9 @@ bool AclTableTypeParser::parse(const std::string& key,
     {
         auto field = to_upper(fvField(fieldValue));
         auto value = to_upper(fvValue(fieldValue));
+
+        SWSS_LOG_DEBUG("field %s, value %s", field.c_str(), value.c_str());
+
         if (field == ACL_TABLE_TYPE_MATCHES)
         {
             if (!parseAclTableTypeMatches(value, builder))
@@ -330,27 +379,33 @@ bool AclTableTypeParser::parse(const std::string& key,
 bool AclTableTypeParser::parseAclTableTypeMatches(const std::string& value, AclTableTypeBuilder& builder)
 {
     auto matches = tokenize(value, comma);
+    set<sai_acl_range_type_t> saiRangeTypes;
+
     for (const auto& match: matches)
     {
         auto matchIt = aclMatchLookup.find(match);
+        auto rangeMatchIt = aclRangeTypeLookup.find(match);
 
-        if (matchIt == aclMatchLookup.end())
+        if (rangeMatchIt != aclRangeTypeLookup.end())
+        {
+            auto rangeType = rangeMatchIt->second;
+            saiRangeTypes.insert(rangeType);
+        }
+        else if (matchIt != aclMatchLookup.end())
+        {
+            auto saiMatch = AclEntryFieldToAclTableField(matchIt->second);
+            builder.withMatch(make_unique<AclTableMatch>(saiMatch));
+        }
+        else
         {
             SWSS_LOG_ERROR("Unknown match %s", match.c_str());
             return false;
         }
+    }
 
-        auto saiMatchAttr = matchIt->second;
-        if (isAclEntryFieldAttribute(saiMatchAttr))
-        {
-            auto tableAttrId = AclEntryFieldToAclTableField(saiMatchAttr);
-            builder.withMatch(tableAttrId);
-        }
-        else /* range type */
-        {
-            auto saiRangeType = static_cast<sai_acl_range_type_t>(matchIt->second);
-            builder.withRangeMatch(saiRangeType);
-        }
+    if (!saiRangeTypes.empty())
+    {
+        builder.withMatch(make_unique<AclTableRangeMatch>(saiRangeTypes));
     }
 
     return true;
@@ -671,13 +726,62 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
         attr_name = MATCH_NEXT_HEADER;
     }
 
-    m_matches[aclMatchLookup[attr_name]] = value;
+    const auto ruleMatchId = aclMatchLookup[attr_name];
+    const auto& rangeTypeIt = aclRangeTypeLookup.find(attr_name);
 
-    return true;
+    // TODO: Refactor AclRule to save range configuration in a different data structure.
+    // It is weird to find ACL range type inside m_matches of type sai_acl_entry_attr_t.
+    if (rangeTypeIt != aclRangeTypeLookup.end())
+    {
+        m_matches[static_cast<sai_acl_entry_attr_t>(rangeTypeIt->second)] = value;
+    }
+    else
+    {
+        m_matches[aclMatchLookup[attr_name]] = value;
+    }
+
+    return m_pTable->validateAclRuleMatch(ruleMatchId, *this);
 }
 
 bool AclRule::validateAddAction(string attr_name, string attr_value)
 {
+    for (const auto& it: m_actions)
+    {
+        auto attrId = it.first;
+        auto value = it.second;
+        auto actionType = AclEntryActionToAclAction(attrId);
+
+        if (!isActionSupported(attrId))
+        {
+            SWSS_LOG_ERROR("Action %s:%s is not supported by ASIC",
+                           attr_name.c_str(), attr_value.c_str());
+            return false;
+        }
+
+        // check if ACL action attribute entry parameter is an enum value
+        const auto* meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, attrId);
+        if (meta == nullptr)
+        {
+            SWSS_LOG_THROW("Metadata null pointer returned by sai_metadata_get_attr_metadata for action %s",
+                           attr_name.c_str());
+        }
+        if (meta->isenum)
+        {
+            // if ACL action attribute requires enum value check if value is supported by the ASIC
+            if (!m_pAclOrch->isAclActionEnumValueSupported(actionType, value.aclaction.parameter))
+            {
+                SWSS_LOG_ERROR("Action %s:%s is not supported by ASIC",
+                               attr_name.c_str(), attr_value.c_str());
+                return false;
+            }
+        }
+
+        if (!m_pTable->validateAclRuleAction(attrId, *this))
+        {
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -693,31 +797,6 @@ bool AclRule::processIpType(string type, sai_uint32_t &ip_type)
     }
 
     ip_type = it->second;
-
-    return true;
-}
-
-bool AclRule::validate()
-{
-    for (auto matchPair: m_matches)
-    {
-        sai_attribute_t attr;
-        tie(attr.id, attr.value) = matchPair;
-        if (!m_pTable->validateAclRuleMatch(attr))
-        {
-            return false;
-        }
-    }
-
-    for (auto actionPair: m_actions)
-    {
-        sai_attribute_t attr;
-        tie(attr.id, attr.value) = actionPair;
-        if (!m_pTable->validateAclRuleAction(attr))
-        {
-            return false;
-        }
-    }
 
     return true;
 }
@@ -851,6 +930,11 @@ void AclRule::decreaseNextHopRefCount()
     return;
 }
 
+bool AclRule::isActionSupported(sai_acl_entry_attr_t action) const
+{
+    return m_pAclOrch->isAclActionSupported(m_pTable->stage, AclEntryActionToAclAction(action));
+}
+
 bool AclRule::remove()
 {
     SWSS_LOG_ENTER();
@@ -913,14 +997,19 @@ AclRuleCounters AclRule::getCounters()
     return AclRuleCounters(counter_attr[0].value.u64, counter_attr[1].value.u64);
 }
 
-string AclRule::getId()
+string AclRule::getId() const
 {
     return m_id;
 }
 
-string AclRule::getTableId()
+string AclRule::getTableId() const
 {
     return m_pTable->getId();
+}
+
+const map<sai_acl_entry_attr_t, sai_attribute_value_t>& AclRule::getMatches() const
+{
+    return m_matches;
 }
 
 shared_ptr<AclRule> AclRule::makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple& data)
@@ -1283,7 +1372,7 @@ bool AclRulePacket::validate()
         return false;
     }
 
-    return AclRule::validate();
+    return true; 
 }
 
 void AclRulePacket::update(SubjectType, void *)
@@ -1336,7 +1425,7 @@ bool AclRuleMirror::validate()
         return false;
     }
 
-    return AclRule::validate();
+    return true; 
 }
 
 bool AclRuleMirror::create()
@@ -1529,28 +1618,12 @@ bool AclTable::validate()
         }
     }
 
-    return true;
-}
-
-bool AclTable::validateAclRuleMatch(sai_attribute_t attr) const
-{
-    auto aclEntryAttr = static_cast<sai_acl_entry_attr_t>(attr.id);
-    if (isAclEntryFieldAttribute(aclEntryAttr))
+    for (const auto& action: type.getActions())
     {
-        if (!type.getMatches().count(AclEntryFieldToAclTableField(aclEntryAttr)))
+        if (!m_pAclOrch->isAclActionSupported(stage, action))
         {
-            SWSS_LOG_ERROR("Match %s is not supported on table %s",
-                getAttributeIdName(SAI_OBJECT_TYPE_ACL_ENTRY, aclEntryAttr).c_str(), id.c_str());
-            return false;
-        }
-    }
-    else /* range type */
-    {
-        auto rangeType = static_cast<sai_acl_range_type_t>(attr.id);
-        if (!type.getRangeTypes().count(rangeType))
-        {
-            SWSS_LOG_ERROR("Range match %s is not supported on table %s",
-                sai_metadata_get_acl_range_type_name(rangeType), id.c_str());
+            SWSS_LOG_ERROR("Action %s is not supported on table %s",
+                sai_metadata_get_acl_action_type_name(action), id.c_str());
             return false;
         }
     }
@@ -1558,28 +1631,37 @@ bool AclTable::validateAclRuleMatch(sai_attribute_t attr) const
     return true;
 }
 
-bool AclTable::validateAclRuleAction(sai_attribute_t attr) const
+bool AclTable::validateAclRuleMatch(sai_acl_entry_attr_t matchId, const AclRule& rule) const
 {
-    auto aclEntryAttr = static_cast<sai_acl_entry_attr_t>(attr.id);
-    auto action = AclEntryActionToAclAction(aclEntryAttr);
-    if (!m_pAclOrch->isAclActionSupported(stage, action))
+    const auto& tableMatches = type.getMatches();
+    const auto tableMatchId = AclEntryFieldToAclTableField(matchId);
+    const auto tableMatchIt = tableMatches.find(tableMatchId);
+    if (tableMatchIt == tableMatches.end())
     {
-        SWSS_LOG_ERROR("Action %s is not supported on table %s",
-            sai_metadata_get_acl_action_type_name(action), id.c_str());
+        SWSS_LOG_ERROR("Match %s in rule %s is not supported by table %s",
+            getAttributeIdName(SAI_OBJECT_TYPE_ACL_ENTRY, matchId).c_str(),
+            rule.getId().c_str(), id.c_str());
+        return false;
     }
 
-    if (isAttributeValueEnum(SAI_OBJECT_TYPE_ACL_ENTRY, attr.id))
+    const auto& tableMatchAttrObject = tableMatchIt->second;
+    if (!tableMatchAttrObject->validateAclRuleMatch(rule))
     {
-        if (!m_pAclOrch->isAclActionEnumValueSupported(action, attr.value.aclaction.parameter))
-        {
-            SWSS_LOG_ERROR("Action %s is not supported by ASIC", sai_metadata_get_acl_action_type_name(action));
-            return false;
-        }
+        SWSS_LOG_ERROR("Match %s in rule configuration %s is invalid %s",
+            getAttributeIdName(SAI_OBJECT_TYPE_ACL_ENTRY, matchId).c_str(),
+            rule.getId().c_str(), id.c_str());
+        return false;
     }
 
+    return true;
+}
+
+bool AclTable::validateAclRuleAction(sai_acl_entry_attr_t actionId, const AclRule& rule) const
+{
     // This means ACL table can hold rules with any action.
     if (!type.getActions().empty())
     {
+        auto action = AclEntryActionToAclAction(actionId);
         if (!type.getActions().count(action))
         {
             SWSS_LOG_ERROR("Action %s is not supported on table %s",
@@ -1597,7 +1679,6 @@ bool AclTable::create()
 
     sai_attribute_t attr;
     vector<sai_attribute_t> table_attrs;
-    vector<int32_t> range_types_list;
     vector<int32_t> action_types_list;
     vector<int32_t> bpoint_list {type.getBindPointTypes().begin(), type.getBindPointTypes().end()};
 
@@ -1606,24 +1687,9 @@ bool AclTable::create()
     attr.value.s32list.list = bpoint_list.data();
     table_attrs.push_back(attr);
 
-    for (const auto& enabledMatch: type.getMatches())
+    for (const auto& matchPair: type.getMatches())
     {
-        attr.id = enabledMatch;
-        attr.value.booldata = true;
-        table_attrs.push_back(attr);
-    }
-
-    for (const auto& rangeType: type.getRangeTypes())
-    {
-        range_types_list.push_back(rangeType);
-    }
-
-    if (!range_types_list.empty())
-    {
-        attr.id = SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE;
-        attr.value.s32list.count = static_cast<uint32_t>(range_types_list.size());
-        attr.value.s32list.list = range_types_list.data();
-        table_attrs.push_back(attr);
+        table_attrs.push_back(matchPair.second->toSaiAttribute());
     }
 
     for (const auto& actionType: type.getActions())
@@ -1982,7 +2048,7 @@ bool AclRuleDTelFlowWatchListEntry::validate()
         return false;
     }
 
-    return AclRule::validate();
+    return true; 
 }
 
 bool AclRuleDTelFlowWatchListEntry::create()
@@ -2004,7 +2070,7 @@ bool AclRuleDTelFlowWatchListEntry::create()
         return false;
     }
 
-    return AclRule::validate();
+    return true; 
 }
 
 bool AclRuleDTelFlowWatchListEntry::remove()
@@ -2141,7 +2207,7 @@ bool AclRuleDTelDropWatchListEntry::validate()
         return false;
     }
 
-    return AclRule::validate();
+    return true; 
 }
 
 void AclRuleDTelDropWatchListEntry::update(SubjectType, void *)
@@ -2399,22 +2465,21 @@ void AclOrch::initDefaultTableTypes()
         builder.withName(TABLE_TYPE_L3)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_LAG)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IP)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMP_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMP_CODE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_OUT_PORTS)
-            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE)
-            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE)
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DST_IP))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMP_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMP_CODE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_OUT_PORTS))
+            .withMatch(make_shared<AclTableRangeMatch>(set<sai_acl_range_type_t>{
+                {SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE}}))
             .build()
     );
 
@@ -2422,22 +2487,21 @@ void AclOrch::initDefaultTableTypes()
         builder.withName(TABLE_TYPE_L3V6)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_LAG)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IPV6)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IPV6)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_CODE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IPV6_NEXT_HEADER)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_OUT_PORTS)
-            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE)
-            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE)
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_SRC_IPV6))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DST_IPV6))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_CODE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IPV6_NEXT_HEADER))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_OUT_PORTS))
+            .withMatch(make_shared<AclTableRangeMatch>(set<sai_acl_range_type_t>{
+                {SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE}}))
             .build()
     );
 
@@ -2445,37 +2509,36 @@ void AclOrch::initDefaultTableTypes()
         builder.withName(TABLE_TYPE_MCLAG)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_LAG)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IP)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMP_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMP_CODE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_OUT_PORTS)
-            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE)
-            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE)
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DST_IP))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMP_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMP_CODE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_OUT_PORTS))
+            .withMatch(make_shared<AclTableRangeMatch>(set<sai_acl_range_type_t>{
+                {SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE}}))
             .build()
     );
 
     addAclTableType(
         builder.withName(TABLE_TYPE_PFCWD)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TC)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS)
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TC))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS))
             .build()
     );
 
     addAclTableType(
         builder.withName(TABLE_TYPE_DROP)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TC)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS)
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TC))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS))
             .build()
     );
 
@@ -2485,38 +2548,37 @@ void AclOrch::initDefaultTableTypes()
             builder.withName(TABLE_TYPE_MIRROR_DSCP)
                 .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
                 .withBindPointType(SAI_ACL_BIND_POINT_TYPE_LAG)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DSCP)
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DSCP))
                 .build()
         );
 
         builder.withName(TABLE_TYPE_MIRROR)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_LAG)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IP)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMP_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMP_CODE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DSCP)
-            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE)
-            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE);
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DST_IP))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMP_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMP_CODE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DSCP))
+            .withMatch(make_shared<AclTableRangeMatch>(set<sai_acl_range_type_t>{
+                {SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE}}));
 
         if (isAclMirrorV6Supported() && isCombinedMirrorV6Table())
         {
             builder
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IPV6)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IPV6)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_CODE)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_TYPE)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IPV6_NEXT_HEADER);
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_SRC_IPV6))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DST_IPV6))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_CODE))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_TYPE))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IPV6_NEXT_HEADER));
         }
         addAclTableType(builder.build());
     }
@@ -2527,22 +2589,21 @@ void AclOrch::initDefaultTableTypes()
             builder.withName(TABLE_TYPE_MIRRORV6)
                 .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
                 .withBindPointType(SAI_ACL_BIND_POINT_TYPE_LAG)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IPV6)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IPV6)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_CODE)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_TYPE)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IPV6_NEXT_HEADER)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DSCP)
-                .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS)
-                .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE)
-                .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE)
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_SRC_IPV6))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DST_IPV6))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_CODE))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMPV6_TYPE))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IPV6_NEXT_HEADER))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DSCP))
+                .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS))
+                .withMatch(make_shared<AclTableRangeMatch>(set<sai_acl_range_type_t>{
+                    {SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE}}))
                 .build()
         );
     }
@@ -2649,7 +2710,7 @@ void AclOrch::putAclActionCapabilityInDB(acl_stage_type_t stage)
     {
         for (const auto& it: action_map)
         {
-            auto saiAction = getAclActionFromAclEntry(it.second);
+            auto saiAction = AclEntryActionToAclAction(it.second);
             if (acl_action_set.find(saiAction) != acl_action_set.cend())
             {
                 acl_action_value_stream << delimiter << it.first;
@@ -2688,7 +2749,7 @@ void AclOrch::queryAclActionAttrEnumValues(const string &action_name,
 {
     vector<FieldValueTuple> fvVector;
     auto acl_attr = ruleAttrLookupMap.at(action_name);
-    auto acl_action = getAclActionFromAclEntry(acl_attr);
+    auto acl_action = AclEntryActionToAclAction(acl_attr);
 
     /* if the action is not supported then no need to do secondary query for
      * supported values
@@ -2766,16 +2827,6 @@ void AclOrch::queryAclActionAttrEnumValues(const string &action_name,
 
     m_switchOrch->set_switch_capability(fvVector);
 }
-
-sai_acl_action_type_t AclOrch::getAclActionFromAclEntry(sai_acl_entry_attr_t attr)
-{
-    if (attr < SAI_ACL_ENTRY_ATTR_ACTION_START || attr > SAI_ACL_ENTRY_ATTR_ACTION_END)
-    {
-        SWSS_LOG_THROW("Invalid ACL entry attribute passed in: %d", attr);
-    }
-
-    return static_cast<sai_acl_action_type_t>(attr - SAI_ACL_ENTRY_ATTR_ACTION_START);
-};
 
 AclOrch::AclOrch(vector<TableConnector>& connectors, DBConnector* stateDb, SwitchOrch *switchOrch,
         PortsOrch *portOrch, MirrorOrch *mirrorOrch, NeighOrch *neighOrch, RouteOrch *routeOrch, DTelOrch *dtelOrch) :
@@ -4011,16 +4062,16 @@ void AclOrch::createDTelWatchListTables()
     flowWLTable.validateAddStage(ACL_STAGE_INGRESS);
     flowWLTable.validateAddType(builder
         .withBindPointType(SAI_ACL_BIND_POINT_TYPE_SWITCH)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IP)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TUNNEL_VNI)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_INNER_ETHER_TYPE)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_INNER_SRC_IP)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_INNER_DST_IP)
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DST_IP))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TUNNEL_VNI))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_INNER_ETHER_TYPE))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_INNER_SRC_IP))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_INNER_DST_IP))
         .withAction(SAI_ACL_ACTION_TYPE_ACL_DTEL_FLOW_OP)
         .withAction(SAI_ACL_ACTION_TYPE_DTEL_INT_SESSION)
         .withAction(SAI_ACL_ACTION_TYPE_DTEL_REPORT_ALL_PACKETS)
@@ -4032,12 +4083,12 @@ void AclOrch::createDTelWatchListTables()
     dropWLTable.validateAddStage(ACL_STAGE_INGRESS);
     dropWLTable.validateAddType(builder
         .withBindPointType(SAI_ACL_BIND_POINT_TYPE_SWITCH)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IP)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
-        .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL)
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DST_IP))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT))
+        .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL))
         .withAction(SAI_ACL_ACTION_TYPE_DTEL_DROP_REPORT_ENABLE)
         .withAction(SAI_ACL_ACTION_TYPE_DTEL_TAIL_DROP_REPORT_ENABLE)
         .build()

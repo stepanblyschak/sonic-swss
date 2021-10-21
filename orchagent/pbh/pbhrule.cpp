@@ -52,6 +52,11 @@ bool AclRulePbh::validateAddMatch(const sai_attribute_t &attr)
         return false;
     }
 
+    if (!m_pTable->validateAclRuleMatch(attrId, *this))
+    {
+        return false;
+    }
+
     m_matches[attrId] = attr.value;
 
     return true;
@@ -83,6 +88,17 @@ bool AclRulePbh::validateAddAction(const sai_attribute_t &attr)
         return false;
     }
 
+    if (!isActionSupported(attrId))
+    {
+        SWSS_LOG_ERROR("Action %s is not supported by ASIC", attrName.c_str());
+        return false;
+    }
+
+    if (!m_pTable->validateAclRuleAction(attrId, *this))
+    {
+        return false;
+    }
+
     m_actions[attrId] = attr.value;
 
     return true;
@@ -98,7 +114,7 @@ bool AclRulePbh::validate()
         return false;
     }
 
-    return AclRule::validate();
+    return true;
 }
 
 void AclRulePbh::update(SubjectType, void *)

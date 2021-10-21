@@ -98,27 +98,25 @@ namespace aclorch_test
 
     TEST_F(AclTest, Create_L3_Acl_Table)
     {
-        AclTable acltable(nullptr); /* this test won't trigger a call to gAclOrch so it's nullptr */
+        AclTable acltable; /* this test shouldn't trigger a call to gAclOrch because it's nullptr */
         AclTableTypeBuilder builder;
-        auto l3TableType = builder.withName(TABLE_TYPE_L3)
+        auto l3TableType = builder
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_LAG)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_DST_IP)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMP_TYPE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_ICMP_CODE)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-            .withMatch(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS)
-            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE)
-            .withRangeMatch(SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE)
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ETHER_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_OUTER_VLAN_ID))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ACL_IP_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_SRC_IP))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_DST_IP))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMP_TYPE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_ICMP_CODE))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IP_PROTOCOL))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS))
+            .withMatch(make_shared<AclTableRangeMatch>(set<sai_acl_range_type_t>({SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE})))
             .build();
-        acltable.validateAddType(l3TableType);
+        acltable.type = l3TableType;
         auto res = createAclTable(acltable);
 
         ASSERT_TRUE(res->ret_val);
@@ -1521,7 +1519,7 @@ namespace aclorch_test
                         {
                             {
                                 ACL_TABLE_TYPE_MATCHES,
-                                string(MATCH_ETHER_TYPE) + comma + MATCH_L4_SRC_PORT_RANGE + comma + MATCH_L4_SRC_PORT_RANGE
+                                string(MATCH_ETHER_TYPE) + comma + MATCH_L4_SRC_PORT_RANGE + comma + MATCH_L4_DST_PORT_RANGE
                             },
                             {
                                 ACL_TABLE_TYPE_BPOINT_TYPES,

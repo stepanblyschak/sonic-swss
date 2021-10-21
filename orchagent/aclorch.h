@@ -104,6 +104,7 @@ struct AclActionCapabilities
 };
 
 typedef map<string, sai_acl_entry_attr_t> acl_rule_attr_lookup_t;
+typedef map<string, sai_acl_range_type_t> acl_range_type_lookup_t;
 typedef map<string, sai_acl_bind_point_type_t> acl_bind_point_type_lookup_t;
 typedef map<string, sai_acl_ip_type_t> acl_ip_type_lookup_t;
 typedef map<string, sai_acl_dtel_flow_op_t> acl_dtel_flow_op_type_lookup_t;
@@ -112,12 +113,46 @@ typedef tuple<sai_acl_range_type_t, int, int> acl_range_properties_t;
 typedef map<acl_stage_type_t, AclActionCapabilities> acl_capabilities_t;
 typedef map<sai_acl_action_type_t, set<int32_t>> acl_action_enum_values_capabilities_t;
 
+class AclRule;
+
+class AclTableMatchInterface
+{
+public:
+    AclTableMatchInterface(sai_acl_table_attr_t matchField);
+
+    sai_acl_table_attr_t getId() const;
+    virtual sai_attribute_t toSaiAttribute() = 0;
+    virtual bool validateAclRuleMatch(const AclRule& rule) const = 0;
+private:
+    sai_acl_table_attr_t m_matchField;
+};
+
+class AclTableMatch: public AclTableMatchInterface
+{
+public:
+    AclTableMatch(sai_acl_table_attr_t matchField);
+
+    sai_attribute_t toSaiAttribute() override;
+    bool validateAclRuleMatch(const AclRule& rule) const override;
+};
+
+class AclTableRangeMatch: public AclTableMatchInterface
+{
+public:
+    AclTableRangeMatch(set<sai_acl_range_type_t> rangeTypes);
+
+    sai_attribute_t toSaiAttribute() override;
+    bool validateAclRuleMatch(const AclRule& rule) const override;
+
+private:
+    vector<int32_t> m_rangeList;
+};
 class AclTableType
 {
 public:
     string getName() const;
     const set<sai_acl_bind_point_type_t>& getBindPointTypes() const;
-    const set<sai_acl_table_attr_t>& getMatches() const;
+    const map<sai_acl_table_attr_t, shared_ptr<AclTableMatchInterface>>& getMatches() const;
     const set<sai_acl_range_type_t>& getRangeTypes() const;
     const set<sai_acl_action_type_t>& getActions() const;
 
@@ -126,8 +161,7 @@ private:
 
     string m_name;
     set<sai_acl_bind_point_type_t> m_bpointTypes;
-    set<sai_acl_table_attr_t> m_enabledMatches;
-    set<sai_acl_range_type_t> m_rangeTypes;
+    map<sai_acl_table_attr_t, shared_ptr<AclTableMatchInterface>> m_matches;
     set<sai_acl_action_type_t> m_aclAcitons;
 };
 
@@ -136,9 +170,8 @@ class AclTableTypeBuilder
 public:
     AclTableTypeBuilder& withName(string name);
     AclTableTypeBuilder& withBindPointType(sai_acl_bind_point_type_t bpointType);
-    AclTableTypeBuilder& withMatch(sai_acl_table_attr_t matchField);
+    AclTableTypeBuilder& withMatch(shared_ptr<AclTableMatchInterface> match);
     AclTableTypeBuilder& withAction(sai_acl_action_type_t action);
-    AclTableTypeBuilder& withRangeMatch(sai_acl_range_type_t rangeType);
     AclTableType build();
 
 private:
@@ -216,7 +249,7 @@ public:
     virtual bool validateAddPriority(string attr_name, string attr_value);
     virtual bool validateAddMatch(string attr_name, string attr_value);
     virtual bool validateAddAction(string attr_name, string attr_value);
-    virtual bool validate();
+    virtual bool validate() = 0;
     bool processIpType(string type, sai_uint32_t &ip_type);
     inline static void setRulePriorities(sai_uint32_t min, sai_uint32_t max)
     {
@@ -234,8 +267,8 @@ public:
     virtual bool disableCounter();
     virtual AclRuleCounters getCounters();
 
-    string getId();
-    string getTableId();
+    string getId() const;
+    string getTableId() const;
 
     sai_object_id_t getCounterOid()
     {
@@ -247,6 +280,7 @@ public:
         return m_inPorts;
     }
 
+    const map<sai_acl_entry_attr_t, sai_attribute_value_t>& getMatches() const;
     static shared_ptr<AclRule> makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple&);
     virtual ~AclRule() {}
 
@@ -359,8 +393,10 @@ public:
     bool validate();
     bool create();
 
-    bool validateAclRuleMatch(sai_attribute_t attr) const;
-    bool validateAclRuleAction(sai_attribute_t attr) const;
+    // validate AclRule match attribute against rule and table configuration
+    bool validateAclRuleMatch(sai_acl_entry_attr_t matchId, const AclRule& rule) const;
+    // validate AclRule action attribute against rule and table configuration
+    bool validateAclRuleAction(sai_acl_entry_attr_t actionId, const AclRule& rule) const;
 
     // Bind the ACL table to a port which is already linked
     bool bind(sai_object_id_t portOid);
@@ -455,8 +491,6 @@ public:
 
     bool m_isCombinedMirrorV6Table = true;
     map<string, bool> m_mirrorTableCapabilities;
-
-    static sai_acl_action_type_t getAclActionFromAclEntry(sai_acl_entry_attr_t attr);
 
     // Get the OID for the ACL bind point for a given port
     static bool getAclBindPortId(Port& port, sai_object_id_t& port_id);
