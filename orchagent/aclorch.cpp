@@ -1372,7 +1372,7 @@ bool AclRulePacket::validate()
         return false;
     }
 
-    return true; 
+    return true;
 }
 
 void AclRulePacket::update(SubjectType, void *)
@@ -1425,7 +1425,7 @@ bool AclRuleMirror::validate()
         return false;
     }
 
-    return true; 
+    return true;
 }
 
 bool AclRuleMirror::create()
@@ -1679,7 +1679,7 @@ bool AclTable::create()
 
     sai_attribute_t attr;
     vector<sai_attribute_t> table_attrs;
-    vector<int32_t> action_types_list;
+    vector<int32_t> action_types_list {type.getActions().begin(), type.getActions().end()};
     vector<int32_t> bpoint_list {type.getBindPointTypes().begin(), type.getBindPointTypes().end()};
 
     attr.id = SAI_ACL_TABLE_ATTR_ACL_BIND_POINT_TYPE_LIST;
@@ -1690,11 +1690,6 @@ bool AclTable::create()
     for (const auto& matchPair: type.getMatches())
     {
         table_attrs.push_back(matchPair.second->toSaiAttribute());
-    }
-
-    for (const auto& actionType: type.getActions())
-    {
-        action_types_list.push_back(actionType);
     }
 
     if (!action_types_list.empty())
@@ -2048,7 +2043,7 @@ bool AclRuleDTelFlowWatchListEntry::validate()
         return false;
     }
 
-    return true; 
+    return true;
 }
 
 bool AclRuleDTelFlowWatchListEntry::create()
@@ -2070,7 +2065,7 @@ bool AclRuleDTelFlowWatchListEntry::create()
         return false;
     }
 
-    return true; 
+    return true;
 }
 
 bool AclRuleDTelFlowWatchListEntry::remove()
@@ -2207,7 +2202,7 @@ bool AclRuleDTelDropWatchListEntry::validate()
         return false;
     }
 
-    return true; 
+    return true;
 }
 
 void AclRuleDTelDropWatchListEntry::update(SubjectType, void *)
@@ -3264,14 +3259,13 @@ bool AclOrch::removeAclTableType(const string& tableTypeName)
     // The upper layer can although ensure that
     // user does not remove table type that is referenced
     // by an ACL table.
-    auto erased = m_AclTableTypes.erase(tableTypeName);
-
-    if (!erased)
+    if (!m_AclTableTypes.erase(tableTypeName))
     {
         SWSS_LOG_ERROR("Unknown table type %s", tableTypeName.c_str());
+        return false;
     }
 
-    return erased;
+    return true;
 }
 
 bool AclOrch::addAclRule(shared_ptr<AclRule> newRule, string table_id)

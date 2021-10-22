@@ -678,13 +678,13 @@ namespace aclorch_test
             auto const &resourceMap = Portal::CrmOrchInternal::getResourceMap(crmOrch);
 
             // Verify the ACL tables
-            ssize_t crmAclTableBindingCount = 0;
+            size_t crmAclTableBindingCount = 0;
             for (auto const &kv: resourceMap.at(CrmResourceType::CRM_ACL_TABLE).countersMap)
             {
                 crmAclTableBindingCount += kv.second.usedCounter;
             }
 
-            ssize_t aclorchAclTableBindingCount = 0;
+            size_t aclorchAclTableBindingCount = 0;
             for (auto const &kv: Portal::AclOrchInternal::getAclTables(aclOrch))
             {
                 aclorchAclTableBindingCount += kv.second.type.getBindPointTypes().size();
