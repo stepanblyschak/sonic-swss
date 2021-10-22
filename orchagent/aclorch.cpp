@@ -184,7 +184,7 @@ static sai_acl_action_type_t AclEntryActionToAclAction(sai_acl_entry_attr_t attr
     return static_cast<sai_acl_action_type_t>(attr - SAI_ACL_ENTRY_ATTR_ACTION_START);
 }
 
-string getAttributeIdName(sai_object_type_t objectType, sai_attr_id_t attr)
+static string getAttributeIdName(sai_object_type_t objectType, sai_attr_id_t attr)
 {
     const auto* meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
     if (!meta)
