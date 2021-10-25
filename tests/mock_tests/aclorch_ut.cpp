@@ -1366,7 +1366,7 @@ namespace aclorch_test
 
             void disableMatch(sai_acl_entry_attr_t attr)
             {
-                matches.erase(attr);
+                m_matches.erase(attr);
             }
         };
 

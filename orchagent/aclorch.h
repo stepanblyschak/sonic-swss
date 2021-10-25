@@ -221,7 +221,7 @@ protected:
 
     virtual bool setPriority(const sai_uint32_t &value);
     virtual bool setAction(sai_acl_entry_attr_t actionId, sai_acl_action_data_t actionData);
-    virtual bool setMatch(sai_acl_entry_attr_t matchId, sai_attribute_value_t value);
+    virtual bool setMatch(sai_acl_entry_attr_t matchId, sai_acl_field_data_t matchData);
 
     virtual bool setAttribute(sai_attribute_t attr);
 
@@ -239,10 +239,8 @@ protected:
     sai_object_id_t m_ruleOid;
     sai_object_id_t m_counterOid;
     uint32_t m_priority;
-    map <sai_acl_entry_attr_t, sai_attribute_value_t> m_matches;
-    map <sai_acl_entry_attr_t, sai_attribute_value_t> m_actions;
-    map <sai_acl_entry_attr_t, SaiAttr> actions;
-    map <sai_acl_entry_attr_t, SaiAttr> matches;
+    map <sai_acl_entry_attr_t, SaiAttr> m_actions;
+    map <sai_acl_entry_attr_t, SaiAttr> m_matches;
     string m_redirect_target_next_hop;
     string m_redirect_target_next_hop_group;
 

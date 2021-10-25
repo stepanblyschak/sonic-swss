@@ -209,8 +209,8 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
 {
     SWSS_LOG_ENTER();
 
-    sai_attribute_value_t value;
-    value.aclfield.enable = true;
+    sai_acl_field_data_t matchData;
+    matchData.enable = true;
 
     try
     {
@@ -246,8 +246,8 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 m_inPorts.push_back(port.m_port_id);
             }
 
-            value.aclfield.data.objlist.count = static_cast<uint32_t>(m_inPorts.size());
-            value.aclfield.data.objlist.list = m_inPorts.data();
+            matchData.data.objlist.count = static_cast<uint32_t>(m_inPorts.size());
+            matchData.data.objlist.list = m_inPorts.data();
         }
         else if (attr_name == MATCH_OUT_PORTS)
         {
@@ -277,46 +277,46 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 m_outPorts.push_back(port.m_port_id);
             }
 
-            value.aclfield.data.objlist.count = static_cast<uint32_t>(m_outPorts.size());
-            value.aclfield.data.objlist.list = m_outPorts.data();
+            matchData.data.objlist.count = static_cast<uint32_t>(m_outPorts.size());
+            matchData.data.objlist.list = m_outPorts.data();
         }
         else if (attr_name == MATCH_IP_TYPE)
         {
-            if (!processIpType(attr_value, value.aclfield.data.u32))
+            if (!processIpType(attr_value, matchData.data.u32))
             {
                 SWSS_LOG_ERROR("Invalid IP type %s", attr_value.c_str());
                 return false;
             }
 
-            value.aclfield.mask.u32 = 0xFFFFFFFF;
+            matchData.mask.u32 = 0xFFFFFFFF;
         }
         else if (attr_name == MATCH_TCP_FLAGS)
         {
             // Support both exact value match and value/mask match
             auto flag_data = tokenize(attr_value, '/');
 
-            value.aclfield.data.u8 = to_uint<uint8_t>(flag_data[0], 0, 0x3F);
+            matchData.data.u8 = to_uint<uint8_t>(flag_data[0], 0, 0x3F);
 
             if (flag_data.size() == 2)
             {
-                value.aclfield.mask.u8 = to_uint<uint8_t>(flag_data[1], 0, 0x3F);
+                matchData.mask.u8 = to_uint<uint8_t>(flag_data[1], 0, 0x3F);
             }
             else
             {
-                value.aclfield.mask.u8 = 0x3F;
+                matchData.mask.u8 = 0x3F;
             }
         }
         else if (attr_name == MATCH_ETHER_TYPE || attr_name == MATCH_L4_SRC_PORT || attr_name == MATCH_L4_DST_PORT)
         {
-            value.aclfield.data.u16 = to_uint<uint16_t>(attr_value);
-            value.aclfield.mask.u16 = 0xFFFF;
+            matchData.data.u16 = to_uint<uint16_t>(attr_value);
+            matchData.mask.u16 = 0xFFFF;
         }
         else if (attr_name == MATCH_VLAN_ID)
         {
-            value.aclfield.data.u16 = to_uint<uint16_t>(attr_value);
-            value.aclfield.mask.u16 = 0xFFF;
+            matchData.data.u16 = to_uint<uint16_t>(attr_value);
+            matchData.mask.u16 = 0xFFF;
 
-            if (value.aclfield.data.u16 < MIN_VLAN_ID || value.aclfield.data.u16 > MAX_VLAN_ID)
+            if (matchData.data.u16 < MIN_VLAN_ID || matchData.data.u16 > MAX_VLAN_ID)
             {
                 SWSS_LOG_ERROR("Invalid VLAN ID: %s", attr_value.c_str());
                 return false;
@@ -327,21 +327,21 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
             /* Support both exact value match and value/mask match */
             auto dscp_data = tokenize(attr_value, '/');
 
-            value.aclfield.data.u8 = to_uint<uint8_t>(dscp_data[0], 0, 0x3F);
+            matchData.data.u8 = to_uint<uint8_t>(dscp_data[0], 0, 0x3F);
 
             if (dscp_data.size() == 2)
             {
-                value.aclfield.mask.u8 = to_uint<uint8_t>(dscp_data[1], 0, 0x3F);
+                matchData.mask.u8 = to_uint<uint8_t>(dscp_data[1], 0, 0x3F);
             }
             else
             {
-                value.aclfield.mask.u8 = 0x3F;
+                matchData.mask.u8 = 0x3F;
             }
         }
         else if (attr_name == MATCH_IP_PROTOCOL || attr_name == MATCH_NEXT_HEADER)
         {
-            value.aclfield.data.u8 = to_uint<uint8_t>(attr_value);
-            value.aclfield.mask.u8 = 0xFF;
+            matchData.data.u8 = to_uint<uint8_t>(attr_value);
+            matchData.mask.u8 = 0xFF;
         }
         else if (attr_name == MATCH_SRC_IP || attr_name == MATCH_DST_IP)
         {
@@ -352,8 +352,8 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 SWSS_LOG_ERROR("IP type is not v4 type");
                 return false;
             }
-            value.aclfield.data.ip4 = ip.getIp().getV4Addr();
-            value.aclfield.mask.ip4 = ip.getMask().getV4Addr();
+            matchData.data.ip4 = ip.getIp().getV4Addr();
+            matchData.mask.ip4 = ip.getMask().getV4Addr();
         }
         else if (attr_name == MATCH_SRC_IPV6 || attr_name == MATCH_DST_IPV6)
         {
@@ -363,8 +363,8 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 SWSS_LOG_ERROR("IP type is not v6 type");
                 return false;
             }
-            memcpy(value.aclfield.data.ip6, ip.getIp().getV6Addr(), 16);
-            memcpy(value.aclfield.mask.ip6, ip.getMask().getV6Addr(), 16);
+            memcpy(matchData.data.ip6, ip.getIp().getV6Addr(), 16);
+            memcpy(matchData.mask.ip6, ip.getMask().getV6Addr(), 16);
         }
         else if ((attr_name == MATCH_L4_SRC_PORT_RANGE) || (attr_name == MATCH_L4_DST_PORT_RANGE))
         {
@@ -392,30 +392,30 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
         }
         else if (attr_name == MATCH_TC)
         {
-            value.aclfield.data.u8 = to_uint<uint8_t>(attr_value);
-            value.aclfield.mask.u8 = 0xFF;
+            matchData.data.u8 = to_uint<uint8_t>(attr_value);
+            matchData.mask.u8 = 0xFF;
         }
         else if (attr_name == MATCH_ICMP_TYPE || attr_name == MATCH_ICMP_CODE ||
                 attr_name == MATCH_ICMPV6_TYPE || attr_name == MATCH_ICMPV6_CODE)
         {
-            value.aclfield.data.u8 = to_uint<uint8_t>(attr_value);
-            value.aclfield.mask.u8 = 0xFF;
+            matchData.data.u8 = to_uint<uint8_t>(attr_value);
+            matchData.mask.u8 = 0xFF;
         }
         else if (attr_name == MATCH_TUNNEL_VNI)
         {
-            value.aclfield.data.u32 = to_uint<uint32_t>(attr_value);
-            value.aclfield.mask.u32 = 0xFFFFFFFF;
+            matchData.data.u32 = to_uint<uint32_t>(attr_value);
+            matchData.mask.u32 = 0xFFFFFFFF;
         }
         else if (attr_name == MATCH_INNER_ETHER_TYPE || attr_name == MATCH_INNER_L4_SRC_PORT ||
             attr_name == MATCH_INNER_L4_DST_PORT)
         {
-            value.aclfield.data.u16 = to_uint<uint16_t>(attr_value);
-            value.aclfield.mask.u16 = 0xFFFF;
+            matchData.data.u16 = to_uint<uint16_t>(attr_value);
+            matchData.mask.u16 = 0xFFFF;
         }
         else if (attr_name == MATCH_INNER_IP_PROTOCOL)
         {
-            value.aclfield.data.u8 = to_uint<uint8_t>(attr_value);
-            value.aclfield.mask.u8 = 0xFF;
+            matchData.data.u8 = to_uint<uint8_t>(attr_value);
+            matchData.mask.u8 = 0xFF;
         }
     }
     catch (exception &e)
@@ -438,7 +438,7 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
         attr_name = MATCH_NEXT_HEADER;
     }
 
-    return setMatch(aclMatchLookup[attr_name], value);
+    return setMatch(aclMatchLookup[attr_name], matchData);
 }
 
 bool AclRule::validateAddAction(string attr_name, string attr_value)
@@ -526,13 +526,13 @@ bool AclRule::create()
     }
 
     // store matches
-    for (auto it : matches)
+    for (auto it : m_matches)
     {
         rule_attrs.push_back(it.second.getSaiAttr());
     }
 
     // store actions
-    for (auto it : actions)
+    for (auto it : m_actions)
     {
         attr = it.second.getSaiAttr();
         rule_attrs.push_back(attr);
@@ -621,7 +621,7 @@ void AclRule::updateInPorts()
     SWSS_LOG_ENTER();
     sai_status_t status;
 
-    auto attr = matches[SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS].getSaiAttr();
+    auto attr = m_matches[SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS].getSaiAttr();
     attr.value.aclfield.enable = true;
 
     status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
@@ -709,18 +709,18 @@ bool AclRule::updateMatches(const AclRule& updatedRule)
     // Diff by value to get new matches and updated matches
     // in a single set_difference pass.
     set_difference(
-        updatedRule.matches.begin(),
-        updatedRule.matches.end(),
-        matches.begin(), matches.end(),
+        updatedRule.m_matches.begin(),
+        updatedRule.m_matches.end(),
+        m_matches.begin(), m_matches.end(),
         back_inserter(matchesUpdated)
     );
 
     // Diff by key only to get delete matches. Assuming that
     // deleted matches mean setting a match attribute to disabled state.
     set_difference(
-        matches.begin(), matches.end(),
-        updatedRule.matches.begin(),
-        updatedRule.matches.end(),
+        m_matches.begin(), m_matches.end(),
+        updatedRule.m_matches.begin(),
+        updatedRule.m_matches.end(),
         back_inserter(matchesDisabled),
         [](auto& oldMatch, auto& newMatch)
         {
@@ -736,7 +736,7 @@ bool AclRule::updateMatches(const AclRule& updatedRule)
         {
             return false;
         }
-        matches.erase(static_cast<sai_acl_entry_attr_t>(attr.id));
+        m_matches.erase(static_cast<sai_acl_entry_attr_t>(attr.id));
     }
 
     for (const auto& attrPair: matchesUpdated)
@@ -746,7 +746,7 @@ bool AclRule::updateMatches(const AclRule& updatedRule)
         {
             return false;
         }
-        matches[static_cast<sai_acl_entry_attr_t>(attr.id)] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+        m_matches[static_cast<sai_acl_entry_attr_t>(attr.id)] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
     }
 
     return true;
@@ -760,18 +760,18 @@ bool AclRule::updateActions(const AclRule& updatedRule)
     // Diff by value to get new action and updated actions
     // in a single set_difference pass.
     set_difference(
-        updatedRule.actions.begin(),
-        updatedRule.actions.end(),
-        actions.begin(), actions.end(),
+        updatedRule.m_actions.begin(),
+        updatedRule.m_actions.end(),
+        m_actions.begin(), m_actions.end(),
         back_inserter(actionsUpdated)
     );
 
     // Diff by key only to get delete actions. Assuming that
     // action matches mean setting a action attribute to disabled state.
     set_difference(
-        actions.begin(), actions.end(),
-        updatedRule.actions.begin(),
-        updatedRule.actions.end(),
+        m_actions.begin(), m_actions.end(),
+        updatedRule.m_actions.begin(),
+        updatedRule.m_actions.end(),
         back_inserter(actionsDisabled),
         [](auto& oldAction, auto& newAction)
         {
@@ -787,7 +787,7 @@ bool AclRule::updateActions(const AclRule& updatedRule)
         {
             return false;
         }
-        actions.erase(static_cast<sai_acl_entry_attr_t>(attr.id));
+        m_actions.erase(static_cast<sai_acl_entry_attr_t>(attr.id));
     }
 
     for (const auto& attrPair: actionsUpdated)
@@ -797,7 +797,7 @@ bool AclRule::updateActions(const AclRule& updatedRule)
         {
             return false;
         }
-        actions[static_cast<sai_acl_entry_attr_t>(attr.id)] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+        m_actions[static_cast<sai_acl_entry_attr_t>(attr.id)] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
     }
 
     return true;
@@ -845,18 +845,20 @@ bool AclRule::setAction(sai_acl_entry_attr_t actionId, sai_acl_action_data_t act
     attr.id = actionId;
     attr.value.aclaction = actionData;
 
-    actions[actionId] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+    m_actions[actionId] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
 
     return true;
 }
 
-bool AclRule::setMatch(sai_acl_entry_attr_t matchId, sai_attribute_value_t value)
+bool AclRule::setMatch(sai_acl_entry_attr_t matchId, sai_acl_field_data_t matchData)
 {
     SaiAttr attribute(SAI_OBJECT_TYPE_ACL_ENTRY, sai_attribute_t{
         .id = static_cast<sai_attr_id_t>(matchId),
-        .value = value,
+        .value = {
+            .aclfield = matchData,
+        },
     });
-    matches[matchId] = attribute;
+    m_matches[matchId] = attribute;
     return true;
 }
 
@@ -1329,7 +1331,7 @@ bool AclRuleL3::validate()
 {
     SWSS_LOG_ENTER();
 
-    if (matches.size() == 0 || actions.size() != 1)
+    if (m_matches.size() == 0 || m_actions.size() != 1)
     {
         return false;
     }
@@ -1503,7 +1505,7 @@ bool AclRuleMirror::validate()
 {
     SWSS_LOG_ENTER();
 
-    if (matches.size() == 0 || m_sessionName.empty())
+    if (m_matches.size() == 0 || m_sessionName.empty())
     {
         return false;
     }
@@ -1539,13 +1541,13 @@ bool AclRuleMirror::create()
         SWSS_LOG_THROW("Failed to get mirror session OID for session %s", m_sessionName.c_str());
     }
 
-    for (auto& it: actions)
+    for (auto& it: m_actions)
     {
         auto attr = it.second.getSaiAttr();
         attr.value.aclaction.enable = true;
         attr.value.aclaction.parameter.objlist.list = &oid;
         attr.value.aclaction.parameter.objlist.count = 1;
-        actions[static_cast<sai_acl_entry_attr_t>(attr.id)] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+        m_actions[static_cast<sai_acl_entry_attr_t>(attr.id)] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
     }
 
     if (!AclRule::create())
@@ -1633,7 +1635,7 @@ bool AclRuleMclag::validate()
 {
     SWSS_LOG_ENTER();
 
-    if (matches.size() == 0)
+    if (m_matches.size() == 0)
     {
         return false;
     }
@@ -2380,7 +2382,7 @@ bool AclRuleDTelFlowWatchListEntry::validate()
         return false;
     }
 
-    if (matches.size() == 0 || actions.size() == 0)
+    if (m_matches.size() == 0 || m_actions.size() == 0)
     {
         return false;
     }
@@ -2540,7 +2542,7 @@ bool AclRuleDTelDropWatchListEntry::validate()
         return false;
     }
 
-    if (matches.size() == 0 || actions.size() == 0)
+    if (m_matches.size() == 0 || m_actions.size() == 0)
     {
         return false;
     }

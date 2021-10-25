@@ -20,12 +20,12 @@ struct Portal
 
         static const map<sai_acl_entry_attr_t, SaiAttr> &getMatches(const AclRule *aclRule)
         {
-            return aclRule->matches;
+            return aclRule->m_matches;
         }
 
         static const map<sai_acl_entry_attr_t, SaiAttr> &getActions(const AclRule *aclRule)
         {
-            return aclRule->actions;
+            return aclRule->m_actions;
         }
     };
 
