@@ -18,14 +18,14 @@ struct Portal
             return aclRule->m_ruleOid;
         }
 
-        static const map<sai_acl_entry_attr_t, sai_attribute_value_t> &getMatches(const AclRule *aclRule)
+        static const map<sai_acl_entry_attr_t, SaiAttr> &getMatches(const AclRule *aclRule)
         {
-            return aclRule->m_matches;
+            return aclRule->matches;
         }
 
-        static const map<sai_acl_entry_attr_t, sai_attribute_value_t> &getActions(const AclRule *aclRule)
+        static const map<sai_acl_entry_attr_t, SaiAttr> &getActions(const AclRule *aclRule)
         {
-            return aclRule->m_actions;
+            return aclRule->actions;
         }
     };
 

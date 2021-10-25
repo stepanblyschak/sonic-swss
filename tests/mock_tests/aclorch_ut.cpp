@@ -817,21 +817,21 @@ namespace aclorch_test
                     return false;
                 }
 
-                if (it->second.aclaction.enable != true)
+                if (it->second.getSaiAttr().value.aclaction.enable != true)
                 {
                     return false;
                 }
 
                 if (attr_value == PACKET_ACTION_FORWARD)
                 {
-                    if (it->second.aclaction.parameter.s32 != SAI_PACKET_ACTION_FORWARD)
+                    if (it->second.getSaiAttr().value.aclaction.parameter.s32 != SAI_PACKET_ACTION_FORWARD)
                     {
                         return false;
                     }
                 }
                 else if (attr_value == PACKET_ACTION_DROP)
                 {
-                    if (it->second.aclaction.parameter.s32 != SAI_PACKET_ACTION_DROP)
+                    if (it->second.getSaiAttr().value.aclaction.parameter.s32 != SAI_PACKET_ACTION_DROP)
                     {
                         return false;
                     }
@@ -864,14 +864,14 @@ namespace aclorch_test
                 }
 
                 char addr[20];
-                sai_serialize_ip4(addr, it_field->second.aclfield.data.ip4);
+                sai_serialize_ip4(addr, it_field->second.getSaiAttr().value.aclfield.data.ip4);
                 if (attr_value != addr)
                 {
                     return false;
                 }
 
                 char mask[20];
-                sai_serialize_ip4(mask, it_field->second.aclfield.mask.ip4);
+                sai_serialize_ip4(mask, it_field->second.getSaiAttr().value.aclfield.mask.ip4);
                 if (string(mask) != "255.255.255.255")
                 {
                     return false;
@@ -886,14 +886,14 @@ namespace aclorch_test
                 }
 
                 char addr[46];
-                sai_serialize_ip6(addr, it_field->second.aclfield.data.ip6);
+                sai_serialize_ip6(addr, it_field->second.getSaiAttr().value.aclfield.data.ip6);
                 if (attr_value != addr)
                 {
                     return false;
                 }
 
                 char mask[46];
-                sai_serialize_ip6(mask, it_field->second.aclfield.mask.ip6);
+                sai_serialize_ip6(mask, it_field->second.getSaiAttr().value.aclfield.mask.ip6);
                 if (string(mask) != "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")
                 {
                     return false;
@@ -1366,7 +1366,7 @@ namespace aclorch_test
 
             void disableMatch(sai_acl_entry_attr_t attr)
             {
-                m_matches.erase(attr);
+                matches.erase(attr);
             }
         };
 

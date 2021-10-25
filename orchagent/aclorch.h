@@ -18,6 +18,8 @@
 
 #include "acltable.h"
 
+#include "saiattr.h"
+
 // ACL counters update interval in the DB
 // Value is in seconds. Should not be less than 5 seconds
 // (in worst case update of 1265 counters takes almost 5 sec)
@@ -95,6 +97,7 @@
 #define RULE_OPER_DELETE        1
 
 typedef map<string, sai_acl_entry_attr_t> acl_rule_attr_lookup_t;
+typedef map<string, sai_acl_range_type_t> acl_range_type_lookup_t;
 typedef map<string, sai_acl_ip_type_t> acl_ip_type_lookup_t;
 typedef map<string, sai_acl_dtel_flow_op_t> acl_dtel_flow_op_type_lookup_t;
 typedef map<string, sai_packet_action_t> acl_packet_action_lookup_t;
@@ -103,6 +106,13 @@ typedef map<acl_stage_type_t, set<sai_acl_action_type_t>> acl_capabilities_t;
 typedef map<sai_acl_action_type_t, set<int32_t>> acl_action_enum_values_capabilities_t;
 
 class AclOrch;
+
+struct AclRangeConfig
+{
+    sai_acl_range_type_t rangeType;
+    uint32_t min;
+    uint32_t max;
+};
 
 class AclRange
 {
@@ -209,6 +219,10 @@ protected:
     virtual bool updateActions(const AclRule& updatedRule);
     virtual bool updateCounter(const AclRule& updatedRule);
 
+    virtual bool setPriority(const sai_uint32_t &value);
+    virtual bool setAction(sai_acl_entry_attr_t actionId, sai_acl_action_data_t actionData);
+    virtual bool setMatch(sai_acl_entry_attr_t matchId, sai_attribute_value_t value);
+
     virtual bool setAttribute(sai_attribute_t attr);
 
     void decreaseNextHopRefCount();
@@ -227,11 +241,16 @@ protected:
     uint32_t m_priority;
     map <sai_acl_entry_attr_t, sai_attribute_value_t> m_matches;
     map <sai_acl_entry_attr_t, sai_attribute_value_t> m_actions;
+    map <sai_acl_entry_attr_t, SaiAttr> actions;
+    map <sai_acl_entry_attr_t, SaiAttr> matches;
     string m_redirect_target_next_hop;
     string m_redirect_target_next_hop_group;
 
     vector<sai_object_id_t> m_inPorts;
     vector<sai_object_id_t> m_outPorts;
+
+    vector<AclRangeConfig> m_rangeConfig;
+    vector<AclRange*> m_ranges;
 
 private:
     bool m_createCounter;
