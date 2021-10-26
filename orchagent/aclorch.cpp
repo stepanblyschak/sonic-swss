@@ -227,7 +227,7 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 return false;
             }
 
-            m_inPorts.clear();
+            vector<sai_object_id_t> inPorts;
             for (auto alias : ports)
             {
                 Port port;
@@ -243,11 +243,11 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                     return false;
                 }
 
-                m_inPorts.push_back(port.m_port_id);
+                inPorts.push_back(port.m_port_id);
             }
 
-            matchData.data.objlist.count = static_cast<uint32_t>(m_inPorts.size());
-            matchData.data.objlist.list = m_inPorts.data();
+            matchData.data.objlist.count = static_cast<uint32_t>(inPorts.size());
+            matchData.data.objlist.list = inPorts.data();
         }
         else if (attr_name == MATCH_OUT_PORTS)
         {
@@ -258,7 +258,7 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 return false;
             }
 
-            m_outPorts.clear();
+            vector<sai_object_id_t> outPorts;
             for (auto alias : ports)
             {
                 Port port;
@@ -274,11 +274,11 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                     return false;
                 }
 
-                m_outPorts.push_back(port.m_port_id);
+                outPorts.push_back(port.m_port_id);
             }
 
-            matchData.data.objlist.count = static_cast<uint32_t>(m_outPorts.size());
-            matchData.data.objlist.list = m_outPorts.data();
+            matchData.data.objlist.count = static_cast<uint32_t>(outPorts.size());
+            matchData.data.objlist.list = outPorts.data();
         }
         else if (attr_name == MATCH_IP_TYPE)
         {
@@ -635,6 +635,12 @@ void AclRule::updateInPorts()
 bool AclRule::update(const AclRule& updatedRule)
 {
     SWSS_LOG_ENTER();
+
+    if (!m_rangeConfig.empty() || !updatedRule.m_rangeConfig.empty())
+    {
+        SWSS_LOG_ERROR("Updating range matches is currently not implemented");
+        return false;
+    }
 
     if (!updateCounter(updatedRule))
     {
@@ -1616,6 +1622,19 @@ void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
     }
 }
 
+bool AclRuleMirror::update(const AclRule& rule)
+{
+    auto mirrorRule = dynamic_cast<const AclRuleMirror*>(&rule);
+    if (!mirrorRule)
+    {
+        SWSS_LOG_ERROR("Cannot update mirror rule with a rule of a different type");
+        return false;
+    }
+
+    SWSS_LOG_ERROR("Updating mirror rule is currently not implemented");
+    return false;
+}
+
 AclRuleMclag::AclRuleMclag(AclOrch *aclOrch, string rule, string table, acl_table_type_t type, bool createCounter) :
         AclRuleL3(aclOrch, rule, table, type, createCounter)
 {
@@ -2500,6 +2519,19 @@ void AclRuleDTelFlowWatchListEntry::onUpdate(SubjectType type, void *cntx)
         remove();
         INT_session_valid = false;
     }
+}
+
+bool AclRuleDTelFlowWatchListEntry::update(const AclRule& rule)
+{
+    auto dtelDropWathcListRule = dynamic_cast<const AclRuleDTelFlowWatchListEntry*>(&rule);
+    if (!dtelDropWathcListRule)
+    {
+        SWSS_LOG_ERROR("Cannot update DTEL flow watch list rule with a rule of a different type");
+        return false;
+    }
+
+    SWSS_LOG_ERROR("Updating DTEL flow watch list rule is currently not implemented");
+    return false;
 }
 
 AclRuleDTelDropWatchListEntry::AclRuleDTelDropWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table, acl_table_type_t type) :

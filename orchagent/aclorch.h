@@ -203,7 +203,15 @@ public:
 
     vector<sai_object_id_t> getInPorts() 
     {
-        return m_inPorts;
+        vector<sai_object_id_t> inPorts;
+        auto it = m_matches.find(SAI_ACL_ENTRY_ATTR_FIELD_IN_PORT);
+        if (it == m_matches.end())
+        {
+            return inPorts;
+        }
+        auto objlist = it->second.getSaiAttr().value.objlist;
+        inPorts = vector<sai_object_id_t>(objlist.list, objlist.list + objlist.count);
+        return inPorts;
     }
 
     static shared_ptr<AclRule> makeShared(acl_table_type_t type, AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple&);
@@ -243,9 +251,6 @@ protected:
     map <sai_acl_entry_attr_t, SaiAttr> m_matches;
     string m_redirect_target_next_hop;
     string m_redirect_target_next_hop_group;
-
-    vector<sai_object_id_t> m_inPorts;
-    vector<sai_object_id_t> m_outPorts;
 
     vector<AclRangeConfig> m_rangeConfig;
     vector<AclRange*> m_ranges;
@@ -301,6 +306,7 @@ public:
     void onUpdate(SubjectType, void *) override;
     AclRuleCounters getCounters();
 
+    bool update(const AclRule& updatedRule) override;
 protected:
     bool m_state {false};
     string m_sessionName;
@@ -318,6 +324,7 @@ public:
     bool remove();
     void onUpdate(SubjectType, void *) override;
 
+    bool update(const AclRule& updatedRule) override;
 protected:
     DTelOrch *m_pDTelOrch;
     string m_intSessionId;
@@ -332,7 +339,6 @@ public:
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
     void onUpdate(SubjectType, void *) override;
-
 protected:
     DTelOrch *m_pDTelOrch;
 };
@@ -443,14 +449,6 @@ public:
     bool updateAclTable(string table_id, AclTable &table);
     bool addAclRule(shared_ptr<AclRule> aclRule, string table_id);
     bool removeAclRule(string table_id, string rule_id);
-
-    // Update ACL rule based on new configuration in updatedAclRule.
-    // This method calculates the diff between counter, priority,
-    // matches and actions and applies the difference to SAI.
-    // This API is limited to support actions and matches that
-    // hold a plain value, e.g: actions or matches of type
-    // SAI_ATTR_VALUE_TYPE_ACL_ACTION/FIELD_DATA_OBJECT_LIST
-    // are not supported.
     bool updateAclRule(shared_ptr<AclRule> updatedAclRule);
     bool updateAclRule(string table_id, string rule_id, string attr_name, void *data, bool oper);
     bool updateAclRule(string table_id, string rule_id, bool enableCounter);
