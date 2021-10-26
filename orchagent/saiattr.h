@@ -8,19 +8,19 @@ extern "C"
 
 #include <string>
 
-class SaiAttr
+class SaiAttrWrapper
 {
 public:
-    SaiAttr() = default;
+    SaiAttrWrapper() = default;
 
-    SaiAttr(sai_object_type_t objectType, const sai_attribute_t& attr);
-    SaiAttr(const SaiAttr& other);
-    SaiAttr(const SaiAttr&& other);
-    SaiAttr& operator=(const SaiAttr& other);
-    SaiAttr& operator=(const SaiAttr&& other);
-    virtual ~SaiAttr();
+    SaiAttrWrapper(sai_object_type_t objectType, const sai_attribute_t& attr);
+    SaiAttrWrapper(const SaiAttrWrapper& other);
+    SaiAttrWrapper(const SaiAttrWrapper&& other);
+    SaiAttrWrapper& operator=(const SaiAttrWrapper& other);
+    SaiAttrWrapper& operator=(const SaiAttrWrapper&& other);
+    virtual ~SaiAttrWrapper();
 
-    bool operator<(const SaiAttr& other) const;
+    bool operator<(const SaiAttrWrapper& other) const;
 
     const sai_attribute_t& getSaiAttr() const;
     std::string toString() const;
@@ -28,11 +28,11 @@ public:
 
 private:
 
-    void initializeFrom(
+    void init(
         sai_object_type_t objectType,
         const sai_attr_metadata_t& meta,
         const sai_attribute_t& attr);
-    void swap(const SaiAttr&& other);
+    void swap(const SaiAttrWrapper&& other);
 
     sai_object_type_t m_objectType;
     const sai_attr_metadata_t* m_meta;

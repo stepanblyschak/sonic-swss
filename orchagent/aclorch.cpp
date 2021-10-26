@@ -709,8 +709,8 @@ bool AclRule::updatePriority(const AclRule& updatedRule)
 
 bool AclRule::updateMatches(const AclRule& updatedRule)
 {
-    vector<pair<sai_acl_entry_attr_t, SaiAttr>> matchesUpdated;
-    vector<pair<sai_acl_entry_attr_t, SaiAttr>> matchesDisabled;
+    vector<pair<sai_acl_entry_attr_t, SaiAttrWrapper>> matchesUpdated;
+    vector<pair<sai_acl_entry_attr_t, SaiAttrWrapper>> matchesDisabled;
 
     // Diff by value to get new matches and updated matches
     // in a single set_difference pass.
@@ -742,7 +742,7 @@ bool AclRule::updateMatches(const AclRule& updatedRule)
         {
             return false;
         }
-        m_matches.erase(static_cast<sai_acl_entry_attr_t>(attr.id));
+        m_matches.erase(attrPair.first);
     }
 
     for (const auto& attrPair: matchesUpdated)
@@ -752,7 +752,7 @@ bool AclRule::updateMatches(const AclRule& updatedRule)
         {
             return false;
         }
-        m_matches[static_cast<sai_acl_entry_attr_t>(attr.id)] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+        m_matches[attrPair.first] = attrPair.second;
     }
 
     return true;
@@ -760,8 +760,8 @@ bool AclRule::updateMatches(const AclRule& updatedRule)
 
 bool AclRule::updateActions(const AclRule& updatedRule)
 {
-    vector<pair<sai_acl_entry_attr_t, SaiAttr>> actionsUpdated;
-    vector<pair<sai_acl_entry_attr_t, SaiAttr>> actionsDisabled;
+    vector<pair<sai_acl_entry_attr_t, SaiAttrWrapper>> actionsUpdated;
+    vector<pair<sai_acl_entry_attr_t, SaiAttrWrapper>> actionsDisabled;
 
     // Diff by value to get new action and updated actions
     // in a single set_difference pass.
@@ -793,7 +793,7 @@ bool AclRule::updateActions(const AclRule& updatedRule)
         {
             return false;
         }
-        m_actions.erase(static_cast<sai_acl_entry_attr_t>(attr.id));
+        m_actions.erase(attrPair.first);
     }
 
     for (const auto& attrPair: actionsUpdated)
@@ -803,7 +803,7 @@ bool AclRule::updateActions(const AclRule& updatedRule)
         {
             return false;
         }
-        m_actions[static_cast<sai_acl_entry_attr_t>(attr.id)] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+        m_actions[attrPair.first] = attrPair.second;
     }
 
     return true;
@@ -851,15 +851,15 @@ bool AclRule::setAction(sai_acl_entry_attr_t actionId, sai_acl_action_data_t act
     attr.id = actionId;
     attr.value.aclaction = actionData;
 
-    m_actions[actionId] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+    m_actions[actionId] = SaiAttrWrapper(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
 
     return true;
 }
 
 bool AclRule::setMatch(sai_acl_entry_attr_t matchId, sai_acl_field_data_t matchData)
 {
-    SaiAttr attribute(SAI_OBJECT_TYPE_ACL_ENTRY, sai_attribute_t{
-        .id = static_cast<sai_attr_id_t>(matchId),
+    SaiAttrWrapper attribute(SAI_OBJECT_TYPE_ACL_ENTRY, sai_attribute_t{
+        .id = matchId,
         .value = {
             .aclfield = matchData,
         },
@@ -1553,7 +1553,7 @@ bool AclRuleMirror::create()
         attr.value.aclaction.enable = true;
         attr.value.aclaction.parameter.objlist.list = &oid;
         attr.value.aclaction.parameter.objlist.count = 1;
-        m_actions[static_cast<sai_acl_entry_attr_t>(attr.id)] = SaiAttr(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+        m_actions[it.first] = SaiAttrWrapper(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
     }
 
     if (!AclRule::create())

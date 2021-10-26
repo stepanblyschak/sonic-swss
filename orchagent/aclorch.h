@@ -247,8 +247,8 @@ protected:
     sai_object_id_t m_ruleOid;
     sai_object_id_t m_counterOid;
     uint32_t m_priority;
-    map <sai_acl_entry_attr_t, SaiAttr> m_actions;
-    map <sai_acl_entry_attr_t, SaiAttr> m_matches;
+    map <sai_acl_entry_attr_t, SaiAttrWrapper> m_actions;
+    map <sai_acl_entry_attr_t, SaiAttrWrapper> m_matches;
     string m_redirect_target_next_hop;
     string m_redirect_target_next_hop_group;
 

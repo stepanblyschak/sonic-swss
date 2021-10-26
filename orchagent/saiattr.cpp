@@ -5,7 +5,7 @@
 
 #include <iostream>
 
-SaiAttr::SaiAttr(sai_object_type_t objectType, const sai_attribute_t& attr)
+SaiAttrWrapper::SaiAttrWrapper(sai_object_type_t objectType, const sai_attribute_t& attr)
 {
     auto meta = sai_metadata_get_attr_metadata(objectType, attr.id);
     if (!meta)
@@ -13,57 +13,57 @@ SaiAttr::SaiAttr(sai_object_type_t objectType, const sai_attribute_t& attr)
         SWSS_LOG_THROW("Failed to get attribute %d metadata", attr.id);
     }
 
-    initializeFrom(objectType, *meta, attr);
+    init(objectType, *meta, attr);
 }
 
-SaiAttr::~SaiAttr()
+SaiAttrWrapper::~SaiAttrWrapper()
 {
     sai_deserialize_free_attribute_value(m_meta->attrvaluetype, m_attr);
 }
 
-SaiAttr::SaiAttr(const SaiAttr& other)
+SaiAttrWrapper::SaiAttrWrapper(const SaiAttrWrapper& other)
 {
-    initializeFrom(other.m_objectType, *other.m_meta, other.m_attr);
+    init(other.m_objectType, *other.m_meta, other.m_attr);
 }
 
-SaiAttr& SaiAttr::operator=(const SaiAttr& other)
+SaiAttrWrapper& SaiAttrWrapper::operator=(const SaiAttrWrapper& other)
 {
-    initializeFrom(other.m_objectType, *other.m_meta, other.m_attr);
+    init(other.m_objectType, *other.m_meta, other.m_attr);
     return *this;
 }
 
-SaiAttr::SaiAttr(const SaiAttr&& other)
+SaiAttrWrapper::SaiAttrWrapper(const SaiAttrWrapper&& other)
 {
     swap(std::move(other));
 }
 
-SaiAttr& SaiAttr::operator=(const SaiAttr&& other)
+SaiAttrWrapper& SaiAttrWrapper::operator=(const SaiAttrWrapper&& other)
 {
     swap(std::move(other));
     return *this;
 }
 
-bool SaiAttr::operator<(const SaiAttr& other) const
+bool SaiAttrWrapper::operator<(const SaiAttrWrapper& other) const
 {
     return m_serializedAttr < other.m_serializedAttr;
 }
 
-const sai_attribute_t& SaiAttr::getSaiAttr() const
+const sai_attribute_t& SaiAttrWrapper::getSaiAttr() const
 {
     return m_attr;
 }
 
-std::string SaiAttr::toString() const
+std::string SaiAttrWrapper::toString() const
 {
     return m_serializedAttr;
 }
 
-sai_attr_id_t SaiAttr::getAttrId() const
+sai_attr_id_t SaiAttrWrapper::getAttrId() const
 {
     return m_attr.id;
 }
 
-void SaiAttr::swap(const SaiAttr&& other)
+void SaiAttrWrapper::swap(const SaiAttrWrapper&& other)
 {
     m_objectType = other.m_objectType;
     m_meta = other.m_meta;
@@ -71,7 +71,7 @@ void SaiAttr::swap(const SaiAttr&& other)
     m_serializedAttr = other.m_serializedAttr;
 }
 
-void SaiAttr::initializeFrom(
+void SaiAttrWrapper::init(
     sai_object_type_t objectType,
     const sai_attr_metadata_t& meta,
     const sai_attribute_t& attr)

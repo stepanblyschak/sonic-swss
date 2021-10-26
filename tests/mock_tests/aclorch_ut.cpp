@@ -1397,7 +1397,10 @@ namespace aclorch_test
         updatedRule2->disableMatch(SAI_ACL_ENTRY_ATTR_FIELD_DST_IP);
         ASSERT_TRUE(orch->m_aclOrch->updateAclRule(updatedRule2));
         ASSERT_TRUE(validateAclRuleCounter(*orch->m_aclOrch->getAclRule(acl_table_id, acl_rule_id), false));
+        ASSERT_EQ(getAclRuleSaiAttribute(*rule, SAI_ACL_ENTRY_ATTR_PRIORITY), "900");
+        ASSERT_EQ(getAclRuleSaiAttribute(*rule, SAI_ACL_ENTRY_ATTR_FIELD_SRC_IP), "2.2.2.2&mask:255.255.255.0");
         ASSERT_EQ(getAclRuleSaiAttribute(*rule, SAI_ACL_ENTRY_ATTR_FIELD_DST_IP), "disabled");
+        ASSERT_EQ(getAclRuleSaiAttribute(*rule, SAI_ACL_ENTRY_ATTR_ACTION_PACKET_ACTION), "SAI_PACKET_ACTION_DROP");
 
         auto updatedRule3 = make_shared<AclRuleTest>(*updatedRule2);
         updatedRule3->setCounterEnabled(true);
