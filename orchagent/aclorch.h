@@ -201,18 +201,7 @@ public:
         return m_counterOid;
     }
 
-    vector<sai_object_id_t> getInPorts() 
-    {
-        vector<sai_object_id_t> inPorts;
-        auto it = m_matches.find(SAI_ACL_ENTRY_ATTR_FIELD_IN_PORT);
-        if (it == m_matches.end())
-        {
-            return inPorts;
-        }
-        auto objlist = it->second.getSaiAttr().value.objlist;
-        inPorts = vector<sai_object_id_t>(objlist.list, objlist.list + objlist.count);
-        return inPorts;
-    }
+    vector<sai_object_id_t> getInPorts() const;
 
     static shared_ptr<AclRule> makeShared(acl_table_type_t type, AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple&);
     virtual ~AclRule() {}

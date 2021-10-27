@@ -752,7 +752,7 @@ bool AclRule::updateMatches(const AclRule& updatedRule)
         {
             return false;
         }
-        m_matches[attrPair.first] = attrPair.second;
+        setMatch(attrPair.first, attr.value.aclfield);
     }
 
     return true;
@@ -803,7 +803,7 @@ bool AclRule::updateActions(const AclRule& updatedRule)
         {
             return false;
         }
-        m_actions[attrPair.first] = attrPair.second;
+        setAction(attrPair.first, attr.value.aclaction);
     }
 
     return true;
@@ -858,13 +858,12 @@ bool AclRule::setAction(sai_acl_entry_attr_t actionId, sai_acl_action_data_t act
 
 bool AclRule::setMatch(sai_acl_entry_attr_t matchId, sai_acl_field_data_t matchData)
 {
-    SaiAttrWrapper attribute(SAI_OBJECT_TYPE_ACL_ENTRY, sai_attribute_t{
-        .id = matchId,
-        .value = {
-            .aclfield = matchData,
-        },
-    });
-    m_matches[matchId] = attribute;
+    sai_attribute_t attr;
+    attr.id = matchId;
+    attr.value.aclfield = matchData;
+
+    m_matches[matchId] = SaiAttrWrapper(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+
     return true;
 }
 
@@ -908,6 +907,24 @@ AclRuleCounters AclRule::getCounters()
     }
 
     return AclRuleCounters(counter_attr[0].value.u64, counter_attr[1].value.u64);
+}
+
+vector<sai_object_id_t> AclRule::getInPorts() const
+{
+    vector<sai_object_id_t> inPorts;
+    auto it = m_matches.find(SAI_ACL_ENTRY_ATTR_FIELD_IN_PORT);
+    if (it == m_matches.end())
+    {
+        return inPorts;
+    }
+    auto attr = it->second.getSaiAttr();
+    if (!attr.value.aclfield.enable)
+    {
+        return inPorts;
+    }
+    auto objlist = attr.value.aclfield.data.objlist;
+    inPorts = vector<sai_object_id_t>(objlist.list, objlist.list + objlist.count);
+    return inPorts;
 }
 
 shared_ptr<AclRule> AclRule::makeShared(acl_table_type_t type, AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple& data)
@@ -1553,7 +1570,7 @@ bool AclRuleMirror::create()
         attr.value.aclaction.enable = true;
         attr.value.aclaction.parameter.objlist.list = &oid;
         attr.value.aclaction.parameter.objlist.count = 1;
-        m_actions[it.first] = SaiAttrWrapper(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+        setAction(it.first, attr.value.aclaction);
     }
 
     if (!AclRule::create())
@@ -3616,6 +3633,7 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, bool enableCounter)
 
 bool AclOrch::updateAclRule(shared_ptr<AclRule> updatedRule)
 {
+    SWSS_LOG_ENTER();
 
     auto tableId = updatedRule->getTableId();
     sai_object_id_t tableOid = getTableById(tableId);

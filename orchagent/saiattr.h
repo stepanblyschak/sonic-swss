@@ -34,8 +34,8 @@ private:
         const sai_attribute_t& attr);
     void swap(const SaiAttrWrapper&& other);
 
-    sai_object_type_t m_objectType;
-    const sai_attr_metadata_t* m_meta;
-    sai_attribute_t m_attr;
+    sai_object_type_t m_objectType {SAI_OBJECT_TYPE_NULL};
+    const sai_attr_metadata_t* m_meta {nullptr};
+    sai_attribute_t m_attr {};
     std::string m_serializedAttr;
 };
