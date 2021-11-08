@@ -16,12 +16,15 @@ dist_swss_DATA = \
 		 pfc_detect_broadcom.lua \
 		 pfc_detect_barefoot.lua \
 		 pfc_detect_nephos.lua \
+		 pfc_detect_cisco-8000.lua \
 		 pfc_restore.lua \
+		 pfc_restore_cisco-8000.lua \
 		 port_rates.lua \
 		 watermark_queue.lua \
 		 watermark_pg.lua \
 		 watermark_bufferpool.lua \
-		 lagids.lua
+		 lagids.lua \
+		 tunnel_rates.lua
 
 bin_PROGRAMS = orchagent routeresync orchagent_restart_check
 
@@ -37,6 +40,7 @@ orchagent_SOURCES = \
             orchdaemon.cpp \
             orch.cpp \
             notifications.cpp \
+            nhgorch.cpp \ 
             routeorch.cpp \
             mplsrouteorch.cpp \
             neighorch.cpp \
@@ -94,3 +98,9 @@ routeresync_LDADD = -lswsscommon
 orchagent_restart_check_SOURCES = orchagent_restart_check.cpp
 orchagent_restart_check_CPPFLAGS = $(DBGFLAGS) $(AM_CPPFLAGS) $(CFLAGS_COMMON)
 orchagent_restart_check_LDADD = -lhiredis -lswsscommon -lpthread
+
+if GCOV_ENABLED
+orchagent_LDADD += -lgcovpreload
+routeresync_LDADD += -lgcovpreload
+orchagent_restart_check_LDADD += -lgcovpreload
+endif
