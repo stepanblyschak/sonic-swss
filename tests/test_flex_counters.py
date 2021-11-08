@@ -41,7 +41,7 @@ counter_type_dict = {"port_counter":[PORT_KEY, PORT_STAT, PORT_MAP],
                      "buffer_pool_watermark_counter":[BUFFER_POOL_WATERMARK_KEY, BUFFER_POOL_WATERMARK_STAT, BUFFER_POOL_WATERMARK_MAP],
                      "port_buffer_drop_counter":[PORT_BUFFER_DROP_KEY, PORT_BUFFER_DROP_STAT, PORT_BUFFER_DROP_MAP],
                      "pg_watermark_counter":[PG_WATERMARK_KEY, PG_WATERMARK_STAT, PG_WATERMARK_MAP],
-                     "acl_counter":[ACL_KEY, ACL_STAT, ACL_MAP]}
+                     "acl_counter":[ACL_KEY, ACL_STAT, ACL_MAP],
                      "vxlan_tunnel_counter":[TUNNEL_KEY, TUNNEL_STAT, TUNNEL_MAP]}
 
 
