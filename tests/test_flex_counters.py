@@ -155,12 +155,12 @@ class TestFlexCounters(object):
 
         if counter_type == "port_counter":
             self.verify_only_phy_ports_created()
-        else if counter_type == "rif_counter":
+        elif counter_type == "rif_counter":
             self.config_db.db_connection.hdel('INTERFACE|Ethernet0|192.168.0.1/24', "NULL")
         elif counter_type == "acl_counter":
             self.config_db.delete_entry('ACL_RULE', 'DATAACL|RULE0')
             self.config_db.delete_entry('ACL_TABLE', 'DATAACL')
-        else if counter_type == "vxlan_tunnel_counter":
+        elif counter_type == "vxlan_tunnel_counter":
             self.verify_tunnel_type_vxlan(counter_map, TUNNEL_TYPE_MAP)
             self.config_db.delete_entry("VLAN","Vlan10")
             self.config_db.delete_entry("VLAN_TUNNEL","vtep1")
