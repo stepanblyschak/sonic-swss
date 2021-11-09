@@ -483,7 +483,13 @@ bool AclRule::create()
         return false;
     }
 
-    return createRule();
+    if (!createRule())
+    {
+        removeCounter();
+        return false;
+    }
+
+    return true;
 }
 
 bool AclRule::createRule()
