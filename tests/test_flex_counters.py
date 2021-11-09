@@ -138,7 +138,7 @@ class TestFlexCounters(object):
             )
             self.config_db.create_entry('ACL_RULE', 'DATAACL|RULE0',
                 {
-                    'MATCH_ETHER_TYPE': '2048',
+                    'ETHER_TYPE': '2048',
                     'PACKET_ACTION': 'FORWARD',
                     'PRIORITY': '9999'
                 }
