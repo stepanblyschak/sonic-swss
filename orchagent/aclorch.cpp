@@ -912,7 +912,7 @@ AclRuleCounters AclRule::getCounters()
 vector<sai_object_id_t> AclRule::getInPorts() const
 {
     vector<sai_object_id_t> inPorts;
-    auto it = m_matches.find(SAI_ACL_ENTRY_ATTR_FIELD_IN_PORT);
+    auto it = m_matches.find(SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS);
     if (it == m_matches.end())
     {
         return inPorts;
