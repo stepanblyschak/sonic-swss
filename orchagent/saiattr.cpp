@@ -3,8 +3,6 @@
 #include <swss/logger.h>
 #include <sai_serialize.h>
 
-#include <iostream>
-
 SaiAttrWrapper::SaiAttrWrapper(sai_object_type_t objectType, const sai_attribute_t& attr)
 {
     auto meta = sai_metadata_get_attr_metadata(objectType, attr.id);
