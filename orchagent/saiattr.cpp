@@ -18,7 +18,10 @@ SaiAttrWrapper::SaiAttrWrapper(sai_object_type_t objectType, const sai_attribute
 
 SaiAttrWrapper::~SaiAttrWrapper()
 {
-    sai_deserialize_free_attribute_value(m_meta->attrvaluetype, m_attr);
+    if (m_meta)
+    {
+        sai_deserialize_free_attribute_value(m_meta->attrvaluetype, m_attr);
+    }
 }
 
 SaiAttrWrapper::SaiAttrWrapper(const SaiAttrWrapper& other)
@@ -32,12 +35,12 @@ SaiAttrWrapper& SaiAttrWrapper::operator=(const SaiAttrWrapper& other)
     return *this;
 }
 
-SaiAttrWrapper::SaiAttrWrapper(const SaiAttrWrapper&& other)
+SaiAttrWrapper::SaiAttrWrapper(SaiAttrWrapper&& other)
 {
     swap(std::move(other));
 }
 
-SaiAttrWrapper& SaiAttrWrapper::operator=(const SaiAttrWrapper&& other)
+SaiAttrWrapper& SaiAttrWrapper::operator=(SaiAttrWrapper&& other)
 {
     swap(std::move(other));
     return *this;
@@ -63,12 +66,14 @@ sai_attr_id_t SaiAttrWrapper::getAttrId() const
     return m_attr.id;
 }
 
-void SaiAttrWrapper::swap(const SaiAttrWrapper&& other)
+void SaiAttrWrapper::swap(SaiAttrWrapper&& other)
 {
     m_objectType = other.m_objectType;
     m_meta = other.m_meta;
     m_attr = other.m_attr;
     m_serializedAttr = other.m_serializedAttr;
+    other.m_attr = sai_attribute_t{};
+    other.m_serializedAttr.clear();
 }
 
 void SaiAttrWrapper::init(

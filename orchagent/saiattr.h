@@ -15,9 +15,9 @@ public:
 
     SaiAttrWrapper(sai_object_type_t objectType, const sai_attribute_t& attr);
     SaiAttrWrapper(const SaiAttrWrapper& other);
-    SaiAttrWrapper(const SaiAttrWrapper&& other);
+    SaiAttrWrapper(SaiAttrWrapper&& other);
     SaiAttrWrapper& operator=(const SaiAttrWrapper& other);
-    SaiAttrWrapper& operator=(const SaiAttrWrapper&& other);
+    SaiAttrWrapper& operator=(SaiAttrWrapper&& other);
     virtual ~SaiAttrWrapper();
 
     bool operator<(const SaiAttrWrapper& other) const;
@@ -32,7 +32,7 @@ private:
         sai_object_type_t objectType,
         const sai_attr_metadata_t& meta,
         const sai_attribute_t& attr);
-    void swap(const SaiAttrWrapper&& other);
+    void swap(SaiAttrWrapper&& other);
 
     sai_object_type_t m_objectType {SAI_OBJECT_TYPE_NULL};
     const sai_attr_metadata_t* m_meta {nullptr};

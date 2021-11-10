@@ -209,7 +209,10 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
 {
     SWSS_LOG_ENTER();
 
-    sai_acl_field_data_t matchData;
+    sai_acl_field_data_t matchData{};
+    vector<sai_object_id_t> inPorts;
+    vector<sai_object_id_t> outPorts;
+
     matchData.enable = true;
 
     try
@@ -227,7 +230,6 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 return false;
             }
 
-            vector<sai_object_id_t> inPorts;
             for (auto alias : ports)
             {
                 Port port;
@@ -258,7 +260,6 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 return false;
             }
 
-            vector<sai_object_id_t> outPorts;
             for (auto alias : ports)
             {
                 Port port;
@@ -375,7 +376,7 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 return false;
             }
 
-            rangeConfig.rangeType = aclRangeTypeLookup[attr_value];
+            rangeConfig.rangeType = aclRangeTypeLookup[attr_name];
 
             // check boundaries
             if ((rangeConfig.min > USHRT_MAX) ||
@@ -526,13 +527,14 @@ bool AclRule::create()
     }
 
     // store matches
-    for (auto it : m_matches)
+    for (auto& it : m_matches)
     {
-        rule_attrs.push_back(it.second.getSaiAttr());
+	attr = it.second.getSaiAttr();
+        rule_attrs.push_back(attr);
     }
 
     // store actions
-    for (auto it : m_actions)
+    for (auto& it : m_actions)
     {
         attr = it.second.getSaiAttr();
         rule_attrs.push_back(attr);
@@ -1354,7 +1356,7 @@ bool AclRuleL3::validate()
 {
     SWSS_LOG_ENTER();
 
-    if (m_matches.size() == 0 || m_actions.size() != 1)
+    if ((m_rangeConfig.empty() && m_matches.empty()) || m_actions.size() != 1)
     {
         return false;
     }
@@ -1528,7 +1530,7 @@ bool AclRuleMirror::validate()
 {
     SWSS_LOG_ENTER();
 
-    if (m_matches.size() == 0 || m_sessionName.empty())
+    if ((m_rangeConfig.empty() && m_matches.empty()) || m_sessionName.empty())
     {
         return false;
     }
@@ -2418,7 +2420,7 @@ bool AclRuleDTelFlowWatchListEntry::validate()
         return false;
     }
 
-    if (m_matches.size() == 0 || m_actions.size() == 0)
+    if ((m_rangeConfig.empty() && m_matches.empty()) || m_actions.size() == 0)
     {
         return false;
     }
@@ -2591,7 +2593,7 @@ bool AclRuleDTelDropWatchListEntry::validate()
         return false;
     }
 
-    if (m_matches.size() == 0 || m_actions.size() == 0)
+    if ((m_rangeConfig.empty() && m_matches.empty()) || m_actions.size() == 0)
     {
         return false;
     }
