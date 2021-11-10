@@ -529,7 +529,7 @@ bool AclRule::create()
     // store matches
     for (auto& it : m_matches)
     {
-	attr = it.second.getSaiAttr();
+        attr = it.second.getSaiAttr();
         rule_attrs.push_back(attr);
     }
 
