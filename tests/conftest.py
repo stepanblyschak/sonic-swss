@@ -183,6 +183,20 @@ class VirtualServer:
                 f"ip netns exec {self.nsname} ip link add {self.nsname[0:12]}"
                 f" type veth peer name {self.pifname}"
             )
+
+            # ensure self.pifname is not already an interface in the DVS net namespace
+            rc, _ = subprocess.getstatusoutput(f"nsenter -t {pid} -n ip link show | grep '{self.pifname}@'")
+            if not rc:
+                try:
+                    ensure_system(f"nsenter -t {pid} -n ip link delete {self.pifname}")
+                except RuntimeError as e:
+                    # Occasionally self.pifname will get deleted between us checking for its existence
+                    # and us deleting it ourselves. In this case we can continue normally
+                    if "cannot find device" in str(e).lower():
+                        pass
+                    else:
+                        raise e
+
             ensure_system(f"ip netns exec {self.nsname} ip link set {self.pifname} netns {pid}")
 
             # bring up link in the virtual server
@@ -404,9 +418,14 @@ class DockerVirtualSwitch:
         self.flex_db = None
         self.state_db = None
 
-    def destroy(self) -> None:
+    def del_appl_db(self):
+        # APPL DB may not always exist, so use this helper method to check before deleting
         if getattr(self, 'appldb', False):
             del self.appldb
+
+
+    def destroy(self) -> None:
+        self.del_appl_db()
 
         # In case persistent dvs was used removed all the extra server link
         # that were created
@@ -448,7 +467,7 @@ class DockerVirtualSwitch:
             self.destroy()
             raise
 
-    def check_services_ready(self, timeout=30) -> None:
+    def check_services_ready(self, timeout=60) -> None:
         """Check if all processes in the DVS are ready."""
         service_polling_config = PollingConfig(1, timeout, strict=True)
 
@@ -577,8 +596,7 @@ class DockerVirtualSwitch:
         self.ctn.restart()
 
     def restart(self) -> None:
-        if self.appldb:
-            del self.appldb
+        self.del_appl_db()
 
         self.ctn_restart()
         self.check_ready_status_and_init_db()
@@ -829,9 +847,10 @@ class DockerVirtualSwitch:
             status, data = tbl.get(key)
             assert status
             values = dict(data)
-            iface_id = values["SAI_BRIDGE_PORT_ATTR_PORT_ID"]
-            iface_name = port_id_2_iface[iface_id]
-            iface_2_bridge_port_id[iface_name] = key
+            if "SAI_BRIDGE_PORT_ATTR_PORT_ID" in values:
+                iface_id = values["SAI_BRIDGE_PORT_ATTR_PORT_ID"]
+                iface_name = port_id_2_iface[iface_id]
+                iface_2_bridge_port_id[iface_name] = key
 
         return iface_2_bridge_port_id
 
