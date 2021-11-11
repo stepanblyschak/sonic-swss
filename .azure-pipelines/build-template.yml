@@ -136,6 +136,8 @@ jobs:
          export ENABLE_GCOV=y
       fi
       ./autogen.sh
+      git status
+      git rev-parse HEAD
       dpkg-buildpackage -us -uc -b -j$(nproc) && cp ../*.deb .
     displayName: "Compile sonic swss"
   - publish: $(System.DefaultWorkingDirectory)/
