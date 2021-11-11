@@ -15,15 +15,12 @@
 using namespace std;
 using namespace swss;
 
-mutex AclOrch::m_countersMutex;
 map<acl_range_properties_t, AclRange*> AclRange::m_ranges;
-condition_variable AclOrch::m_sleepGuard;
-bool AclOrch::m_bCollectCounters = true;
 sai_uint32_t AclRule::m_minPriority = 0;
 sai_uint32_t AclRule::m_maxPriority = 0;
 
-swss::DBConnector AclOrch::m_db("COUNTERS_DB", 0);
-swss::Table AclOrch::m_countersTable(&m_db, "COUNTERS");
+swss::DBConnector AclOrch::m_countersDb("COUNTERS_DB", 0);
+swss::Table AclOrch::m_countersTable(&m_countersDb, "COUNTERS");
 
 extern sai_acl_api_t*    sai_acl_api;
 extern sai_port_api_t*   sai_port_api;
@@ -34,6 +31,10 @@ extern CrmOrch *gCrmOrch;
 
 #define MIN_VLAN_ID 1    // 0 is a reserved VLAN ID
 #define MAX_VLAN_ID 4095 // 4096 is a reserved VLAN ID
+
+#define COUNTERS_ACL_COUNTER_RULE_MAP "ACL_COUNTER_RULE_MAP"
+#define ACL_COUNTER_DEFAULT_POLLING_INTERVAL_MS 10000 // ms
+#define ACL_COUNTER_DEFAULT_ENABLED_STATE false
 
 const int TCP_PROTOCOL_NUM = 6; // TCP protocol number
 
@@ -161,6 +162,12 @@ static acl_ip_type_lookup_t aclIpTypeLookup =
     { IP_TYPE_ARP,         SAI_ACL_IP_TYPE_ARP },
     { IP_TYPE_ARP_REQUEST, SAI_ACL_IP_TYPE_ARP_REQUEST },
     { IP_TYPE_ARP_REPLY,   SAI_ACL_IP_TYPE_ARP_REPLY }
+};
+
+static map<sai_acl_counter_attr_t, sai_acl_counter_attr_t> aclCounterLookup =
+{
+    {SAI_ACL_COUNTER_ATTR_ENABLE_BYTE_COUNT,   SAI_ACL_COUNTER_ATTR_BYTES},
+    {SAI_ACL_COUNTER_ATTR_ENABLE_PACKET_COUNT, SAI_ACL_COUNTER_ATTR_PACKETS},
 };
 
 static string getAttributeIdName(sai_object_type_t objectType, sai_attr_id_t attr)
@@ -465,6 +472,22 @@ bool AclRule::processIpType(string type, sai_uint32_t &ip_type)
 
 bool AclRule::create()
 {
+    if (m_createCounter && !createCounter())
+    {
+        return false;
+    }
+
+    if (!createRule())
+    {
+        removeCounter();
+        return false;
+    }
+
+    return true;
+}
+
+bool AclRule::createRule()
+{
     SWSS_LOG_ENTER();
 
     sai_object_id_t table_oid = m_pAclOrch->getTableById(m_tableId);
@@ -474,11 +497,6 @@ bool AclRule::create()
 
     sai_attribute_t attr;
     sai_status_t status;
-
-    if (m_createCounter && !createCounter())
-    {
-        return false;
-    }
 
     // store table oid this rule belongs to
     attr.id = SAI_ACL_ENTRY_ATTR_TABLE_ID;
@@ -595,14 +613,19 @@ bool AclRule::isActionSupported(sai_acl_entry_attr_t action) const
     return m_pAclOrch->isAclActionSupported(pTable->stage, action_type);
 }
 
-bool AclRule::remove()
+bool AclRule::removeRule()
 {
     SWSS_LOG_ENTER();
-    sai_status_t res;
 
-    if (sai_acl_api->remove_acl_entry(m_ruleOid) != SAI_STATUS_SUCCESS)
+    if (m_ruleOid == SAI_NULL_OBJECT_ID)
     {
-        SWSS_LOG_ERROR("Failed to delete ACL rule");
+        return true;
+    }
+
+    auto status = sai_acl_api->remove_acl_entry(m_ruleOid);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to delete ACL rule, status %s", sai_serialize_status(status).c_str());
         return false;
     }
 
@@ -612,7 +635,19 @@ bool AclRule::remove()
 
     decreaseNextHopRefCount();
 
-    res = removeRanges();
+    return true;
+}
+
+bool AclRule::remove()
+{
+    SWSS_LOG_ENTER();
+
+    if (!removeRule())
+    {
+        return false;
+    }
+
+    auto res = removeRanges();
     res &= removeCounter();
 
     return res;
@@ -632,7 +667,6 @@ void AclRule::updateInPorts()
         SWSS_LOG_ERROR("Failed to update ACL rule %s, rv:%d", m_id.c_str(), status);
     }
 }
-
 
 bool AclRule::update(const AclRule& updatedRule)
 {
@@ -889,28 +923,6 @@ bool AclRule::setAttribute(sai_attribute_t attr)
     return true;
 }
 
-AclRuleCounters AclRule::getCounters()
-{
-    SWSS_LOG_ENTER();
-
-    if (m_counterOid == SAI_NULL_OBJECT_ID)
-    {
-        return AclRuleCounters();
-    }
-
-    sai_attribute_t counter_attr[2];
-    counter_attr[0].id = SAI_ACL_COUNTER_ATTR_PACKETS;
-    counter_attr[1].id = SAI_ACL_COUNTER_ATTR_BYTES;
-
-    if (sai_acl_api->get_acl_counter_attribute(m_counterOid, 2, counter_attr) != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Failed to get counters for %s rule", m_id.c_str());
-        return AclRuleCounters();
-    }
-
-    return AclRuleCounters(counter_attr[0].value.u64, counter_attr[1].value.u64);
-}
-
 vector<sai_object_id_t> AclRule::getInPorts() const
 {
     vector<sai_object_id_t> inPorts;
@@ -1108,13 +1120,12 @@ bool AclRule::createCounter()
     attr.value.oid = m_tableOid;
     counter_attrs.push_back(attr);
 
-    attr.id = SAI_ACL_COUNTER_ATTR_ENABLE_BYTE_COUNT;
-    attr.value.booldata = true;
-    counter_attrs.push_back(attr);
-
-    attr.id = SAI_ACL_COUNTER_ATTR_ENABLE_PACKET_COUNT;
-    attr.value.booldata = true;
-    counter_attrs.push_back(attr);
+    for (const auto& counterAttrPair: aclCounterLookup)
+    {
+        tie(attr.id, std::ignore) = counterAttrPair;
+        attr.value.booldata = true;
+        counter_attrs.push_back(attr);
+    }
 
     if (sai_acl_api->create_acl_counter(&m_counterOid, gSwitchId, (uint32_t)counter_attrs.size(), counter_attrs.data()) != SAI_STATUS_SUCCESS)
     {
@@ -1158,9 +1169,6 @@ bool AclRule::removeCounter()
     }
 
     gCrmOrch->decCrmAclTableUsedCounter(CrmResourceType::CRM_ACL_COUNTER, m_tableOid);
-
-    SWSS_LOG_INFO("Removing record about the counter %" PRIx64 " from the DB", m_counterOid);
-    AclOrch::getCountersTable().del(getTableId() + ":" + getId());
 
     m_counterOid = SAI_NULL_OBJECT_ID;
 
@@ -1538,7 +1546,19 @@ bool AclRuleMirror::validate()
     return true;
 }
 
-bool AclRuleMirror::create()
+bool AclRuleMirror::createRule()
+{
+    SWSS_LOG_ENTER();
+
+    return activate();
+}
+
+bool AclRuleMirror::removeRule()
+{
+    return deactivate();
+}
+
+bool AclRuleMirror::activate()
 {
     SWSS_LOG_ENTER();
 
@@ -1575,7 +1595,7 @@ bool AclRuleMirror::create()
         setAction(it.first, attr.value.aclaction);
     }
 
-    if (!AclRule::create())
+    if (!AclRule::createRule())
     {
         return false;
     }
@@ -1588,23 +1608,26 @@ bool AclRuleMirror::create()
     m_state = true;
 
     return true;
+
 }
 
-bool AclRuleMirror::remove()
+bool AclRuleMirror::deactivate()
 {
+    SWSS_LOG_ENTER();
+
     if (!m_state)
     {
         return true;
     }
 
-    if (!AclRule::remove())
+    if (!AclRule::removeRule())
     {
         return false;
     }
 
     if (!m_pMirrorOrch->decreaseRefCount(m_sessionName))
     {
-        throw runtime_error("Failed to decrease mirror session reference count");
+        SWSS_LOG_THROW("Failed to decrease mirror session reference count for session %s", m_sessionName.c_str());
     }
 
     m_state = false;
@@ -1629,15 +1652,12 @@ void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
     if (update->active)
     {
         SWSS_LOG_INFO("Activating mirroring ACL %s for session %s", m_id.c_str(), m_sessionName.c_str());
-        create();
+        activate();
     }
     else
     {
-        // Store counters before deactivating ACL rule
-        counters += AclRule::getCounters();
-
         SWSS_LOG_INFO("Deactivating mirroring ACL %s for session %s", m_id.c_str(), m_sessionName.c_str());
-        remove();
+        deactivate();
     }
 }
 
@@ -2311,18 +2331,6 @@ bool AclTable::clear()
     return true;
 }
 
-AclRuleCounters AclRuleMirror::getCounters()
-{
-    AclRuleCounters cnt(counters);
-
-    if (m_state)
-    {
-        cnt += AclRule::getCounters();
-    }
-
-    return cnt;
-}
-
 AclRuleDTelFlowWatchListEntry::AclRuleDTelFlowWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table, acl_table_type_t type) :
         AclRule(aclOrch, rule, table, type),
         m_pDTelOrch(dtel)
@@ -2428,7 +2436,19 @@ bool AclRuleDTelFlowWatchListEntry::validate()
     return true;
 }
 
-bool AclRuleDTelFlowWatchListEntry::create()
+bool AclRuleDTelFlowWatchListEntry::createRule()
+{
+    SWSS_LOG_ENTER();
+
+    return activate();
+}
+
+bool AclRuleDTelFlowWatchListEntry::removeRule()
+{
+    return deactivate();
+}
+
+bool AclRuleDTelFlowWatchListEntry::activate()
 {
     SWSS_LOG_ENTER();
 
@@ -2442,16 +2462,13 @@ bool AclRuleDTelFlowWatchListEntry::create()
         return true;
     }
 
-    if (!AclRule::create())
-    {
-        return false;
-    }
-
-    return true;
+    return AclRule::createRule();
 }
 
-bool AclRuleDTelFlowWatchListEntry::remove()
+bool AclRuleDTelFlowWatchListEntry::deactivate()
 {
+    SWSS_LOG_ENTER();
+
     if (!m_pDTelOrch)
     {
         return false;
@@ -2462,7 +2479,7 @@ bool AclRuleDTelFlowWatchListEntry::remove()
         return true;
     }
 
-    if (!AclRule::remove())
+    if (!AclRule::removeRule())
     {
         return false;
     }
@@ -2530,12 +2547,12 @@ void AclRuleDTelFlowWatchListEntry::onUpdate(SubjectType type, void *cntx)
 
         INT_session_valid = true;
 
-        create();
+        activate();
     }
     else
     {
         SWSS_LOG_INFO("Deactivating INT watchlist %s for session %s", m_id.c_str(), m_intSessionId.c_str());
-        remove();
+        deactivate();
         INT_session_valid = false;
     }
 }
@@ -2745,7 +2762,8 @@ void AclOrch::init(vector<TableConnector>& connectors, PortsOrch *portOrch, Mirr
             platform == BFN_PLATFORM_SUBSTRING  ||
             platform == MRVL_PLATFORM_SUBSTRING ||
             platform == INVM_PLATFORM_SUBSTRING ||
-            platform == NPS_PLATFORM_SUBSTRING)
+            platform == NPS_PLATFORM_SUBSTRING ||
+            platform == VS_PLATFORM_SUBSTRING)
     {
         m_mirrorTableCapabilities =
         {
@@ -2768,19 +2786,17 @@ void AclOrch::init(vector<TableConnector>& connectors, PortsOrch *portOrch, Mirr
     SWSS_LOG_NOTICE("    ACL_TABLE_MIRRORV6: %s",
             m_mirrorTableCapabilities[ACL_TABLE_MIRRORV6] ? "yes" : "no");
 
-    // In Broadcom platform, V4 and V6 rules are stored in the same table
-    if (platform == BRCM_PLATFORM_SUBSTRING ||
-        platform == NPS_PLATFORM_SUBSTRING  ||
-        platform == BFN_PLATFORM_SUBSTRING  ||
-        platform == INVM_PLATFORM_SUBSTRING) {
+    // In Mellanox platform, V4 and V6 rules are stored in different tables
+    if (platform == MLNX_PLATFORM_SUBSTRING ||
+        platform == MRVL_PLATFORM_SUBSTRING)
+    {
+        m_isCombinedMirrorV6Table = false;
+    }
+    else
+    {
         m_isCombinedMirrorV6Table = true;
     }
 
-    // In Mellanox platform, V4 and V6 rules are stored in different tables
-    if (platform == MLNX_PLATFORM_SUBSTRING ||
-        platform == MRVL_PLATFORM_SUBSTRING) {
-        m_isCombinedMirrorV6Table = false;
-    }
 
     // Store the capabilities in state database
     // TODO: Move this part of the code into syncd
@@ -2833,14 +2849,6 @@ void AclOrch::init(vector<TableConnector>& connectors, PortsOrch *portOrch, Mirr
     // Attach observers
     m_mirrorOrch->attach(this);
     gPortsOrch->attach(this);
-
-    // Should be initialized last to guaranty that object is
-    // initialized before thread start.
-    auto interv = timespec { .tv_sec = COUNTERS_READ_INTERVAL, .tv_nsec = 0 };
-    auto timer = new SelectableTimer(interv);
-    auto executor = new ExecutableTimer(timer, this, "ACL_POLL_TIMER");
-    Orch::addExecutor(executor);
-    timer->start();
 }
 
 void AclOrch::queryAclActionCapability()
@@ -3068,7 +3076,13 @@ AclOrch::AclOrch(vector<TableConnector>& connectors, SwitchOrch *switchOrch,
         m_mirrorOrch(mirrorOrch),
         m_neighOrch(neighOrch),
         m_routeOrch(routeOrch),
-        m_dTelOrch(dtelOrch)
+        m_dTelOrch(dtelOrch),
+        m_flex_counter_manager(
+            ACL_COUNTER_FLEX_COUNTER_GROUP,
+            StatsMode::READ,
+            ACL_COUNTER_DEFAULT_POLLING_INTERVAL_MS,
+            ACL_COUNTER_DEFAULT_ENABLED_STATE
+        )
 {
     SWSS_LOG_ENTER();
 
@@ -3090,9 +3104,6 @@ AclOrch::~AclOrch()
         m_dTelOrch->detach(this);
     }
 
-    m_bCollectCounters = false;
-    m_sleepGuard.notify_all();
-
     deleteDTelWatchListTables();
 }
 
@@ -3106,8 +3117,6 @@ void AclOrch::update(SubjectType type, void *cntx)
     {
         return;
     }
-
-    unique_lock<mutex> lock(m_countersMutex);
 
     // ACL table deals with port change
     // ACL rule deals with mirror session change and int session change
@@ -3140,12 +3149,10 @@ void AclOrch::doTask(Consumer &consumer)
 
     if (table_name == CFG_ACL_TABLE_TABLE_NAME || table_name == APP_ACL_TABLE_TABLE_NAME)
     {
-        unique_lock<mutex> lock(m_countersMutex);
         doAclTableTask(consumer);
     }
     else if (table_name == CFG_ACL_RULE_TABLE_NAME || table_name == APP_ACL_RULE_TABLE_NAME)
     {
-        unique_lock<mutex> lock(m_countersMutex);
         doAclRuleTask(consumer);
     }
     else
@@ -3474,7 +3481,17 @@ bool AclOrch::addAclRule(shared_ptr<AclRule> newRule, string table_id)
         return false;
     }
 
-    return m_AclTables[table_oid].add(newRule);
+    if (!m_AclTables[table_oid].add(newRule))
+    {
+        return false;
+    }
+
+    if (newRule->hasCounter())
+    {
+        registerFlexCounter(*newRule);
+    }
+
+    return true;
 }
 
 bool AclOrch::removeAclRule(string table_id, string rule_id)
@@ -3484,6 +3501,17 @@ bool AclOrch::removeAclRule(string table_id, string rule_id)
     {
         SWSS_LOG_WARN("Skip removing rule %s from ACL table %s. Table does not exist", rule_id.c_str(), table_id.c_str());
         return true;
+    }
+
+    auto rule = getAclRule(table_id, rule_id);
+    if (!rule)
+    {
+        return false;
+    }
+
+    if (rule->hasCounter())
+    {
+        deregisterFlexCounter(*rule);
     }
 
     return m_AclTables[table_oid].remove(rule_id);
@@ -3617,9 +3645,11 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, bool enableCounter)
             return false;
         }
 
+        registerFlexCounter(*rule);
         return true;
     }
 
+    deregisterFlexCounter(*rule);
     if (!rule->disableCounter())
     {
         SWSS_LOG_ERROR(
@@ -4153,30 +4183,6 @@ sai_status_t AclOrch::deleteUnbindAclTable(sai_object_id_t table_oid)
     return sai_acl_api->remove_acl_table(table_oid);
 }
 
-void AclOrch::doTask(SelectableTimer &timer)
-{
-    SWSS_LOG_ENTER();
-
-    for (auto& table_it : m_AclTables)
-    {
-        vector<swss::FieldValueTuple> values;
-
-        for (auto rule_it : table_it.second.rules)
-        {
-            AclRuleCounters cnt = rule_it.second->getCounters();
-
-            swss::FieldValueTuple fvtp("Packets", to_string(cnt.packets));
-            values.push_back(fvtp);
-            swss::FieldValueTuple fvtb("Bytes", to_string(cnt.bytes));
-            values.push_back(fvtb);
-
-            AclOrch::getCountersTable().set(rule_it.second->getTableId() + ":"
-                    + rule_it.second->getId(), values, "");
-        }
-        values.clear();
-    }
-}
-
 sai_status_t AclOrch::bindAclTable(AclTable &aclTable, bool bind)
 {
     SWSS_LOG_ENTER();
@@ -4410,6 +4416,42 @@ sai_status_t AclOrch::deleteDTelWatchListTables()
     m_AclTables.erase(table_oid);
 
     return SAI_STATUS_SUCCESS;
+}
+
+void AclOrch::registerFlexCounter(const AclRule& rule)
+{
+    SWSS_LOG_ENTER();
+
+    auto ruleIdentifier = generateAclRuleIdentifierInCountersDb(rule);
+    auto counterOidStr = sai_serialize_object_id(rule.getCounterOid());
+
+    unordered_set<string> serializedCounterStatAttrs;
+    for (const auto& counterAttrPair: aclCounterLookup)
+    {
+        sai_acl_counter_attr_t id {};
+        tie(std::ignore, id) = counterAttrPair;
+        auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_COUNTER, id);
+        if (!meta)
+        {
+            SWSS_LOG_THROW("SAI Bug: Failed to get metadata of attribute %d for SAI_OBJECT_TYPE_ACL_COUNTER", id);
+        }
+        serializedCounterStatAttrs.insert(sai_serialize_attr_id(*meta));
+    }
+
+    m_flex_counter_manager.setCounterIdList(rule.getCounterOid(), CounterType::ACL_COUNTER, serializedCounterStatAttrs);
+    m_countersDb.hset(COUNTERS_ACL_COUNTER_RULE_MAP, ruleIdentifier, counterOidStr);
+}
+
+void AclOrch::deregisterFlexCounter(const AclRule& rule)
+{
+    auto ruleIdentifier = generateAclRuleIdentifierInCountersDb(rule);
+    m_countersDb.hdel(COUNTERS_ACL_COUNTER_RULE_MAP, rule.getId());
+    m_flex_counter_manager.clearCounterIdList(rule.getCounterOid());
+}
+
+string AclOrch::generateAclRuleIdentifierInCountersDb(const AclRule& rule) const
+{
+    return rule.getTableId() + m_countersTable.getTableNameSeparator() + rule.getId();
 }
 
 bool AclOrch::getAclBindPortId(Port &port, sai_object_id_t &port_id)
