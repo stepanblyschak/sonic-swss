@@ -511,8 +511,6 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
 {
     SWSS_LOG_ENTER();
 
-    SWSS_LOG_THROW("ADDED JUST FOR TEST");
-
     sai_attribute_value_t value;
 
     try
