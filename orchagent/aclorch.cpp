@@ -1649,14 +1649,14 @@ bool AclTable::validate()
         return false;
     }
 
-    // if (m_pAclOrch->isAclActionListMandatoryOnTableCreation(stage))
-    // {
-    //     if (type.getActions().empty())
-    //     {
-    //         SWSS_LOG_ERROR("Action list for table %s is mandatory", id.c_str());
-    //         return false;
-    //     }
-    // }
+    if (m_pAclOrch->isAclActionListMandatoryOnTableCreation(stage))
+    {
+        if (type.getActions().empty())
+        {
+            SWSS_LOG_ERROR("Action list for table %s is mandatory", id.c_str());
+            return false;
+        }
+    }
 
     for (const auto& action: type.getActions())
     {
