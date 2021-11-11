@@ -160,11 +160,10 @@ class TestAcl:
         dvs_acl.remove_acl_rule(L3V6_TABLE_NAME, L3V6_RULE_NAME)
         dvs_acl.verify_no_acl_rules()
 
-    def test_AclRuleInOutPorts(self, dvs_acl, mclag_acl_table, mirror_acl_table):
+    def test_AclRuleInPorts(self, dvs_acl, mirror_acl_table):
         """
-        Verify IN_PORTS, OUT_PORTS matches on ACL rule.
+        Verify IN_PORTS matches on ACL rule.
         Using MIRROR table type for IN_PORTS matches.
-        Using MCLAG table type for OUT_PORTS matches.
         """
         config_qualifiers = {
             "IN_PORTS": "Ethernet8,Ethernet12",
@@ -180,6 +179,11 @@ class TestAcl:
         dvs_acl.remove_acl_rule(MIRROR_TABLE_NAME, MIRROR_RULE_NAME)
         dvs_acl.verify_no_acl_rules()
 
+    def test_AclRuleOutPorts(self, dvs_acl, mclag_acl_table):
+        """
+        Verify OUT_PORTS matches on ACL rule.
+        Using MCLAG table type for OUT_PORTS matches.
+        """
         config_qualifiers = {
             "OUT_PORTS": "Ethernet8,Ethernet12",
         }
