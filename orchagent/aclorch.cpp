@@ -3618,6 +3618,7 @@ void AclOrch::doAclTableTask(Consumer &consumer)
             auto tableType = getAclTableType(tableTypeName);
             if (!tableType)
             {
+                SWSS_LOG_THROW("Temporary: failed to find table type %s", tableTypeName.c_str());
                 it++;
                 continue;
             }
