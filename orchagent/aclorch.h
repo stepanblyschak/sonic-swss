@@ -15,13 +15,9 @@
 #include "mirrororch.h"
 #include "dtelorch.h"
 #include "observer.h"
+#include "flex_counter_manager.h"
 
 #include "acltable.h"
-
-// ACL counters update interval in the DB
-// Value is in seconds. Should not be less than 5 seconds
-// (in worst case update of 1265 counters takes almost 5 sec)
-#define COUNTERS_READ_INTERVAL 10
 
 #define RULE_PRIORITY           "PRIORITY"
 #define MATCH_IN_PORTS          "IN_PORTS"
@@ -96,6 +92,8 @@
 #define INGRESS_TABLE_DROP      "IngressTableDrop"
 #define RULE_OPER_ADD           0
 #define RULE_OPER_DELETE        1
+
+#define ACL_COUNTER_FLEX_COUNTER_GROUP "ACL_STAT_COUNTER"
 
 struct AclActionCapabilities
 {
@@ -215,31 +213,6 @@ private:
     static map<acl_range_properties_t, AclRange*> m_ranges;
 };
 
-struct AclRuleCounters
-{
-    uint64_t packets;
-    uint64_t bytes;
-
-    AclRuleCounters(uint64_t p = 0, uint64_t b = 0) :
-        packets(p),
-        bytes(b)
-    {
-    }
-
-    AclRuleCounters(const AclRuleCounters& rhs) :
-        packets(rhs.packets),
-        bytes(rhs.bytes)
-    {
-    }
-
-    AclRuleCounters& operator +=(const AclRuleCounters& rhs)
-    {
-        packets += rhs.packets;
-        bytes += rhs.bytes;
-        return *this;
-    }
-};
-
 class AclTable;
 
 class AclRule
@@ -265,20 +238,13 @@ public:
 
     virtual bool enableCounter();
     virtual bool disableCounter();
-    virtual AclRuleCounters getCounters();
 
     string getId() const;
     string getTableId() const;
-
-    sai_object_id_t getCounterOid()
-    {
-        return m_counterOid;
-    }
-
-    vector<sai_object_id_t> getInPorts()
-    {
-        return m_inPorts;
-    }
+    sai_object_id_t getOid() const;
+    sai_object_id_t getCounterOid() const;
+    bool hasCounter() const;
+    vector<sai_object_id_t> getInPorts();
 
     const map<sai_acl_entry_attr_t, sai_attribute_value_t>& getMatches() const;
     static shared_ptr<AclRule> makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple&);
@@ -286,8 +252,10 @@ public:
 
 protected:
     virtual bool createCounter();
+    virtual bool createRule();
     virtual bool removeCounter();
     virtual bool removeRanges();
+    virtual bool removeRule();
 
     void decreaseNextHopRefCount();
 
@@ -331,15 +299,16 @@ public:
     AclRuleMirror(AclOrch *m_pAclOrch, MirrorOrch *m_pMirrorOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
-    bool create();
-    bool remove();
+    bool createRule();
+    bool removeRule();
     void update(SubjectType, void *);
-    AclRuleCounters getCounters();
+
+    bool activate();
+    bool deactivate();
 
 protected:
     bool m_state {false};
     string m_sessionName;
-    AclRuleCounters counters;
     MirrorOrch *m_pMirrorOrch {nullptr};
 };
 
@@ -349,9 +318,12 @@ public:
     AclRuleDTelFlowWatchListEntry(AclOrch *m_pAclOrch, DTelOrch *m_pDTelOrch, string rule, string table);
     bool validateAddAction(string attr_name, string attr_value);
     bool validate();
-    bool create();
-    bool remove();
+    bool createRule();
+    bool removeRule();
     void update(SubjectType, void *);
+
+    bool activate();
+    bool deactivate();
 
 protected:
     DTelOrch *m_pDTelOrch;
@@ -507,7 +479,6 @@ private:
     void doAclTableTask(Consumer &consumer);
     void doAclRuleTask(Consumer &consumer);
     void doAclTableTypeTask(Consumer &consumer);
-    void doTask(SelectableTimer &timer);
     void init(vector<TableConnector>& connectors, PortsOrch *portOrch, MirrorOrch *mirrorOrch, NeighOrch *neighOrch, RouteOrch *routeOrch);
     void initDefaultTableTypes();
 
@@ -541,15 +512,16 @@ private:
     void createDTelWatchListTables();
     void deleteDTelWatchListTables();
 
+    void registerFlexCounter(const AclRule& rule);
+    void deregisterFlexCounter(const AclRule& rule);
+    string generateAclRuleIdentifierInCountersDb(const AclRule& rule) const;
+
     map<sai_object_id_t, AclTable> m_AclTables;
     // TODO: Move all ACL tables into one map: name -> instance
     map<string, AclTable> m_ctrlAclTables;
     map<string, AclTableType> m_AclTableTypes;
 
-    static mutex m_countersMutex;
-    static condition_variable m_sleepGuard;
-    static bool m_bCollectCounters;
-    static DBConnector m_db;
+    static DBConnector m_countersDb;
     static Table m_countersTable;
 
     Table m_aclStageCapabilityTable;
@@ -559,6 +531,7 @@ private:
 
     acl_capabilities_t m_aclCapabilities;
     acl_action_enum_values_capabilities_t m_aclEnumActionCapabilities;
+    FlexCounterManager m_flex_counter_manager;
 };
 
 #endif /* SWSS_ACLORCH_H */
