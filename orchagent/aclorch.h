@@ -301,6 +301,7 @@ public:
     bool activate();
     bool deactivate();
 
+    bool update(const AclRule& updatedRule) override;
 protected:
     DTelOrch *m_pDTelOrch;
     string m_intSessionId;
