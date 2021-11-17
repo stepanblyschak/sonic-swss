@@ -1649,7 +1649,6 @@ bool AclTable::validate()
         return false;
     }
 
-#if 0 // uncomment when vslib from sonic-sairedis is updated
     if (m_pAclOrch->isAclActionListMandatoryOnTableCreation(stage))
     {
         if (type.getActions().empty())
@@ -1658,7 +1657,6 @@ bool AclTable::validate()
             return false;
         }
     }
-#endif
 
     for (const auto& action: type.getActions())
     {
