@@ -140,7 +140,7 @@ public:
     AclRule(AclOrch *pAclOrch, string rule, string table, acl_table_type_t type, bool createCounter = true);
     virtual bool validateAddPriority(string attr_name, string attr_value);
     virtual bool validateAddMatch(string attr_name, string attr_value);
-    virtual bool validateAddAction(string attr_name, string attr_value);
+    virtual bool validateAddAction(string attr_name, string attr_value) = 0;
     virtual bool validate() = 0;
     bool processIpType(string type, sai_uint32_t &ip_type);
     inline static void setRulePriorities(sai_uint32_t min, sai_uint32_t max)
