@@ -21,7 +21,6 @@ extraction:
       - swig3.0
       - libpython2.7-dev
       - libgtest-dev
-      - libgmock-dev
       - dh-exec
       - doxygen
       - cdbs
