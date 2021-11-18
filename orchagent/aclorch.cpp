@@ -449,6 +449,11 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
     return setMatch(aclMatchLookup[attr_name], matchData);
 }
 
+bool AclRule::validateAddAction(string attr_name, string attr_value)
+{
+    return false;
+}
+
 bool AclRule::processIpType(string type, sai_uint32_t &ip_type)
 {
     SWSS_LOG_ENTER();
