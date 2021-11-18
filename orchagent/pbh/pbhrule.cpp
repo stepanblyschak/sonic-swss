@@ -93,3 +93,8 @@ void AclRulePbh::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
+
+bool AclRulePbh::validateAddAction(string attr_name, string attr_value)
+{
+    SWSS_LOG_THROW("This API should not be used on PbhRule");
+}
