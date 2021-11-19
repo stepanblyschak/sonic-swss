@@ -63,8 +63,8 @@ extern string gMyAsicName;
 #define PORT_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS     1000
 #define PORT_BUFFER_DROP_STAT_POLLING_INTERVAL_MS     60000
 #define QUEUE_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS   10000
-#define QUEUE_WATERMARK_FLEX_STAT_COUNTER_POLL_MSECS "10000"
-#define PG_WATERMARK_FLEX_STAT_COUNTER_POLL_MSECS    "10000"
+#define QUEUE_WATERMARK_FLEX_STAT_COUNTER_POLL_MSECS "60000"
+#define PG_WATERMARK_FLEX_STAT_COUNTER_POLL_MSECS    "60000"
 #define PG_DROP_FLEX_STAT_COUNTER_POLL_MSECS         "10000"
 #define PORT_RATE_FLEX_COUNTER_POLLING_INTERVAL_MS   "1000"
 
@@ -2423,6 +2423,13 @@ void PortsOrch::deInitPort(string alias, sai_object_id_t port_id)
     {
         port_stat_manager.clearCounterIdList(p.m_port_id);
     }
+
+    if (flex_counters_orch->getPortBufferDropCountersState())
+    {
+        port_buffer_drop_stat_manager.clearCounterIdList(p.m_port_id);
+    }
+
+
     /* remove port name map from counter table */
     m_counter_db->hdel(COUNTERS_PORT_NAME_MAP, alias);
 
