@@ -1633,6 +1633,8 @@ namespace aclorch_test
 
         // Mirror action is supported on this table
         ASSERT_TRUE(orch->getAclRule(aclTableName, aclRuleName));
+    }
+
     TEST_F(AclOrchTest, AclRuleUpdate)
     {
         string acl_table_id = "acl_table_1";
