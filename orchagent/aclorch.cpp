@@ -1164,6 +1164,11 @@ bool AclRule::setAction(sai_acl_entry_attr_t actionId, sai_acl_action_data_t act
 
     m_actions[actionId] = SaiAttrWrapper(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
 
+    if (!m_pTable->validateAclRuleAction(attrId, *this))
+    {
+        return false;
+    }
+
     return true;
 }
 
