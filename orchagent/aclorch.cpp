@@ -167,6 +167,12 @@ static acl_ip_type_lookup_t aclIpTypeLookup =
     { IP_TYPE_ARP_REPLY,   SAI_ACL_IP_TYPE_ARP_REPLY }
 };
 
+static map<sai_acl_counter_attr_t, sai_acl_counter_attr_t> aclCounterLookup =
+{
+    {SAI_ACL_COUNTER_ATTR_ENABLE_BYTE_COUNT,   SAI_ACL_COUNTER_ATTR_BYTES},
+    {SAI_ACL_COUNTER_ATTR_ENABLE_PACKET_COUNT, SAI_ACL_COUNTER_ATTR_PACKETS},
+};
+
 static sai_acl_table_attr_t AclEntryFieldToAclTableField(sai_acl_entry_attr_t attr)
 {
     if (!IS_ATTR_ID_IN_RANGE(attr, ACL_ENTRY, FIELD))
@@ -261,16 +267,10 @@ sai_attribute_t AclTableRangeMatch::toSaiAttribute()
 
 bool AclTableRangeMatch::validateAclRuleMatch(const AclRule& rule) const
 {
-    const auto& ruleMatches = rule.getMatches();
-    for (const auto& rangeIt: aclRangeTypeLookup)
+    const auto& rangeConfig = rule.getRangeConfig();
+    for (const auto& range: rangeConfig)
     {
-        auto rangeType = rangeIt.second;
-        if (ruleMatches.find(static_cast<sai_acl_entry_attr_t>(rangeType)) == ruleMatches.end())
-        {
-            continue;
-        }
-
-        if (find(m_rangeList.begin(), m_rangeList.end(), rangeType) == m_rangeList.end())
+        if (find(m_rangeList.begin(), m_rangeList.end(), range.rangeType) == m_rangeList.end())
         {
             SWSS_LOG_ERROR("Range match %s is not supported on table %s",
                 sai_metadata_get_acl_range_type_name(rangeType), rule.getTableId().c_str());
@@ -280,7 +280,6 @@ bool AclTableRangeMatch::validateAclRuleMatch(const AclRule& rule) const
 
     return true;
 }
-
 
 string AclTableType::getName() const
 {
@@ -466,12 +465,6 @@ bool AclTableTypeParser::parseAclTableTypeBindPointTypes(const std::string& valu
     return true;
 }
 
-static map<sai_acl_counter_attr_t, sai_acl_counter_attr_t> aclCounterLookup =
-{
-    {SAI_ACL_COUNTER_ATTR_ENABLE_BYTE_COUNT,   SAI_ACL_COUNTER_ATTR_BYTES},
-    {SAI_ACL_COUNTER_ATTR_ENABLE_PACKET_COUNT, SAI_ACL_COUNTER_ATTR_PACKETS},
-};
-
 AclRule::AclRule(AclOrch *pAclOrch, string rule, string table, bool createCounter) :
     m_pAclOrch(pAclOrch),
     m_id(rule),
@@ -496,12 +489,11 @@ bool AclRule::validateAddPriority(string attr_name, string attr_value)
     {
         char *endp = NULL;
         errno = 0;
-        m_priority = (uint32_t)strtol(attr_value.c_str(), &endp, 0);
+        auto priority = (uint32_t)strtol(attr_value.c_str(), &endp, 0);
         // check conversion was successful and the value is within the allowed range
         status = (errno == 0) &&
                  (endp == attr_value.c_str() + attr_value.size()) &&
-                 (m_priority >= m_minPriority) &&
-                 (m_priority <= m_maxPriority);
+                 setPriority(priority);
     }
 
     return status;
@@ -511,7 +503,11 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
 {
     SWSS_LOG_ENTER();
 
-    sai_attribute_value_t value;
+    sai_acl_field_data_t matchData{};
+    vector<sai_object_id_t> inPorts;
+    vector<sai_object_id_t> outPorts;
+
+    matchData.enable = true;
 
     try
     {
@@ -528,7 +524,6 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 return false;
             }
 
-            m_inPorts.clear();
             for (auto alias : ports)
             {
                 Port port;
@@ -544,11 +539,11 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                     return false;
                 }
 
-                m_inPorts.push_back(port.m_port_id);
+                inPorts.push_back(port.m_port_id);
             }
 
-            value.aclfield.data.objlist.count = static_cast<uint32_t>(m_inPorts.size());
-            value.aclfield.data.objlist.list = m_inPorts.data();
+            matchData.data.objlist.count = static_cast<uint32_t>(inPorts.size());
+            matchData.data.objlist.list = inPorts.data();
         }
         else if (attr_name == MATCH_OUT_PORTS)
         {
@@ -559,7 +554,6 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 return false;
             }
 
-            m_outPorts.clear();
             for (auto alias : ports)
             {
                 Port port;
@@ -575,49 +569,49 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                     return false;
                 }
 
-                m_outPorts.push_back(port.m_port_id);
+                outPorts.push_back(port.m_port_id);
             }
 
-            value.aclfield.data.objlist.count = static_cast<uint32_t>(m_outPorts.size());
-            value.aclfield.data.objlist.list = m_outPorts.data();
+            matchData.data.objlist.count = static_cast<uint32_t>(outPorts.size());
+            matchData.data.objlist.list = outPorts.data();
         }
         else if (attr_name == MATCH_IP_TYPE)
         {
-            if (!processIpType(attr_value, value.aclfield.data.u32))
+            if (!processIpType(attr_value, matchData.data.u32))
             {
                 SWSS_LOG_ERROR("Invalid IP type %s", attr_value.c_str());
                 return false;
             }
 
-            value.aclfield.mask.u32 = 0xFFFFFFFF;
+            matchData.mask.u32 = 0xFFFFFFFF;
         }
         else if (attr_name == MATCH_TCP_FLAGS)
         {
             // Support both exact value match and value/mask match
             auto flag_data = tokenize(attr_value, '/');
 
-            value.aclfield.data.u8 = to_uint<uint8_t>(flag_data[0], 0, 0x3F);
+            matchData.data.u8 = to_uint<uint8_t>(flag_data[0], 0, 0x3F);
 
             if (flag_data.size() == 2)
             {
-                value.aclfield.mask.u8 = to_uint<uint8_t>(flag_data[1], 0, 0x3F);
+                matchData.mask.u8 = to_uint<uint8_t>(flag_data[1], 0, 0x3F);
             }
             else
             {
-                value.aclfield.mask.u8 = 0x3F;
+                matchData.mask.u8 = 0x3F;
             }
         }
         else if (attr_name == MATCH_ETHER_TYPE || attr_name == MATCH_L4_SRC_PORT || attr_name == MATCH_L4_DST_PORT)
         {
-            value.aclfield.data.u16 = to_uint<uint16_t>(attr_value);
-            value.aclfield.mask.u16 = 0xFFFF;
+            matchData.data.u16 = to_uint<uint16_t>(attr_value);
+            matchData.mask.u16 = 0xFFFF;
         }
         else if (attr_name == MATCH_VLAN_ID)
         {
-            value.aclfield.data.u16 = to_uint<uint16_t>(attr_value);
-            value.aclfield.mask.u16 = 0xFFF;
+            matchData.data.u16 = to_uint<uint16_t>(attr_value);
+            matchData.mask.u16 = 0xFFF;
 
-            if (value.aclfield.data.u16 < MIN_VLAN_ID || value.aclfield.data.u16 > MAX_VLAN_ID)
+            if (matchData.data.u16 < MIN_VLAN_ID || matchData.data.u16 > MAX_VLAN_ID)
             {
                 SWSS_LOG_ERROR("Invalid VLAN ID: %s", attr_value.c_str());
                 return false;
@@ -628,21 +622,21 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
             /* Support both exact value match and value/mask match */
             auto dscp_data = tokenize(attr_value, '/');
 
-            value.aclfield.data.u8 = to_uint<uint8_t>(dscp_data[0], 0, 0x3F);
+            matchData.data.u8 = to_uint<uint8_t>(dscp_data[0], 0, 0x3F);
 
             if (dscp_data.size() == 2)
             {
-                value.aclfield.mask.u8 = to_uint<uint8_t>(dscp_data[1], 0, 0x3F);
+                matchData.mask.u8 = to_uint<uint8_t>(dscp_data[1], 0, 0x3F);
             }
             else
             {
-                value.aclfield.mask.u8 = 0x3F;
+                matchData.mask.u8 = 0x3F;
             }
         }
         else if (attr_name == MATCH_IP_PROTOCOL || attr_name == MATCH_NEXT_HEADER)
         {
-            value.aclfield.data.u8 = to_uint<uint8_t>(attr_value);
-            value.aclfield.mask.u8 = 0xFF;
+            matchData.data.u8 = to_uint<uint8_t>(attr_value);
+            matchData.mask.u8 = 0xFF;
         }
         else if (attr_name == MATCH_SRC_IP || attr_name == MATCH_DST_IP)
         {
@@ -653,8 +647,8 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 SWSS_LOG_ERROR("IP type is not v4 type");
                 return false;
             }
-            value.aclfield.data.ip4 = ip.getIp().getV4Addr();
-            value.aclfield.mask.ip4 = ip.getMask().getV4Addr();
+            matchData.data.ip4 = ip.getIp().getV4Addr();
+            matchData.mask.ip4 = ip.getMask().getV4Addr();
         }
         else if (attr_name == MATCH_SRC_IPV6 || attr_name == MATCH_DST_IPV6)
         {
@@ -664,52 +658,59 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
                 SWSS_LOG_ERROR("IP type is not v6 type");
                 return false;
             }
-            memcpy(value.aclfield.data.ip6, ip.getIp().getV6Addr(), 16);
-            memcpy(value.aclfield.mask.ip6, ip.getMask().getV6Addr(), 16);
+            memcpy(matchData.data.ip6, ip.getIp().getV6Addr(), 16);
+            memcpy(matchData.mask.ip6, ip.getMask().getV6Addr(), 16);
         }
         else if ((attr_name == MATCH_L4_SRC_PORT_RANGE) || (attr_name == MATCH_L4_DST_PORT_RANGE))
         {
-            if (sscanf(attr_value.c_str(), "%d-%d", &value.u32range.min, &value.u32range.max) != 2)
+            AclRangeConfig rangeConfig{};
+            if (sscanf(attr_value.c_str(), "%d-%d", &rangeConfig.min, &rangeConfig.max) != 2)
             {
                 SWSS_LOG_ERROR("Range parse error. Attribute: %s, value: %s", attr_name.c_str(), attr_value.c_str());
                 return false;
             }
 
+            rangeConfig.rangeType = aclRangeTypeLookup[attr_name];
+
             // check boundaries
-            if ((value.u32range.min > USHRT_MAX) ||
-                (value.u32range.max > USHRT_MAX) ||
-                (value.u32range.min > value.u32range.max))
+            if ((rangeConfig.min > USHRT_MAX) ||
+                (rangeConfig.max > USHRT_MAX) ||
+                (rangeConfig.min > rangeConfig.max))
             {
                 SWSS_LOG_ERROR("Range parse error. Invalid range value. Attribute: %s, value: %s", attr_name.c_str(), attr_value.c_str());
                 return false;
             }
+
+            m_rangeConfig.push_back(rangeConfig);
+
+            return m_pTable->validateAclRuleMatch(SAI_ACL_ENTRY_ATTR_FIELD_ACL_RANGE_TYPE, *this);
         }
         else if (attr_name == MATCH_TC)
         {
-            value.aclfield.data.u8 = to_uint<uint8_t>(attr_value);
-            value.aclfield.mask.u8 = 0xFF;
+            matchData.data.u8 = to_uint<uint8_t>(attr_value);
+            matchData.mask.u8 = 0xFF;
         }
         else if (attr_name == MATCH_ICMP_TYPE || attr_name == MATCH_ICMP_CODE ||
                 attr_name == MATCH_ICMPV6_TYPE || attr_name == MATCH_ICMPV6_CODE)
         {
-            value.aclfield.data.u8 = to_uint<uint8_t>(attr_value);
-            value.aclfield.mask.u8 = 0xFF;
+            matchData.data.u8 = to_uint<uint8_t>(attr_value);
+            matchData.mask.u8 = 0xFF;
         }
         else if (attr_name == MATCH_TUNNEL_VNI)
         {
-            value.aclfield.data.u32 = to_uint<uint32_t>(attr_value);
-            value.aclfield.mask.u32 = 0xFFFFFFFF;
+            matchData.data.u32 = to_uint<uint32_t>(attr_value);
+            matchData.mask.u32 = 0xFFFFFFFF;
         }
         else if (attr_name == MATCH_INNER_ETHER_TYPE || attr_name == MATCH_INNER_L4_SRC_PORT ||
             attr_name == MATCH_INNER_L4_DST_PORT)
         {
-            value.aclfield.data.u16 = to_uint<uint16_t>(attr_value);
-            value.aclfield.mask.u16 = 0xFFFF;
+            matchData.data.u16 = to_uint<uint16_t>(attr_value);
+            matchData.mask.u16 = 0xFFFF;
         }
         else if (attr_name == MATCH_INNER_IP_PROTOCOL)
         {
-            value.aclfield.data.u8 = to_uint<uint8_t>(attr_value);
-            value.aclfield.mask.u8 = 0xFF;
+            matchData.data.u8 = to_uint<uint8_t>(attr_value);
+            matchData.mask.u8 = 0xFF;
         }
     }
     catch (exception &e)
@@ -732,63 +733,7 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
         attr_name = MATCH_NEXT_HEADER;
     }
 
-    const auto ruleMatchId = aclMatchLookup[attr_name];
-    const auto& rangeTypeIt = aclRangeTypeLookup.find(attr_name);
-
-    // TODO: Refactor AclRule to save range configuration in a different data structure.
-    // It is weird to find ACL range type inside m_matches of type sai_acl_entry_attr_t.
-    if (rangeTypeIt != aclRangeTypeLookup.end())
-    {
-        m_matches[static_cast<sai_acl_entry_attr_t>(rangeTypeIt->second)] = value;
-    }
-    else
-    {
-        m_matches[aclMatchLookup[attr_name]] = value;
-    }
-
-    return m_pTable->validateAclRuleMatch(ruleMatchId, *this);
-}
-
-bool AclRule::validateAddAction(string attr_name, string attr_value)
-{
-    for (const auto& it: m_actions)
-    {
-        auto attrId = it.first;
-        auto value = it.second;
-        auto actionType = AclEntryActionToAclAction(attrId);
-
-        if (!isActionSupported(attrId))
-        {
-            SWSS_LOG_ERROR("Action %s:%s is not supported by ASIC",
-                           attr_name.c_str(), attr_value.c_str());
-            return false;
-        }
-
-        // check if ACL action attribute entry parameter is an enum value
-        const auto* meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, attrId);
-        if (meta == nullptr)
-        {
-            SWSS_LOG_THROW("Metadata null pointer returned by sai_metadata_get_attr_metadata for action %s",
-                           attr_name.c_str());
-        }
-        if (meta->isenum)
-        {
-            // if ACL action attribute requires enum value check if value is supported by the ASIC
-            if (!m_pAclOrch->isAclActionEnumValueSupported(actionType, value.aclaction.parameter))
-            {
-                SWSS_LOG_ERROR("Action %s:%s is not supported by ASIC",
-                               attr_name.c_str(), attr_value.c_str());
-                return false;
-            }
-        }
-
-        if (!m_pTable->validateAclRuleAction(attrId, *this))
-        {
-            return false;
-        }
-    }
-
-    return true;
+    return setMatch(aclMatchLookup[attr_name], matchData);
 }
 
 bool AclRule::processIpType(string type, sai_uint32_t &ip_type)
@@ -856,50 +801,41 @@ bool AclRule::createRule()
         rule_attrs.push_back(attr);
     }
 
-    // store matches
-    for (auto it : m_matches)
+    if (!m_rangeConfig.empty())
     {
-        // collect ranges and add them later as a list
-        if (((sai_acl_range_type_t)it.first == SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE) ||
-            ((sai_acl_range_type_t)it.first == SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE))
+        for (const auto& rangeConfig: m_rangeConfig)
         {
-            SWSS_LOG_INFO("Creating range object %u..%u", it.second.u32range.min, it.second.u32range.max);
+            SWSS_LOG_INFO("Creating range object %u..%u", rangeConfig.min, rangeConfig.max);
 
-            AclRange *range = AclRange::create((sai_acl_range_type_t)it.first, it.second.u32range.min, it.second.u32range.max);
+            AclRange *range = AclRange::create(rangeConfig.rangeType, rangeConfig.min, rangeConfig.max);
             if (!range)
             {
                 // release already created range if any
                 AclRange::remove(range_objects, range_object_list.count);
                 return false;
             }
-            else
-            {
-                range_objects[range_object_list.count++] = range->getOid();
-            }
-        }
-        else
-        {
-            attr.id = it.first;
-            attr.value = it.second;
-            attr.value.aclfield.enable = true;
-            rule_attrs.push_back(attr);
-        }
-    }
 
-    // store ranges if any
-    if (range_object_list.count > 0)
-    {
+            m_ranges.push_back(range);
+            range_objects[range_object_list.count++] = range->getOid();
+        }
+
         attr.id = SAI_ACL_ENTRY_ATTR_FIELD_ACL_RANGE_TYPE;
         attr.value.aclfield.enable = true;
         attr.value.aclfield.data.objlist = range_object_list;
         rule_attrs.push_back(attr);
     }
 
-    // store actions
-    for (auto it : m_actions)
+    // store matches
+    for (auto& it : m_matches)
     {
-        attr.id = it.first;
-        attr.value = it.second;
+        attr = it.second.getSaiAttr();
+        rule_attrs.push_back(attr);
+    }
+
+    // store actions
+    for (auto& it : m_actions)
+    {
+        attr = it.second.getSaiAttr();
         rule_attrs.push_back(attr);
     }
 
@@ -995,11 +931,9 @@ bool AclRule::remove()
 void AclRule::updateInPorts()
 {
     SWSS_LOG_ENTER();
-    sai_attribute_t attr;
     sai_status_t status;
 
-    attr.id = SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS;
-    attr.value = m_matches[SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS];
+    auto attr = m_matches[SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS].getSaiAttr();
     attr.value.aclfield.enable = true;
 
     status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
@@ -1007,6 +941,284 @@ void AclRule::updateInPorts()
     {
         SWSS_LOG_ERROR("Failed to update ACL rule %s, rv:%d", m_id.c_str(), status);
     }
+}
+
+bool AclRule::update(const AclRule& updatedRule)
+{
+    SWSS_LOG_ENTER();
+
+    if (!m_rangeConfig.empty() || !updatedRule.m_rangeConfig.empty())
+    {
+        SWSS_LOG_ERROR("Updating range matches is currently not implemented");
+        return false;
+    }
+
+    if (!updateCounter(updatedRule))
+    {
+        return false;
+    }
+
+    if (!updatePriority(updatedRule))
+    {
+        return false;
+    }
+
+    if (!updateMatches(updatedRule))
+    {
+        return false;
+    }
+
+    if (!updateActions(updatedRule))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool AclRule::updateCounter(const AclRule& updatedRule)
+{
+    if (updatedRule.m_createCounter)
+    {
+        if (!enableCounter())
+        {
+            return false;
+        }
+    }
+    else
+    {
+        if (!disableCounter())
+        {
+            return false;
+        }
+    }
+
+    m_createCounter = updatedRule.m_createCounter;
+
+    return true;
+}
+
+bool AclRule::updatePriority(const AclRule& updatedRule)
+{
+    if (m_priority == updatedRule.m_priority)
+    {
+        return true;
+    }
+
+    sai_attribute_t attr {};
+    attr.id = SAI_ACL_ENTRY_ATTR_PRIORITY;
+    attr.value.s32 = updatedRule.m_priority;
+    if (!setAttribute(attr))
+    {
+        return false;
+    }
+
+    m_priority = updatedRule.m_priority;
+
+    return true;
+}
+
+bool AclRule::updateMatches(const AclRule& updatedRule)
+{
+    vector<pair<sai_acl_entry_attr_t, SaiAttrWrapper>> matchesUpdated;
+    vector<pair<sai_acl_entry_attr_t, SaiAttrWrapper>> matchesDisabled;
+
+    // Diff by value to get new matches and updated matches
+    // in a single set_difference pass.
+    set_difference(
+        updatedRule.m_matches.begin(),
+        updatedRule.m_matches.end(),
+        m_matches.begin(), m_matches.end(),
+        back_inserter(matchesUpdated)
+    );
+
+    // Diff by key only to get delete matches. Assuming that
+    // deleted matches mean setting a match attribute to disabled state.
+    set_difference(
+        m_matches.begin(), m_matches.end(),
+        updatedRule.m_matches.begin(),
+        updatedRule.m_matches.end(),
+        back_inserter(matchesDisabled),
+        [](auto& oldMatch, auto& newMatch)
+        {
+            return oldMatch.first < newMatch.first;
+        }
+    );
+
+    for (const auto& attrPair: matchesDisabled)
+    {
+        auto attr = attrPair.second.getSaiAttr();
+        attr.value.aclfield.enable = false;
+        if (!setAttribute(attr))
+        {
+            return false;
+        }
+        m_matches.erase(attrPair.first);
+    }
+
+    for (const auto& attrPair: matchesUpdated)
+    {
+        auto attr = attrPair.second.getSaiAttr();
+        if (!setAttribute(attr))
+        {
+            return false;
+        }
+        setMatch(attrPair.first, attr.value.aclfield);
+    }
+
+    return true;
+}
+
+bool AclRule::updateActions(const AclRule& updatedRule)
+{
+    vector<pair<sai_acl_entry_attr_t, SaiAttrWrapper>> actionsUpdated;
+    vector<pair<sai_acl_entry_attr_t, SaiAttrWrapper>> actionsDisabled;
+
+    // Diff by value to get new action and updated actions
+    // in a single set_difference pass.
+    set_difference(
+        updatedRule.m_actions.begin(),
+        updatedRule.m_actions.end(),
+        m_actions.begin(), m_actions.end(),
+        back_inserter(actionsUpdated)
+    );
+
+    // Diff by key only to get delete actions. Assuming that
+    // action matches mean setting a action attribute to disabled state.
+    set_difference(
+        m_actions.begin(), m_actions.end(),
+        updatedRule.m_actions.begin(),
+        updatedRule.m_actions.end(),
+        back_inserter(actionsDisabled),
+        [](auto& oldAction, auto& newAction)
+        {
+            return oldAction.first < newAction.first;
+        }
+    );
+
+    for (const auto& attrPair: actionsDisabled)
+    {
+        auto attr = attrPair.second.getSaiAttr();
+        attr.value.aclaction.enable = false;
+        if (!setAttribute(attr))
+        {
+            return false;
+        }
+        m_actions.erase(attrPair.first);
+    }
+
+    for (const auto& attrPair: actionsUpdated)
+    {
+        auto attr = attrPair.second.getSaiAttr();
+        if (!setAttribute(attr))
+        {
+            return false;
+        }
+        setAction(attrPair.first, attr.value.aclaction);
+    }
+
+    return true;
+}
+
+bool AclRule::setPriority(const sai_uint32_t &value)
+{
+    if (!(value >= m_minPriority && value <= m_maxPriority))
+    {
+        SWSS_LOG_ERROR("Priority value %d is out of supported priority range %d-%d",
+            value, m_minPriority, m_maxPriority);
+        return false;
+    }
+    m_priority = value;
+    return true;
+}
+
+bool AclRule::setAction(sai_acl_entry_attr_t actionId, sai_acl_action_data_t actionData)
+{
+    if (!isActionSupported(actionId))
+    {
+        SWSS_LOG_ERROR("Action attribute %s is not supported",
+            getAttributeIdName(SAI_OBJECT_TYPE_ACL_ENTRY, actionId).c_str());
+        return false;
+    }
+
+    // check if ACL action attribute entry parameter is an enum value
+    const auto* meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, actionId);
+    if (meta == nullptr)
+    {
+        SWSS_LOG_THROW("Metadata null pointer returned by sai_metadata_get_attr_metadata for action %d", actionId);
+    }
+    if (meta->isenum)
+    {
+        // if ACL action attribute requires enum value check if value is supported by the ASIC
+        if (!m_pAclOrch->isAclActionEnumValueSupported(AclOrch::getAclActionFromAclEntry(actionId), actionData.parameter))
+        {
+            SWSS_LOG_ERROR("Action %s is not supported by ASIC",
+                getAttributeIdName(SAI_OBJECT_TYPE_ACL_ENTRY, actionId).c_str());
+            return false;
+        }
+    }
+
+    sai_attribute_t attr;
+    attr.id = actionId;
+    attr.value.aclaction = actionData;
+
+    m_actions[actionId] = SaiAttrWrapper(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+
+    return true;
+}
+
+bool AclRule::setMatch(sai_acl_entry_attr_t matchId, sai_acl_field_data_t matchData)
+{
+    sai_attribute_t attr;
+    attr.id = matchId;
+    attr.value.aclfield = matchData;
+
+    m_matches[matchId] = SaiAttrWrapper(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
+
+    if (!m_pTable->validateAclRuleMatch(attrId, *this))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool AclRule::setAttribute(sai_attribute_t attr)
+{
+    auto meta = sai_metadata_get_attr_metadata(SAI_OBJECT_TYPE_ACL_ENTRY, attr.id);
+    if (!meta)
+    {
+        SWSS_LOG_THROW("Failed to get metadata for attribute id %d", attr.id);
+    }
+    auto status = sai_acl_api->set_acl_entry_attribute(m_ruleOid, &attr);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to update attribute %s on ACL rule %s in ACL table %s: %s",
+                        meta->attridname, getId().c_str(), getTableId().c_str(),
+                        sai_serialize_status(status).c_str());
+        return false;
+    }
+    SWSS_LOG_INFO("Successfully updated action attribute %s on ACL rule %s in ACL table %s",
+                   meta->attridname, getId().c_str(), getTableId().c_str());
+    return true;
+}
+
+vector<sai_object_id_t> AclRule::getInPorts() const
+{
+    vector<sai_object_id_t> inPorts;
+    auto it = m_matches.find(SAI_ACL_ENTRY_ATTR_FIELD_IN_PORTS);
+    if (it == m_matches.end())
+    {
+        return inPorts;
+    }
+    auto attr = it->second.getSaiAttr();
+    if (!attr.value.aclfield.enable)
+    {
+        return inPorts;
+    }
+    auto objlist = attr.value.aclfield.data.objlist;
+    inPorts = vector<sai_object_id_t>(objlist.list, objlist.list + objlist.count);
+    return inPorts;
 }
 
 string AclRule::getId() const
@@ -1039,9 +1251,9 @@ vector<sai_object_id_t> AclRule::getInPorts()
     return m_inPorts;
 }
 
-const map<sai_acl_entry_attr_t, sai_attribute_value_t>& AclRule::getMatches() const
+const vector<AclRangeConfig>& AclRule::getRangeConfig() const
 {
-    return m_matches;
+    return m_rangeConfig;
 }
 
 shared_ptr<AclRule> AclRule::makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple& data)
@@ -1200,12 +1412,11 @@ bool AclRule::createCounter()
 bool AclRule::removeRanges()
 {
     SWSS_LOG_ENTER();
-    for (auto it : m_matches)
+    for (const auto& rangeConfig: m_rangeConfig)
     {
-        if (((sai_acl_range_type_t)it.first == SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE) ||
-            ((sai_acl_range_type_t)it.first == SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE))
+        if (!AclRange::remove(rangeConfig.rangeType, rangeConfig.min, rangeConfig.max))
         {
-            return AclRange::remove((sai_acl_range_type_t)it.first, it.second.u32range.min, it.second.u32range.max);
+            return false;
         }
     }
     return true;
@@ -1245,7 +1456,7 @@ bool AclRulePacket::validateAddAction(string attr_name, string _attr_value)
     SWSS_LOG_ENTER();
 
     string attr_value = to_upper(_attr_value);
-    sai_attribute_value_t value;
+    sai_acl_action_data_t actionData;
 
     auto action_str = attr_name;
 
@@ -1254,7 +1465,7 @@ bool AclRulePacket::validateAddAction(string attr_name, string _attr_value)
         const auto it = aclPacketActionLookup.find(attr_value);
         if (it != aclPacketActionLookup.cend())
         {
-            value.aclaction.parameter.s32 = it->second;
+            actionData.parameter.s32 = it->second;
         }
         // handle PACKET_ACTION_REDIRECT in ACTION_PACKET_ACTION for backward compatibility
         else if (attr_value.find(PACKET_ACTION_REDIRECT) != string::npos)
@@ -1281,14 +1492,14 @@ bool AclRulePacket::validateAddAction(string attr_name, string _attr_value)
             {
                 return false;
             }
-            value.aclaction.parameter.oid = param_id;
+            actionData.parameter.oid = param_id;
 
             action_str = ACTION_REDIRECT_ACTION;
         }
         // handle PACKET_ACTION_DO_NOT_NAT in ACTION_PACKET_ACTION
         else if (attr_value == PACKET_ACTION_DO_NOT_NAT)
         {
-            value.aclaction.parameter.booldata = true;
+            actionData.parameter.booldata = true;
             action_str = ACTION_DO_NOT_NAT_ACTION;
         }
         else
@@ -1303,18 +1514,16 @@ bool AclRulePacket::validateAddAction(string attr_name, string _attr_value)
         {
             return false;
         }
-        value.aclaction.parameter.oid = param_id;
+        actionData.parameter.oid = param_id;
     }
     else
     {
         return false;
     }
 
-    value.aclaction.enable = true;
+    actionData.enable = true;
 
-    m_actions[aclL3ActionLookup[action_str]] = value;
-
-    return AclRule::validateAddAction(attr_name, attr_value);
+    return setAction(aclL3ActionLookup[action_str], actionData);
 }
 
 // This method should return sai attribute id of the redirect destination
@@ -1395,7 +1604,7 @@ bool AclRulePacket::validate()
 {
     SWSS_LOG_ENTER();
 
-    if (m_matches.size() == 0 || m_actions.size() != 1)
+    if ((m_rangeConfig.empty() && m_matches.empty()) || m_actions.size() != 1)
     {
         return false;
     }
@@ -1403,7 +1612,7 @@ bool AclRulePacket::validate()
     return true;
 }
 
-void AclRulePacket::update(SubjectType, void *)
+void AclRuleL3::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
@@ -1439,16 +1648,14 @@ bool AclRuleMirror::validateAddAction(string attr_name, string attr_value)
     m_sessionName = attr_value;
 
     // insert placeholder value, we'll set the session oid in AclRuleMirror::create()
-    m_actions[action] = sai_attribute_value_t{};
-
-    return AclRule::validateAddAction(attr_name, attr_value);
+    return setAction(action, sai_acl_action_data_t{});
 }
 
 bool AclRuleMirror::validate()
 {
     SWSS_LOG_ENTER();
 
-    if (m_matches.size() == 0 || m_sessionName.empty())
+    if ((m_rangeConfig.empty() && m_matches.empty()) || m_sessionName.empty())
     {
         return false;
     }
@@ -1498,9 +1705,11 @@ bool AclRuleMirror::activate()
 
     for (auto& it: m_actions)
     {
-        it.second.aclaction.enable = true;
-        it.second.aclaction.parameter.objlist.list = &oid;
-        it.second.aclaction.parameter.objlist.count = 1;
+        auto attr = it.second.getSaiAttr();
+        attr.value.aclaction.enable = true;
+        attr.value.aclaction.parameter.objlist.list = &oid;
+        attr.value.aclaction.parameter.objlist.count = 1;
+        setAction(it.first, attr.value.aclaction);
     }
 
     if (!AclRule::createRule())
@@ -1543,7 +1752,7 @@ bool AclRuleMirror::deactivate()
     return true;
 }
 
-void AclRuleMirror::update(SubjectType type, void *cntx)
+void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
 {
     if (type != SUBJECT_TYPE_MIRROR_SESSION_CHANGE)
     {
@@ -1760,7 +1969,7 @@ bool AclTable::create()
     return true;
 }
 
-void AclTable::update(SubjectType type, void *cntx)
+void AclTable::onUpdate(SubjectType type, void *cntx)
 {
     SWSS_LOG_ENTER();
 
@@ -1948,6 +2157,36 @@ bool AclTable::remove(string rule_id)
     }
 }
 
+bool AclTable::updateRule(shared_ptr<AclRule> updatedRule)
+{
+    SWSS_LOG_ENTER();
+
+    if (!updatedRule)
+    {
+        return false;
+    }
+
+    auto ruleId = updatedRule->getId();
+    auto ruleIter = rules.find(ruleId);
+    if (ruleIter == rules.end())
+    {
+        SWSS_LOG_ERROR("Failed to update ACL rule %s as it does not exist in %s",
+                       ruleId.c_str(), id.c_str());
+        return false;
+    }
+
+    if (!ruleIter->second->update(*updatedRule))
+    {
+        SWSS_LOG_ERROR("Failed to update ACL rule %s in table %s",
+                       ruleId.c_str(), id.c_str());
+        return false;
+    }
+
+    SWSS_LOG_NOTICE("Successfully updated ACL rule %s in table %s",
+                    ruleId.c_str(), id.c_str());
+    return true;
+}
+
 bool AclTable::clear()
 {
     SWSS_LOG_ENTER();
@@ -1977,7 +2216,7 @@ bool AclRuleDTelFlowWatchListEntry::validateAddAction(string attr_name, string a
 {
     SWSS_LOG_ENTER();
 
-    sai_attribute_value_t value;
+    sai_acl_action_data_t actionData;
     string attr_value = to_upper(attr_val);
     sai_object_id_t session_oid;
 
@@ -2001,7 +2240,7 @@ bool AclRuleDTelFlowWatchListEntry::validateAddAction(string attr_name, string a
             return false;
         }
 
-        value.aclaction.parameter.s32 = it->second;
+        actionData.parameter.s32 = it->second;
 
         if (attr_value == DTEL_FLOW_OP_INT)
         {
@@ -2020,7 +2259,7 @@ bool AclRuleDTelFlowWatchListEntry::validateAddAction(string attr_name, string a
         bool ret = m_pDTelOrch->getINTSessionOid(attr_value, session_oid);
         if (ret)
         {
-            value.aclaction.parameter.oid = session_oid;
+            actionData.parameter.oid = session_oid;
 
             // Increase session reference count regardless of state to deny
             // attempt to remove INT session with attached ACL rules.
@@ -2039,22 +2278,20 @@ bool AclRuleDTelFlowWatchListEntry::validateAddAction(string attr_name, string a
 
     if (attr_name == ACTION_DTEL_FLOW_SAMPLE_PERCENT)
     {
-        value.aclaction.parameter.u8 = to_uint<uint8_t>(attr_value);
+        actionData.parameter.u8 = to_uint<uint8_t>(attr_value);
     }
 
-    value.aclaction.enable = true;
+    actionData.enable = true;
 
     if (attr_name == ACTION_DTEL_REPORT_ALL_PACKETS ||
         attr_name == ACTION_DTEL_DROP_REPORT_ENABLE ||
         attr_name == ACTION_DTEL_TAIL_DROP_REPORT_ENABLE)
     {
-        value.aclaction.parameter.booldata = (attr_value == DTEL_ENABLED) ? true : false;
-        value.aclaction.enable = (attr_value == DTEL_ENABLED) ? true : false;
+        actionData.parameter.booldata = (attr_value == DTEL_ENABLED) ? true : false;
+        actionData.enable = (attr_value == DTEL_ENABLED) ? true : false;
     }
 
-    m_actions[aclDTelActionLookup[attr_name]] = value;
-
-    return AclRule::validateAddAction(attr_name, attr_value);
+    return setAction(aclDTelActionLookup[attr_name], actionData);
 }
 
 bool AclRuleDTelFlowWatchListEntry::validate()
@@ -2066,7 +2303,7 @@ bool AclRuleDTelFlowWatchListEntry::validate()
         return false;
     }
 
-    if (m_matches.size() == 0 || m_actions.size() == 0)
+    if ((m_rangeConfig.empty() && m_matches.empty()) || m_actions.size() == 0)
     {
         return false;
     }
@@ -2134,9 +2371,9 @@ bool AclRuleDTelFlowWatchListEntry::deactivate()
     return true;
 }
 
-void AclRuleDTelFlowWatchListEntry::update(SubjectType type, void *cntx)
+void AclRuleDTelFlowWatchListEntry::onUpdate(SubjectType type, void *cntx)
 {
-    sai_attribute_value_t value;
+    sai_acl_action_data_t actionData;
     sai_object_id_t session_oid = SAI_NULL_OBJECT_ID;
 
     if (!m_pDTelOrch)
@@ -2167,8 +2404,8 @@ void AclRuleDTelFlowWatchListEntry::update(SubjectType type, void *cntx)
             return;
         }
 
-        value.aclaction.enable = true;
-        value.aclaction.parameter.oid = session_oid;
+        actionData.enable = true;
+        actionData.parameter.oid = session_oid;
 
         // Increase session reference count regardless of state to deny
         // attempt to remove INT session with attached ACL rules.
@@ -2177,7 +2414,11 @@ void AclRuleDTelFlowWatchListEntry::update(SubjectType type, void *cntx)
             throw runtime_error("Failed to increase INT session reference count");
         }
 
-        m_actions[SAI_ACL_ENTRY_ATTR_ACTION_DTEL_INT_SESSION] = value;
+        if (!setAction(SAI_ACL_ENTRY_ATTR_ACTION_DTEL_INT_SESSION, actionData))
+        {
+            SWSS_LOG_ERROR("Failed to set action SAI_ACL_ENTRY_ATTR_ACTION_DTEL_INT_SESSION");
+            return;
+        }
 
         INT_session_valid = true;
 
@@ -2191,8 +2432,21 @@ void AclRuleDTelFlowWatchListEntry::update(SubjectType type, void *cntx)
     }
 }
 
+bool AclRuleDTelFlowWatchListEntry::update(const AclRule& rule)
+{
+    auto dtelDropWathcListRule = dynamic_cast<const AclRuleDTelFlowWatchListEntry*>(&rule);
+    if (!dtelDropWathcListRule)
+    {
+        SWSS_LOG_ERROR("Cannot update DTEL flow watch list rule with a rule of a different type");
+        return false;
+    }
+
+    SWSS_LOG_ERROR("Updating DTEL flow watch list rule is currently not implemented");
+    return false;
+}
+
 AclRuleDTelDropWatchListEntry::AclRuleDTelDropWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table) :
-        AclRule(aclOrch, rule, table),
+        AclRule(aclOrch, rule, table, type),
         m_pDTelOrch(dtel)
 {
 }
@@ -2206,7 +2460,7 @@ bool AclRuleDTelDropWatchListEntry::validateAddAction(string attr_name, string a
         return false;
     }
 
-    sai_attribute_value_t value;
+    sai_acl_action_data_t actionData;
     string attr_value = to_upper(attr_val);
 
     if (attr_name != ACTION_DTEL_DROP_REPORT_ENABLE &&
@@ -2216,13 +2470,10 @@ bool AclRuleDTelDropWatchListEntry::validateAddAction(string attr_name, string a
         return false;
     }
 
+    actionData.parameter.booldata = (attr_value == DTEL_ENABLED) ? true : false;
+    actionData.enable = (attr_value == DTEL_ENABLED) ? true : false;
 
-    value.aclaction.parameter.booldata = (attr_value == DTEL_ENABLED) ? true : false;
-    value.aclaction.enable = (attr_value == DTEL_ENABLED) ? true : false;
-
-    m_actions[aclDTelActionLookup[attr_name]] = value;
-
-    return AclRule::validateAddAction(attr_name, attr_value);
+    return setAction(aclDTelActionLookup[attr_name], actionData);
 }
 
 bool AclRuleDTelDropWatchListEntry::validate()
@@ -2234,7 +2485,7 @@ bool AclRuleDTelDropWatchListEntry::validate()
         return false;
     }
 
-    if (m_matches.size() == 0 || m_actions.size() == 0)
+    if ((m_rangeConfig.empty() && m_matches.empty()) || m_actions.size() == 0)
     {
         return false;
     }
@@ -2242,7 +2493,7 @@ bool AclRuleDTelDropWatchListEntry::validate()
     return true;
 }
 
-void AclRuleDTelDropWatchListEntry::update(SubjectType, void *)
+void AclRuleDTelDropWatchListEntry::onUpdate(SubjectType, void *)
 {
     // Do nothing
 }
@@ -2900,13 +3151,13 @@ void AclOrch::update(SubjectType type, void *cntx)
     {
         if (type == SUBJECT_TYPE_PORT_CHANGE)
         {
-            table.second.update(type, cntx);
+            table.second.onUpdate(type, cntx);
         }
         else
         {
             for (auto& rule : table.second.rules)
             {
-                rule.second->update(type, cntx);
+                rule.second->onUpdate(type, cntx);
             }
         }
     }
@@ -3473,6 +3724,26 @@ bool AclOrch::updateAclRule(string table_id, string rule_id, bool enableCounter)
             rule_id.c_str(),
             table_id.c_str()
         );
+        return false;
+    }
+
+    return true;
+}
+
+bool AclOrch::updateAclRule(shared_ptr<AclRule> updatedRule)
+{
+    SWSS_LOG_ENTER();
+
+    auto tableId = updatedRule->getTableId();
+    sai_object_id_t tableOid = getTableById(tableId);
+    if (tableOid == SAI_NULL_OBJECT_ID)
+    {
+        SWSS_LOG_ERROR("Failed to add ACL rule in ACL table %s. Table doesn't exist", tableId.c_str());
+        return false;
+    }
+
+    if (!m_AclTables[tableOid].updateRule(updatedRule))
+    {
         return false;
     }
 

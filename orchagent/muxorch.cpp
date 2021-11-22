@@ -793,9 +793,9 @@ void MuxAclHandler::createMuxAclTable(sai_object_id_t port, string strTable)
     auto dropType = gAclOrch->getAclTableType(TABLE_TYPE_DROP);
     assert(dropType);
     acl_table.validateAddType(*dropType);
-    acl_table.link(port);
     acl_table.stage = ACL_STAGE_INGRESS;
     gAclOrch->addAclTable(acl_table);
+    bindAllPorts(acl_table);
 }
 
 void MuxAclHandler::createMuxAclRule(shared_ptr<AclRulePacket> rule, string strTable)
@@ -818,6 +818,24 @@ void MuxAclHandler::createMuxAclRule(shared_ptr<AclRulePacket> rule, string strT
     rule->validateAddAction(attr_name, attr_value);
 
     gAclOrch->addAclRule(rule, strTable);
+}
+
+void MuxAclHandler::bindAllPorts(AclTable &acl_table)
+{
+    SWSS_LOG_ENTER();
+
+    auto allPorts = gPortsOrch->getAllPorts();
+    for (auto &it: allPorts)
+    {
+        Port port = it.second;
+        if (port.m_type == Port::PHY)
+        {
+            SWSS_LOG_INFO("Binding port %" PRIx64 " to ACL table %s", port.m_port_id, acl_table.id.c_str());
+
+            acl_table.link(port.m_port_id);
+            acl_table.bind(port.m_port_id);
+        }
+    }
 }
 
 sai_object_id_t MuxOrch::createNextHopTunnel(std::string tunnelKey, swss::IpAddress& ipAddr)
