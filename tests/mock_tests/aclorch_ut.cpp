@@ -1665,7 +1665,7 @@ namespace aclorch_test
         {
         public:
             AclRuleTest(AclOrch* orch, string rule, string table):
-                AclRuleL3(orch, rule, table, ACL_TABLE_L3, true)
+                AclRulePacket(orch, rule, table, ACL_TABLE_L3, true)
             {}
 
             void setCounterEnabled(bool enabled)
