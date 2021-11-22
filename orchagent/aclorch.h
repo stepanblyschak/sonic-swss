@@ -253,7 +253,7 @@ public:
     sai_object_id_t getOid() const;
     sai_object_id_t getCounterOid() const;
     bool hasCounter() const;
-    vector<sai_object_id_t> getInPorts();
+    vector<sai_object_id_t> getInPorts() const;
 
     const vector<AclRangeConfig>& getRangeConfig() const;
     static shared_ptr<AclRule> makeShared(AclOrch *acl, MirrorOrch *mirror, DTelOrch *dtel, const string& rule, const string& table, const KeyOpFieldsValuesTuple&);
