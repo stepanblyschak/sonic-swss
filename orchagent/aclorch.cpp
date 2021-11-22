@@ -273,7 +273,7 @@ bool AclTableRangeMatch::validateAclRuleMatch(const AclRule& rule) const
         if (find(m_rangeList.begin(), m_rangeList.end(), range.rangeType) == m_rangeList.end())
         {
             SWSS_LOG_ERROR("Range match %s is not supported on table %s",
-                sai_metadata_get_acl_range_type_name(rangeType), rule.getTableId().c_str());
+                sai_metadata_get_acl_range_type_name(range.rangeType), rule.getTableId().c_str());
             return false;
         }
     }
@@ -1150,7 +1150,7 @@ bool AclRule::setAction(sai_acl_entry_attr_t actionId, sai_acl_action_data_t act
     if (meta->isenum)
     {
         // if ACL action attribute requires enum value check if value is supported by the ASIC
-        if (!m_pAclOrch->isAclActionEnumValueSupported(AclOrch::getAclActionFromAclEntry(actionId), actionData.parameter))
+        if (!m_pAclOrch->isAclActionEnumValueSupported(AclEntryActionToAclAction(actionId), actionData.parameter))
         {
             SWSS_LOG_ERROR("Action %s is not supported by ASIC",
                 getAttributeIdName(SAI_OBJECT_TYPE_ACL_ENTRY, actionId).c_str());
@@ -1175,7 +1175,7 @@ bool AclRule::setMatch(sai_acl_entry_attr_t matchId, sai_acl_field_data_t matchD
 
     m_matches[matchId] = SaiAttrWrapper(SAI_OBJECT_TYPE_ACL_ENTRY, attr);
 
-    if (!m_pTable->validateAclRuleMatch(attrId, *this))
+    if (!m_pTable->validateAclRuleMatch(matchId, *this))
     {
         return false;
     }
@@ -1244,11 +1244,6 @@ sai_object_id_t AclRule::getCounterOid() const
 bool AclRule::hasCounter() const
 {
     return getCounterOid() != SAI_NULL_OBJECT_ID;
-}
-
-vector<sai_object_id_t> AclRule::getInPorts()
-{
-    return m_inPorts;
 }
 
 const vector<AclRangeConfig>& AclRule::getRangeConfig() const
@@ -1610,11 +1605,6 @@ bool AclRulePacket::validate()
     }
 
     return true;
-}
-
-void AclRuleL3::onUpdate(SubjectType, void *)
-{
-    // Do nothing
 }
 
 AclRuleMirror::AclRuleMirror(AclOrch *aclOrch, MirrorOrch *mirror, string rule, string table) :
@@ -2446,7 +2436,7 @@ bool AclRuleDTelFlowWatchListEntry::update(const AclRule& rule)
 }
 
 AclRuleDTelDropWatchListEntry::AclRuleDTelDropWatchListEntry(AclOrch *aclOrch, DTelOrch *dtel, string rule, string table) :
-        AclRule(aclOrch, rule, table, type),
+        AclRule(aclOrch, rule, table),
         m_pDTelOrch(dtel)
 {
 }
