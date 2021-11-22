@@ -1661,7 +1661,7 @@ namespace aclorch_test
         auto it_table = acl_tables.find(acl_table_oid);
         ASSERT_NE(it_table, acl_tables.end());
 
-        class AclRuleTest : public AclRuleL3
+        class AclRuleTest : public AclRulePacket
         {
         public:
             AclRuleTest(AclOrch* orch, string rule, string table):
