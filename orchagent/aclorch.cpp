@@ -1607,6 +1607,11 @@ bool AclRulePacket::validate()
     return true;
 }
 
+void AclRulePacket::onUpdate(SubjectType, void *)
+{
+    // Do nothing
+}
+
 AclRuleMirror::AclRuleMirror(AclOrch *aclOrch, MirrorOrch *mirror, string rule, string table) :
         AclRule(aclOrch, rule, table),
         m_state(false),
