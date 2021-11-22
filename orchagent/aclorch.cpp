@@ -1747,6 +1747,19 @@ bool AclRuleMirror::deactivate()
     return true;
 }
 
+bool AclRuleMirror::update(const AclRule& rule)
+{
+    auto mirrorRule = dynamic_cast<const AclRuleMirror*>(&rule);
+    if (!mirrorRule)
+    {
+        SWSS_LOG_ERROR("Cannot update mirror rule with a rule of a different type");
+        return false;
+    }
+
+    SWSS_LOG_ERROR("Updating mirror rule is currently not implemented");
+    return false;
+}
+
 void AclRuleMirror::onUpdate(SubjectType type, void *cntx)
 {
     if (type != SUBJECT_TYPE_MIRROR_SESSION_CHANGE)
