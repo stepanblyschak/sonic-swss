@@ -10,6 +10,9 @@
 #include "macaddress.h"
 #include "warm_restart.h"
 
+#include <iostream>
+#include <fstream>
+
 using namespace std;
 using namespace swss;
 
@@ -21,6 +24,19 @@ using namespace swss;
 #define VRF_PREFIX          "Vrf"
 
 #define LOOPBACK_DEFAULT_MTU_STR "65536"
+
+static bool isIpV6Enabled(string alias) {
+    string path = string("/proc/sys/net/ipv6/conf/") + alias + string("/disable_ipv6");
+    ifstream file(path);
+    string line;
+    getline(file, line);
+    file.close();
+    if (line == "0") {
+        return true;
+    } else {
+        return false;
+    }
+}
 
 IntfMgr::IntfMgr(DBConnector *cfgDb, DBConnector *appDb, DBConnector *stateDb, const vector<string> &tableNames) :
         Orch(cfgDb, tableNames),
@@ -675,7 +691,7 @@ bool IntfMgr::doIntfAddrTask(const vector<string>& keys,
          * Don't proceed if port/LAG/VLAN/subport and intfGeneral is not ready yet.
          * The pending task will be checked periodically and retried.
          */
-        if (!isIntfStateOk(alias) || !isIntfCreated(alias))
+        if (!isIntfStateOk(alias) || !isIntfCreated(alias) ||!isIpV6Enabled(alias))
         {
             SWSS_LOG_DEBUG("Interface is not ready, skipping %s", alias.c_str());
             return false;
