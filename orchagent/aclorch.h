@@ -16,6 +16,7 @@
 #include "dtelorch.h"
 #include "observer.h"
 #include "flex_counter_manager.h"
+#include "oidmapper/oidmapper.h"
 
 #include "acltable.h"
 
@@ -445,6 +446,7 @@ class AclOrch : public Orch, public Observer
 public:
     AclOrch(vector<TableConnector>& connectors,
             DBConnector             *m_stateDb,
+            DBConnector             *m_applStateDb,
             SwitchOrch              *m_switchOrch,
             PortsOrch               *portOrch,
             MirrorOrch              *mirrorOrch,
@@ -562,6 +564,8 @@ private:
     acl_capabilities_t m_aclCapabilities;
     acl_action_enum_values_capabilities_t m_aclEnumActionCapabilities;
     FlexCounterManager m_flex_counter_manager;
+
+    swss::OidMapper m_oidMapper;
 };
 
 #endif /* SWSS_ACLORCH_H */

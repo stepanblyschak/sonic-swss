@@ -64,6 +64,16 @@ namespace swss
         table[key] = values;
     }
 
+    void Table::hset(const std::string &key,
+                     const std::string &field,
+                     const std::string &value,
+                     const std::string & /* op */,
+                     const std::string & /* prefix */)
+    {
+        auto& table = gDB[m_pipe->getDbId()][getTableName()];
+        table[key].emplace_back(field, value);
+    }
+
     void Table::getKeys(std::vector<std::string> &keys)
     {
         keys.clear();
@@ -73,13 +83,35 @@ namespace swss
             keys.push_back(it.first);
         }
     }
-  
- 
+
+
     void Table::del(const std::string &key, const std::string& /* op */, const std::string& /*prefix*/)
     {
         auto table = gDB[m_pipe->getDbId()].find(getTableName());
-        if (table != gDB[m_pipe->getDbId()].end()){
+        if (table != gDB[m_pipe->getDbId()].end())
+        {
             table->second.erase(key);
+        }
+    }
+
+    void Table::hdel(const std::string &key, const std::string &field, const std::string & /*op*/,
+                    const std::string & /*prefix*/)
+    {
+        auto table = gDB[m_pipe->getDbId()].find(getTableName());
+        if (table == gDB[m_pipe->getDbId()].end())
+        {
+            return;
+        }
+
+        auto& fvs = table->second[key];
+
+        for (auto iter = fvs.begin(); iter != fvs.end(); iter++)
+        {
+            if (fvField(*iter) == field)
+            {
+                fvs.erase(iter);
+                break;
+            }
         }
     }
 

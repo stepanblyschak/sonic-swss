@@ -51,7 +51,7 @@ using namespace swss;
 class OrchDaemon
 {
 public:
-    OrchDaemon(DBConnector *, DBConnector *, DBConnector *, DBConnector *);
+    OrchDaemon(DBConnector *, DBConnector *, DBConnector *, DBConnector*, DBConnector *);
     ~OrchDaemon();
 
     virtual bool init();
@@ -71,6 +71,7 @@ private:
     DBConnector *m_applDb;
     DBConnector *m_configDb;
     DBConnector *m_stateDb;
+    DBConnector *m_applStateDb;
     DBConnector *m_chassisAppDb;
 
     bool m_fabricEnabled = false;
@@ -84,7 +85,7 @@ private:
 class FabricOrchDaemon : public OrchDaemon
 {
 public:
-    FabricOrchDaemon(DBConnector *, DBConnector *, DBConnector *, DBConnector *);
+    FabricOrchDaemon(DBConnector *, DBConnector *, DBConnector *, DBConnector*, DBConnector *);
     bool init() override;
 private:
     DBConnector *m_applDb;

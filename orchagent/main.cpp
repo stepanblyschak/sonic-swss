@@ -364,7 +364,7 @@ int main(int argc, char **argv)
             // Disable all recordings if atoi() fails i.e. returns 0 due to
             // invalid command line argument.
             record_type = atoi(optarg);
-            if (record_type < 0 || record_type > 7) 
+            if (record_type < 0 || record_type > 7)
             {
                 usage();
                 exit(EXIT_FAILURE);
@@ -457,7 +457,7 @@ int main(int argc, char **argv)
     }
 
     // Disable/Enable response publisher recording.
-    if (gResponsePublisherRecord) 
+    if (gResponsePublisherRecord)
     {
         gResponsePublisherRecordFile = record_location + "/" + responsepublisher_rec_filename;
         gResponsePublisherRecordOfs.open(gResponsePublisherRecordFile, std::ofstream::out | std::ofstream::app);
@@ -466,8 +466,8 @@ int main(int argc, char **argv)
             SWSS_LOG_ERROR("Failed to open Response Publisher recording file %s",
                     gResponsePublisherRecordFile.c_str());
             gResponsePublisherRecord = false;
-        } 
-        else 
+        }
+        else
         {
             gResponsePublisherRecordOfs << getTimestamp() << "|recording started"
                 << endl;
@@ -486,6 +486,7 @@ int main(int argc, char **argv)
     DBConnector appl_db("APPL_DB", 0);
     DBConnector config_db("CONFIG_DB", 0);
     DBConnector state_db("STATE_DB", 0);
+    DBConnector applState_db("APPL_STATE_DB", 0);
 
     // Get switch_type
     getCfgSwitchType(&config_db, gMySwitchType);
@@ -705,7 +706,7 @@ int main(int argc, char **argv)
     shared_ptr<OrchDaemon> orchDaemon;
     if (gMySwitchType != "fabric")
     {
-        orchDaemon = make_shared<OrchDaemon>(&appl_db, &config_db, &state_db, chassis_app_db.get());
+        orchDaemon = make_shared<OrchDaemon>(&appl_db, &config_db, &state_db, &applState_db, chassis_app_db.get());
         if (gMySwitchType == "voq")
         {
             orchDaemon->setFabricEnabled(true);
@@ -713,7 +714,7 @@ int main(int argc, char **argv)
     }
     else
     {
-        orchDaemon = make_shared<FabricOrchDaemon>(&appl_db, &config_db, &state_db, chassis_app_db.get());
+        orchDaemon = make_shared<FabricOrchDaemon>(&appl_db, &config_db, &state_db, &applState_db, chassis_app_db.get());
     }
 
     if (!orchDaemon->init())

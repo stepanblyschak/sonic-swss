@@ -3372,7 +3372,7 @@ void AclOrch::queryAclActionAttrEnumValues(const string &action_name,
     m_switchOrch->set_switch_capability(fvVector);
 }
 
-AclOrch::AclOrch(vector<TableConnector>& connectors, DBConnector* stateDb, SwitchOrch *switchOrch,
+AclOrch::AclOrch(vector<TableConnector>& connectors, DBConnector* stateDb, DBConnector* applStateDb, SwitchOrch *switchOrch,
         PortsOrch *portOrch, MirrorOrch *mirrorOrch, NeighOrch *neighOrch, RouteOrch *routeOrch, DTelOrch *dtelOrch) :
         Orch(connectors),
         m_aclStageCapabilityTable(stateDb, STATE_ACL_STAGE_CAPABILITY_TABLE_NAME),
@@ -3386,7 +3386,8 @@ AclOrch::AclOrch(vector<TableConnector>& connectors, DBConnector* stateDb, Switc
             StatsMode::READ,
             ACL_COUNTER_DEFAULT_POLLING_INTERVAL_MS,
             ACL_COUNTER_DEFAULT_ENABLED_STATE
-        )
+        ),
+        m_oidMapper(*applStateDb)
 {
     SWSS_LOG_ENTER();
 
@@ -3696,7 +3697,7 @@ bool AclOrch::addAclTable(AclTable &newTable)
     }
     // Update matching field according to ACL stage
     newTable.addStageMandatoryMatchFields();
-    
+
     // Add mandatory ACL action if not present
     // We need to call addMandatoryActions here because addAclTable is directly called in other orchs.
     // The action_list is already added if the ACL table creation is triggered by CONFIGDD, but calling addMandatoryActions
@@ -3842,6 +3843,8 @@ bool AclOrch::addAclRule(shared_ptr<AclRule> newRule, string table_id)
         registerFlexCounter(*newRule);
     }
 
+    m_oidMapper.set({SAI_OBJECT_TYPE_ACL_ENTRY, newRule->getTableId() + m_oidMapper.getSeparator() + newRule->getTableId()}, newRule->getOid());
+
     return true;
 }
 
@@ -3867,7 +3870,14 @@ bool AclOrch::removeAclRule(string table_id, string rule_id)
         deregisterFlexCounter(*rule);
     }
 
-    return m_AclTables[table_oid].remove(rule_id);
+    if (!m_AclTables[table_oid].remove(rule_id))
+    {
+        return false;
+    }
+
+    m_oidMapper.erase({SAI_OBJECT_TYPE_ACL_ENTRY, table_id + m_oidMapper.getSeparator() + rule_id });
+
+    return true;
 }
 
 AclRule* AclOrch::getAclRule(string table_id, string rule_id)
@@ -4368,9 +4378,13 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
             if (bAllAttributesOk && newRule->validate())
             {
                 if (addAclRule(newRule, table_id))
+                {
                     it = consumer.m_toSync.erase(it);
+                }
                 else
+                {
                     it++;
+                }
             }
             else
             {
@@ -4381,9 +4395,13 @@ void AclOrch::doAclRuleTask(Consumer &consumer)
         else if (op == DEL_COMMAND)
         {
             if (removeAclRule(table_id, rule_id))
+            {
                 it = consumer.m_toSync.erase(it);
+            }
             else
+            {
                 it++;
+            }
         }
         else
         {

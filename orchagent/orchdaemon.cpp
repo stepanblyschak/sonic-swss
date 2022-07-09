@@ -61,10 +61,11 @@ bool gIsNatSupported = false;
 #define DEFAULT_MAX_BULK_SIZE 1000
 size_t gMaxBulkSize = DEFAULT_MAX_BULK_SIZE;
 
-OrchDaemon::OrchDaemon(DBConnector *applDb, DBConnector *configDb, DBConnector *stateDb, DBConnector *chassisAppDb) :
+OrchDaemon::OrchDaemon(DBConnector *applDb, DBConnector *configDb, DBConnector *stateDb, DBConnector* applStateDb, DBConnector *chassisAppDb) :
         m_applDb(applDb),
         m_configDb(configDb),
         m_stateDb(stateDb),
+        m_applStateDb(applStateDb),
         m_chassisAppDb(chassisAppDb)
 {
     SWSS_LOG_ENTER();
@@ -379,7 +380,7 @@ bool OrchDaemon::init()
         m_orchList.push_back(dtel_orch);
     }
 
-    gAclOrch = new AclOrch(acl_table_connectors, m_stateDb,
+    gAclOrch = new AclOrch(acl_table_connectors, m_stateDb, m_applStateDb,
         gSwitchOrch, gPortsOrch, gMirrorOrch, gNeighOrch, gRouteOrch, dtel_orch);
 
     vector<string> mlag_tables = {
@@ -917,8 +918,8 @@ void OrchDaemon::addOrchList(Orch *o)
     m_orchList.push_back(o);
 }
 
-FabricOrchDaemon::FabricOrchDaemon(DBConnector *applDb, DBConnector *configDb, DBConnector *stateDb, DBConnector *chassisAppDb) :
-    OrchDaemon(applDb, configDb, stateDb, chassisAppDb),
+FabricOrchDaemon::FabricOrchDaemon(DBConnector *applDb, DBConnector *configDb, DBConnector *stateDb, DBConnector* applStateDb, DBConnector *chassisAppDb) :
+    OrchDaemon(applDb, configDb, stateDb, applStateDb, chassisAppDb),
     m_applDb(applDb),
     m_configDb(configDb)
 {

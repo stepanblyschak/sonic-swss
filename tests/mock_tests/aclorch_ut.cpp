@@ -149,7 +149,7 @@ namespace aclorch_test
         AclOrch *m_aclOrch;
         swss::DBConnector *config_db;
 
-        MockAclOrch(swss::DBConnector *config_db, swss::DBConnector *state_db, SwitchOrch *switchOrch,
+        MockAclOrch(swss::DBConnector *config_db, swss::DBConnector *state_db, swss::DBConnector *applStateDb, SwitchOrch *switchOrch,
                     PortsOrch *portsOrch, MirrorOrch *mirrorOrch, NeighOrch *neighOrch, RouteOrch *routeOrch) :
             config_db(config_db)
         {
@@ -158,7 +158,7 @@ namespace aclorch_test
 
             vector<TableConnector> acl_table_connectors = { confDbAclTable, confDbAclRuleTable };
 
-            m_aclOrch = new AclOrch(acl_table_connectors, state_db, switchOrch, portsOrch, mirrorOrch,
+            m_aclOrch = new AclOrch(acl_table_connectors, state_db, applStateDb, switchOrch, portsOrch, mirrorOrch,
                                     neighOrch, routeOrch);
         }
 
@@ -237,6 +237,7 @@ namespace aclorch_test
         shared_ptr<swss::DBConnector> m_app_db;
         shared_ptr<swss::DBConnector> m_config_db;
         shared_ptr<swss::DBConnector> m_state_db;
+        shared_ptr<swss::DBConnector> m_applState_db;
         shared_ptr<swss::DBConnector> m_chassis_app_db;
 
         AclOrchTest()
@@ -245,6 +246,7 @@ namespace aclorch_test
             m_app_db = make_shared<swss::DBConnector>("APPL_DB", 0);
             m_config_db = make_shared<swss::DBConnector>("CONFIG_DB", 0);
             m_state_db = make_shared<swss::DBConnector>("STATE_DB", 0);
+            m_applState_db = make_shared<swss::DBConnector>("APPL_STATE_DB", 0);
             if(gMySwitchType == "voq")
                 m_chassis_app_db = make_shared<swss::DBConnector>("CHASSIS_APP_DB", 0);
         }
@@ -491,7 +493,7 @@ namespace aclorch_test
 
         shared_ptr<MockAclOrch> createAclOrch()
         {
-            return make_shared<MockAclOrch>(m_config_db.get(), m_state_db.get(), gSwitchOrch, gPortsOrch, gMirrorOrch,
+            return make_shared<MockAclOrch>(m_config_db.get(), m_state_db.get(), m_applState_db.get(), gSwitchOrch, gPortsOrch, gMirrorOrch,
                                             gNeighOrch, gRouteOrch);
         }
 
