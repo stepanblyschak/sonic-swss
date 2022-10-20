@@ -12,7 +12,7 @@ using ::testing::_;
 class MockMsgHandler : public NetMsg
 {
 public:
-    MOCK_METHOD(void, onMsg, (int, nl_object*), (override));
+    MOCK_METHOD2(onMsg, void(int, nl_object*));
 };
 
 class FpmLinkTest : public ::testing::Test
