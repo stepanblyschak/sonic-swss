@@ -46,7 +46,7 @@ TEST_F(FpmLinkTest, SingleNlMessageInFpmMessage)
 
     EXPECT_CALL(m_mock, onMsg(_, _)).Times(1);
 
-    m_fpm.processFpmMessage(reinterpret_cast<fpm_msg_hdr_t*>(fpmMsgBuffer));
+    m_fpm.processFpmMessage(reinterpret_cast<fpm_msg_hdr_t*>(static_cast<void*>(fpmMsgBuffer)));
 }
 
 TEST_F(FpmLinkTest, TwoNlMessagesInFpmMessage)
@@ -63,6 +63,6 @@ TEST_F(FpmLinkTest, TwoNlMessagesInFpmMessage)
 
     EXPECT_CALL(m_mock, onMsg(_, _)).Times(2);
 
-    m_fpm.processFpmMessage(reinterpret_cast<fpm_msg_hdr_t*>(fpmMsgBuffer));
+    m_fpm.processFpmMessage(reinterpret_cast<fpm_msg_hdr_t*>(static_cast<void*>(fpmMsgBuffer)));
 }
 
