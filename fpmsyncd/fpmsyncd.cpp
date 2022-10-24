@@ -4,10 +4,13 @@
 #include "select.h"
 #include "selectabletimer.h"
 #include "netdispatcher.h"
+#include "notificationconsumer.h"
 #include "warmRestartHelper.h"
 #include "fpmsyncd/fpmlink.h"
 #include "fpmsyncd/routesync.h"
+#include "fpmsyncd/routefeedbackchannel.h"
 
+#include <netlink/route/route.h>
 
 using namespace std;
 using namespace swss;
@@ -48,6 +51,8 @@ int main(int argc, char **argv)
 {
     swss::Logger::linkToDbNative("fpmsyncd");
     DBConnector db("APPL_DB", 0);
+    DBConnector applStateDb("APPL_STATE_DB", 0);
+    NotificationConsumer responseChannel(&applStateDb, "APPL_DB_ROUTE_TABLE_RESPONSE_CHANNEL");
     RedisPipeline pipeline(&db);
     RouteSync sync(&pipeline);
 
@@ -56,6 +61,8 @@ int main(int argc, char **argv)
 
     NetDispatcher::getInstance().registerMessageHandler(RTM_NEWROUTE, &sync);
     NetDispatcher::getInstance().registerMessageHandler(RTM_DELROUTE, &sync);
+
+    rtnl_route_read_protocol_names(DEFAULT_RT_PROTO_PATH);
 
     while (true)
     {
@@ -68,7 +75,7 @@ int main(int argc, char **argv)
             SelectableTimer eoiuCheckTimer(timespec{0, 0});
             // After eoiu flags are detected, start a hold timer before starting reconciliation.
             SelectableTimer eoiuHoldTimer(timespec{0, 0});
-           
+
             /*
              * Pipeline should be flushed right away to deal with state pending
              * from previous try/catch iterations.
@@ -80,6 +87,7 @@ int main(int argc, char **argv)
             cout << "Connected!" << endl;
 
             s.addSelectable(&fpm);
+            s.addSelectable(&responseChannel);
 
             /* If warm-restart feature is enabled, execute 'restoration' logic */
             bool warmStartEnabled = sync.m_warmStartHelper.checkAndStart();
@@ -117,10 +125,10 @@ int main(int argc, char **argv)
 
             while (true)
             {
-                Selectable *temps;
+                Selectable *temps{};
 
                 /* Reading FPM messages forever (and calling "readMe" to read them) */
-                s.select(&temps);
+                s.select(&temps, 1000);
 
                 /*
                  * Upon expiration of the warm-restart timer or eoiu Hold Timer, proceed to run the
@@ -180,6 +188,18 @@ int main(int argc, char **argv)
                     else
                     {
                         s.removeSelectable(&eoiuCheckTimer);
+                    }
+                }
+                else if (temps == &responseChannel)
+                {
+                    std::deque<KeyOpFieldsValuesTuple> notifications;
+                    responseChannel.pops(notifications);
+
+                    for (const auto& notification: notifications)
+                    {
+                        const std::string& key = kfvKey(notification);
+                        const std::vector<swss::FieldValueTuple>& values = kfvFieldsValues(notification);
+                        sync.onRouteResponseMsg(fpm, key, values);
                     }
                 }
                 else if (!warmStartEnabled || sync.m_warmStartHelper.isReconciled())

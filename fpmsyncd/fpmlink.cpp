@@ -12,7 +12,7 @@ using namespace std;
 void netlink_parse_rtattr(struct rtattr **tb, int max, struct rtattr *rta,
         int len)
 {
-    while (RTA_OK(rta, len)) 
+    while (RTA_OK(rta, len))
     {
         if (rta->rta_type <= max)
         {
@@ -49,7 +49,7 @@ bool FpmLink::isRawProcessing(struct nlmsghdr *h)
     }
 
     len = (int)(h->nlmsg_len - NLMSG_LENGTH(sizeof(struct rtmsg)));
-    if (len < 0) 
+    if (len < 0)
     {
         return false;
     }
@@ -66,19 +66,19 @@ bool FpmLink::isRawProcessing(struct nlmsghdr *h)
     else
     {
         /* This is a multipath route */
-        int len;            
+        int len;
         struct rtnexthop *rtnh = (struct rtnexthop *)RTA_DATA(tb[RTA_MULTIPATH]);
         len = (int)RTA_PAYLOAD(tb[RTA_MULTIPATH]);
         struct rtattr *subtb[RTA_MAX + 1];
-        
-        for (;;) 
+
+        for (;;)
         {
             if (len < (int)sizeof(*rtnh) || rtnh->rtnh_len > len)
             {
                 break;
             }
 
-            if (rtnh->rtnh_len > sizeof(*rtnh)) 
+            if (rtnh->rtnh_len > sizeof(*rtnh))
             {
                 memset(subtb, 0, sizeof(subtb));
                 netlink_parse_rtattr(subtb, RTA_MAX, RTNH_DATA(rtnh),
@@ -96,7 +96,7 @@ bool FpmLink::isRawProcessing(struct nlmsghdr *h)
             }
 
             len -= NLMSG_ALIGN(rtnh->rtnh_len);
-            rtnh = RTNH_NEXT(rtnh);                
+            rtnh = RTNH_NEXT(rtnh);
         }
     }
 
@@ -158,6 +158,7 @@ FpmLink::FpmLink(RouteSync *rsync, unsigned short port) :
 
     m_server_up = true;
     m_messageBuffer = new char[m_bufSize];
+    m_messageBufferW = new char[m_bufSize];
 }
 
 FpmLink::~FpmLink()
@@ -204,6 +205,7 @@ uint64_t FpmLink::readData()
         throw system_error(errno, system_category());
     m_pos+= (uint32_t)read;
 
+
     /* Check for complete messages */
     while (true)
     {
@@ -244,9 +246,10 @@ void FpmLink::processFpmMessage(fpm_msg_hdr_t* hdr)
     {
         return;
     }
+
     nlmsghdr *nl_hdr = (nlmsghdr *)fpm_msg_data(hdr);
 
-    /* Read all netlink messages inside FPM message */
+    // Read all netlink messages inside FPM message
     for (; NLMSG_OK (nl_hdr, msg_len); nl_hdr = NLMSG_NEXT(nl_hdr, msg_len))
     {
         /*
@@ -276,4 +279,26 @@ void FpmLink::processFpmMessage(fpm_msg_hdr_t* hdr)
         }
         nlmsg_free(msg);
     }
+}
+
+ssize_t FpmLink::send(nl_msg* msg)
+{
+    fpm_msg_hdr_t hdr;
+
+    size_t len = fpm_msg_align(sizeof(hdr) + nlmsg_hdr(msg)->nlmsg_len);
+
+    hdr.version = FPM_PROTO_VERSION;
+    hdr.msg_type = FPM_MSG_TYPE_NETLINK;
+    hdr.msg_len = htons(static_cast<uint16_t>(len));
+
+    memcpy(m_messageBufferW, &hdr, sizeof(hdr));
+    memcpy(m_messageBufferW + sizeof(hdr), nlmsg_hdr(msg), nlmsg_hdr(msg)->nlmsg_len);
+
+    size_t sent = 0;
+    while (sent != len)
+    {
+        sent += ::send(m_connection_socket, m_messageBufferW + sent, len - sent, 0);
+    }
+
+    return sent;
 }

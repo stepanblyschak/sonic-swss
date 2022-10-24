@@ -5,6 +5,8 @@
 #include "producerstatetable.h"
 #include "netmsg.h"
 #include "warmRestartHelper.h"
+#include "fpmsyncd/fpminterface.h"
+#include "fpmsyncd/routefeedbackchannel.h"
 #include <string.h>
 #include <bits/stdc++.h>
 
@@ -28,6 +30,7 @@ public:
     virtual void onMsgRaw(struct nlmsghdr *obj);
     WarmStartHelper  m_warmStartHelper;
 
+    void onRouteResponseMsg(FpmInterface& fpm, const std::string& key, const std::vector<FieldValueTuple>& fieldValues);
 private:
     /* regular route table */
     ProducerStateTable  m_routeTable;
@@ -35,10 +38,13 @@ private:
     ProducerStateTable  m_label_routeTable;
     /* vnet route table */
     ProducerStateTable  m_vnet_routeTable;
-    /* vnet vxlan tunnel table */  
-    ProducerStateTable  m_vnet_tunnelTable; 
+    /* vnet vxlan tunnel table */
+    ProducerStateTable  m_vnet_tunnelTable;
     struct nl_cache    *m_link_cache;
     struct nl_sock     *m_nl_sock;
+
+    RouteFeedbackChannel m_feedbackChannel;
+    bool                 m_isFeedbackChannelEnabled{false};
 
     /* Handle regular route (include VRF route) */
     void onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf);
@@ -63,7 +69,7 @@ private:
     /* Get interface name based on interface index */
     bool getIfName(int if_index, char *if_name, size_t name_len);
 
-    void getEvpnNextHopSep(string& nexthops, string& vni_list,  
+    void getEvpnNextHopSep(string& nexthops, string& vni_list,
                        string& mac_list, string& intf_list);
 
     void getEvpnNextHopGwIf(char *gwaddr, int vni_value,
@@ -87,6 +93,8 @@ private:
 
     /* Get next hop weights*/
     string getNextHopWt(struct rtnl_route *route_obj);
+
+    void initRouteFeedbackChannelState();
 };
 
 }

@@ -8,7 +8,12 @@ else
 DBGFLAGS = -g
 endif
 
-fpmsyncd_SOURCES = fpmsyncd.cpp fpmlink.cpp routesync.cpp $(top_srcdir)/warmrestart/warmRestartHelper.cpp
+fpmsyncd_SOURCES = fpmsyncd.cpp \
+                   fpmlink.cpp \
+                   routesync.cpp \
+                   routeresponsemsg.cpp \
+                   routefeedbackchannel.cpp \
+                   $(top_srcdir)/warmrestart/warmRestartHelper.cpp
 
 fpmsyncd_CFLAGS = $(DBGFLAGS) $(AM_CFLAGS) $(CFLAGS_COMMON) $(CFLAGS_ASAN)
 fpmsyncd_CPPFLAGS = $(DBGFLAGS) $(AM_CFLAGS) $(CFLAGS_COMMON) $(CFLAGS_ASAN)

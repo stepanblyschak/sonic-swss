@@ -212,7 +212,8 @@ namespace flowcounterrouteorch_test
                 { APP_ROUTE_TABLE_NAME,        routeorch_pri },
                 { APP_LABEL_ROUTE_TABLE_NAME,  routeorch_pri }
             };
-            gRouteOrch = new RouteOrch(m_app_db.get(), route_tables, gSwitchOrch, gNeighOrch, gIntfsOrch, gVrfOrch, gFgNhgOrch, gSrv6Orch);
+            TableConnector applStateLogging{m_config_db.get(), CFG_APP_STATE_LOGGING};
+            gRouteOrch = new RouteOrch(m_app_db.get(), route_tables, applStateLogging, gSwitchOrch, gNeighOrch, gIntfsOrch, gVrfOrch, gFgNhgOrch, gSrv6Orch);
             gNhgOrch = new NhgOrch(m_app_db.get(), APP_NEXTHOP_GROUP_TABLE_NAME);
 
             // Recreate buffer orch to read populated data
