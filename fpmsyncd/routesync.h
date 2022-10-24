@@ -31,6 +31,8 @@ public:
     WarmStartHelper  m_warmStartHelper;
 
     void onRouteResponseMsg(FpmInterface& fpm, const std::string& key, const std::vector<FieldValueTuple>& fieldValues);
+
+    void onWarmStartEnd();
 private:
     /* regular route table */
     ProducerStateTable  m_routeTable;

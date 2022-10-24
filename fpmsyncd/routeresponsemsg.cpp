@@ -31,6 +31,14 @@ RouteResponseMsg::RouteResponseMsg(const std::string& key, const std::vector<sws
     }
 }
 
+RouteResponseMsg::RouteResponseMsg(const std::string& key, const std::string& errString, const std::vector<swss::FieldValueTuple>& fieldValues) :
+    m_errString(errString),
+    m_isSetOperation(true)
+{
+    initVrfAndPrefix(key);
+    initRouteFields(fieldValues);
+}
+
 void RouteResponseMsg::initVrfAndPrefix(const std::string& key)
 {
     std::string prefixString;

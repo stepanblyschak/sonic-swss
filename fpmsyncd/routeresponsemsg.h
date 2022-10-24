@@ -22,6 +22,7 @@ public:
     };
 
     RouteResponseMsg(const std::string& key, const std::vector<swss::FieldValueTuple>& fieldValues);
+    RouteResponseMsg(const std::string& key, const std::string& errString, const std::vector<swss::FieldValueTuple>& fieldValues);
 
     bool isSetOperation() const
     {

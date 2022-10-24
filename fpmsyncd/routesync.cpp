@@ -1272,3 +1272,19 @@ void RouteSync::onRouteResponseMsg(FpmInterface& fpm, const std::string& key, co
     RouteResponseMsg routeResponse{key, fieldValues};
     m_feedbackChannel.sendRouteOffloadMessage(fpm, routeResponse);
 }
+
+void RouteSync::onWarmStartEnd()
+{
+    SWSS_LOG_ENTER();
+
+    if (m_isFeedbackChannelEnabled)
+    {
+        // TODO(stepanb): Put warm logic
+    }
+
+    if (m_warmStartHelper.inProgress())
+    {
+        m_warmStartHelper.reconcile();
+        SWSS_LOG_NOTICE("Warm-Restart reconciliation processed.");
+    }
+}
