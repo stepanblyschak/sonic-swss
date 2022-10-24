@@ -812,11 +812,6 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
                                                            fvVector);
         m_warmStartHelper.insertRefreshMap(kfv);
     }
-
-    if (m_isFeedbackChannelEnabled)
-    {
-        // m_feedbackChannel.onRouteMsg(destipprefix, nlmsg_type, route_obj);
-    }
 }
 
 /*

@@ -242,7 +242,7 @@ fpm_msg_hdr_ok (const fpm_msg_hdr_t *hdr)
   if (msg_len < FPM_MSG_HDR_LEN || msg_len > FPM_MAX_MSG_LEN)
     return 0;
 
-  if (hdr->msg_type == FPM_MSG_TYPE_NETLINK && fpm_msg_align (msg_len) != msg_len)
+  if (fpm_msg_align (msg_len) != msg_len)
     return 0;
 
   return 1;
