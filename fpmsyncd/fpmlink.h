@@ -21,7 +21,7 @@ class FpmLink : public FpmInterface {
 public:
     const int MSG_BATCH_SIZE;
     FpmLink(RouteSync *rsync, unsigned short port = FPM_DEFAULT_PORT);
-    virtual ~FpmLink();
+    ~FpmLink() override;
 
     /* Wait for connection (blocking) */
     void accept();
@@ -47,7 +47,7 @@ private:
     RouteSync *m_routesync;
     unsigned int m_bufSize;
     char *m_messageBuffer;
-    char *m_messageBufferW;
+    char *m_writeBuffer;
     unsigned int m_pos;
 
     bool m_connected;

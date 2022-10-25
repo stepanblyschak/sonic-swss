@@ -158,12 +158,13 @@ FpmLink::FpmLink(RouteSync *rsync, unsigned short port) :
 
     m_server_up = true;
     m_messageBuffer = new char[m_bufSize];
-    m_messageBufferW = new char[m_bufSize];
+    m_writeBuffer = new char[m_bufSize];
 }
 
 FpmLink::~FpmLink()
 {
     delete[] m_messageBuffer;
+    delete[] m_writeBuffer;
     if (m_connected)
         close(m_connection_socket);
     if (m_server_up)
@@ -289,13 +290,13 @@ ssize_t FpmLink::send(nl_msg* msg)
     hdr.msg_type = FPM_MSG_TYPE_NETLINK;
     hdr.msg_len = htons(static_cast<uint16_t>(len));
 
-    memcpy(m_messageBufferW, &hdr, sizeof(hdr));
-    memcpy(m_messageBufferW + sizeof(hdr), nlmsg_hdr(msg), nlmsg_hdr(msg)->nlmsg_len);
+    memcpy(m_writeBuffer, &hdr, sizeof(hdr));
+    memcpy(m_writeBuffer + sizeof(hdr), nlmsg_hdr(msg), nlmsg_hdr(msg)->nlmsg_len);
 
     size_t sent = 0;
     while (sent != len)
     {
-        sent += ::send(m_connection_socket, m_messageBufferW + sent, len - sent, 0);
+        sent += ::send(m_connection_socket, m_writeBuffer + sent, len - sent, 0);
     }
 
     return sent;

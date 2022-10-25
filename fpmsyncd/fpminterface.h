@@ -16,6 +16,8 @@ namespace swss
 class FpmInterface : public Selectable
 {
 public:
+    virtual ~FpmInterface() = default;
+
     /**
      * @brief Send netlink message through FPM socket
      * @param msg Netlink message
