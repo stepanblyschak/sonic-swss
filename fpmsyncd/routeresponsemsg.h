@@ -18,7 +18,7 @@ public:
     {
         swss::IpAddress address;
         std::string ifaceName;
-        uint8_t weight;
+        uint8_t weight{};
     };
 
     RouteResponseMsg(const std::string& key, const std::vector<swss::FieldValueTuple>& fieldValues);

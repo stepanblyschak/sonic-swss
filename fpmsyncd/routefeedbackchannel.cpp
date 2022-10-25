@@ -99,7 +99,12 @@ void RouteFeedbackChannel::sendRouteOffloadMessage(FpmInterface& fpm, const Rout
 
         rtnl_route_nh_set_gateway(nlNextHop, nhAddr.get());
         rtnl_route_nh_set_ifindex(nlNextHop, rtnl_link_get_ifindex(nhLink));
-        rtnl_route_nh_set_weight(nlNextHop, nextHop.weight);
+
+        // if weight was set in DB
+        if (nextHop.weight)
+        {
+            rtnl_route_nh_set_weight(nlNextHop, nextHop.weight);
+        }
 
         rtnl_route_add_nexthop(routeObject.get(), nlNextHop);
     }

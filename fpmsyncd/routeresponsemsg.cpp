@@ -6,8 +6,8 @@ RouteResponseMsg::RouteResponseMsg(const std::string& key, const std::vector<sws
 
     for (const auto& fieldValue: fieldValues)
     {
-        std::string field, value;
-        std::tie(field, value) = fieldValue;
+        std::string field = fvField(fieldValue);
+        std::string value = fvValue(fieldValue);
 
         if (field == "err_str")
         {
@@ -15,8 +15,6 @@ RouteResponseMsg::RouteResponseMsg(const std::string& key, const std::vector<sws
         }
         else if (field == "state_attrs")
         {
-            m_isSetOperation = true;
-
             std::vector<swss::FieldValueTuple> stateFieldValues;
             swss::JSon::readJson(value, stateFieldValues);
 
@@ -65,8 +63,8 @@ void RouteResponseMsg::initRouteFields(const std::vector<swss::FieldValueTuple>&
 
     for (const auto& fieldValue: fieldValues)
     {
-        std::string field, value;
-        std::tie(field, value) = fieldValue;
+        std::string field = fvField(fieldValue);
+        std::string value = fvValue(fieldValue);
 
         if (field == "protocol")
         {
@@ -93,6 +91,12 @@ void RouteResponseMsg::initRouteFields(const std::vector<swss::FieldValueTuple>&
 
     for (size_t i = 0; i < nextHops.size(); i++)
     {
-        m_nextHops.emplace_back(NextHop{nextHops[i], ifaceNames.at(i), weights.at(i)});
+        uint8_t weight{};
+        // if weight is set in DB
+        if (!weights.empty())
+        {
+            weight = weights.at(i);
+        }
+        m_nextHops.emplace_back(NextHop{nextHops[i], ifaceNames.at(i), weight});
     }
 }
