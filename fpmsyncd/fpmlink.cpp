@@ -205,7 +205,6 @@ uint64_t FpmLink::readData()
         throw system_error(errno, system_category());
     m_pos+= (uint32_t)read;
 
-
     /* Check for complete messages */
     while (true)
     {
@@ -246,7 +245,6 @@ void FpmLink::processFpmMessage(fpm_msg_hdr_t* hdr)
     {
         return;
     }
-
     nlmsghdr *nl_hdr = (nlmsghdr *)fpm_msg_data(hdr);
 
     /* Read all netlink messages inside FPM message */
