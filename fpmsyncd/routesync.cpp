@@ -1273,13 +1273,25 @@ void RouteSync::onRouteResponseMsg(FpmInterface& fpm, const std::string& key, co
     m_feedbackChannel.sendRouteOffloadMessage(fpm, routeResponse);
 }
 
-void RouteSync::onWarmStartEnd()
+void RouteSync::onWarmStartEnd(FpmInterface& fpm, DBConnector& applStateDb)
 {
     SWSS_LOG_ENTER();
 
     if (m_isFeedbackChannelEnabled)
     {
-        // TODO(stepanb): Put warm logic
+        Table routeStateTable{&applStateDb, APP_ROUTE_TABLE_NAME};
+
+        std::vector<std::string> keys;
+        routeStateTable.getKeys(keys);
+
+        for (const auto& key: keys)
+        {
+            std::vector<FieldValueTuple> fieldValues;
+            routeStateTable.get(key, fieldValues);
+
+            RouteResponseMsg routeResponse{key, "SWSS_RC_SUCCESS", fieldValues};
+            m_feedbackChannel.sendRouteOffloadMessage(fpm, routeResponse);
+        }
     }
 
     if (m_warmStartHelper.inProgress())

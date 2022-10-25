@@ -147,7 +147,7 @@ int main(int argc, char **argv)
                         SWSS_LOG_NOTICE("Warm-Restart EOIU hold timer expired.");
                     }
 
-                    sync.onWarmStartEnd();
+                    sync.onWarmStartEnd(fpm, applStateDb);
 
                     // remove the one-shot timer.
                     s.removeSelectable(temps);

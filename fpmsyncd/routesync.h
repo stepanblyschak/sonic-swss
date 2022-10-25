@@ -32,7 +32,7 @@ public:
 
     void onRouteResponseMsg(FpmInterface& fpm, const std::string& key, const std::vector<FieldValueTuple>& fieldValues);
 
-    void onWarmStartEnd();
+    void onWarmStartEnd(FpmInterface& fpm, DBConnector& applStateDb);
 private:
     /* regular route table */
     ProducerStateTable  m_routeTable;
