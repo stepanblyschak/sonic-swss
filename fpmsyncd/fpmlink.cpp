@@ -249,7 +249,7 @@ void FpmLink::processFpmMessage(fpm_msg_hdr_t* hdr)
 
     nlmsghdr *nl_hdr = (nlmsghdr *)fpm_msg_data(hdr);
 
-    // Read all netlink messages inside FPM message
+    /* Read all netlink messages inside FPM message */
     for (; NLMSG_OK (nl_hdr, msg_len); nl_hdr = NLMSG_NEXT(nl_hdr, msg_len))
     {
         /*
