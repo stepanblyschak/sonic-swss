@@ -690,6 +690,11 @@ void OrchDaemon::logRotate() {
     {
         SWSS_LOG_ERROR("Failed to release the file handle on sairedis log %d", status);
     }
+
+    for (auto* orch: m_orchList)
+    {
+        orch->flushResponses();
+    }
 }
 
 

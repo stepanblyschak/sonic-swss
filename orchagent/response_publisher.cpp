@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include <swss/json.h>
+
 #include "timestamp.h"
 
 extern bool gResponsePublisherRecord;
@@ -90,7 +92,10 @@ void RecordResponse(const std::string &response_channel, const std::string &key,
 
 } // namespace
 
-ResponsePublisher::ResponsePublisher() : m_db("APPL_STATE_DB", 0)
+ResponsePublisher::ResponsePublisher(bool buffered) :
+    m_db(std::make_unique<swss::DBConnector>("APPL_STATE_DB", 0)),
+    m_pipe(std::make_unique<swss::RedisPipeline>(m_db.get())),
+    m_buffered(buffered)
 {
 }
 
@@ -107,17 +112,18 @@ void ResponsePublisher::publish(const std::string &table, const std::string &key
     }
 
     std::string response_channel = "APPL_DB_" + table + "_RESPONSE_CHANNEL";
-    if (m_notifiers.find(table) == m_notifiers.end())
-    {
-        m_notifiers[table] = std::make_unique<swss::NotificationProducer>(&m_db, response_channel);
-    }
+    swss::NotificationProducer notificationProducer{m_pipe.get(), response_channel, m_buffered};
 
-    auto intent_attrs_copy = intent_attrs;
+    auto intent_attrs_copy = state_attrs;
     // Add error message as the first field-value-pair.
     swss::FieldValueTuple err_str("err_str", PrependedComponent(status) + status.message());
     intent_attrs_copy.insert(intent_attrs_copy.begin(), err_str);
+    // Send state attrs
+    std::string state_attrs_serialized = swss::JSon::buildJson(state_attrs);
+    swss::FieldValueTuple state_attrs_fv("state_attrs", state_attrs_serialized);
+    intent_attrs_copy.insert(intent_attrs_copy.begin(), state_attrs_fv);
     // Sends the response to the notification channel.
-    m_notifiers[table]->send(status.codeStr(), key, intent_attrs_copy);
+    notificationProducer.send(status.codeStr(), key, intent_attrs_copy);
     RecordResponse(response_channel, key, intent_attrs_copy, status.codeStr());
 }
 
@@ -140,17 +146,14 @@ void ResponsePublisher::publish(const std::string &table, const std::string &key
 void ResponsePublisher::writeToDB(const std::string &table, const std::string &key,
                                   const std::vector<swss::FieldValueTuple> &values, const std::string &op, bool replace)
 {
-    if (m_tables.find(table) == m_tables.end())
-    {
-        m_tables[table] = std::make_unique<swss::Table>(&m_db, table);
-    }
+    swss::Table applStateTable{m_pipe.get(), table, m_buffered};
 
     auto attrs = values;
     if (op == SET_COMMAND)
     {
         if (replace)
         {
-            m_tables[table]->del(key);
+            applStateTable.del(key);
         }
         if (!values.size())
         {
@@ -160,9 +163,9 @@ void ResponsePublisher::writeToDB(const std::string &table, const std::string &k
         // Write to DB only if the key does not exist or non-NULL attributes are
         // being written to the entry.
         std::vector<swss::FieldValueTuple> fv;
-        if (!m_tables[table]->get(key, fv))
+        if (!applStateTable.get(key, fv))
         {
-            m_tables[table]->set(key, attrs);
+            applStateTable.set(key, attrs);
             RecordDBWrite(table, key, attrs, op);
             return;
         }
@@ -179,13 +182,23 @@ void ResponsePublisher::writeToDB(const std::string &table, const std::string &k
         }
         if (attrs.size())
         {
-            m_tables[table]->set(key, attrs);
+            applStateTable.set(key, attrs);
             RecordDBWrite(table, key, attrs, op);
         }
     }
     else if (op == DEL_COMMAND)
     {
-        m_tables[table]->del(key);
+        applStateTable.del(key);
         RecordDBWrite(table, key, {}, op);
     }
+}
+
+void ResponsePublisher::flush()
+{
+    m_pipe->flush();
+}
+
+void ResponsePublisher::setBuffered(bool buffered)
+{
+    m_buffered = buffered;
 }
