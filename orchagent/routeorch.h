@@ -121,7 +121,10 @@ struct RouteBulkContext
     bool                                excp_intfs_flag;
     // using_temp_nhg will track if the NhgOrch's owned NHG is temporary or not
     bool                                using_temp_nhg;
-    KeyOpFieldsValuesTuple              kofvs;
+
+    // DB key
+    std::string                         key;
+    std::string                         protocol;
 
     RouteBulkContext()
         : excp_intfs_flag(false), using_temp_nhg(false)
@@ -140,6 +143,8 @@ struct RouteBulkContext
         excp_intfs_flag = false;
         vrf_id = SAI_NULL_OBJECT_ID;
         using_temp_nhg = false;
+        key.clear();
+        protocol.clear();
     }
 };
 
@@ -178,8 +183,7 @@ struct LabelRouteBulkContext
 class RouteOrch : public Orch, public Subject
 {
 public:
-    RouteOrch(DBConnector *db, vector<table_name_with_pri_t> &tableNames, TableConnector applStateLoggingTable,
-              SwitchOrch *switchOrch, NeighOrch *neighOrch, IntfsOrch *intfsOrch, VRFOrch *vrfOrch, FgNhgOrch *fgNhgOrch, Srv6Orch *srv6Orch);
+    RouteOrch(DBConnector *db, vector<table_name_with_pri_t> &tableNames, SwitchOrch *switchOrch, NeighOrch *neighOrch, IntfsOrch *intfsOrch, VRFOrch *vrfOrch, FgNhgOrch *fgNhgOrch, Srv6Orch *srv6Orch);
 
     bool hasNextHopGroup(const NextHopGroupKey&) const;
     sai_object_id_t getNextHopGroupId(const NextHopGroupKey&);
@@ -251,9 +255,6 @@ private:
     EntityBulker<sai_mpls_api_t>            gLabelRouteBulker;
     ObjectBulker<sai_next_hop_group_api_t>  gNextHopGroupMemberBulker;
 
-    Table m_appStateLoggingTable;
-    bool m_publishRouteState{false};
-
     void addTempRoute(RouteBulkContext& ctx, const NextHopGroupKey&);
     bool addRoute(RouteBulkContext& ctx, const NextHopGroupKey&);
     bool removeRoute(RouteBulkContext& ctx);
@@ -274,8 +275,6 @@ private:
     const NhgBase &getNhg(const std::string& nhg_index);
     void incNhgRefCount(const std::string& nhg_index);
     void decNhgRefCount(const std::string& nhg_index);
-
-    void initAppStateLoggingState();
 
     void publishRouteState(const std::string& table, const RouteBulkContext& ctx, const ReturnCode& status);
 };

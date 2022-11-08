@@ -13,7 +13,7 @@ TEST(FpmSyncd, RouteResponseMsgV4)
 {
     RouteResponseMsg msg("1.0.0.0/24", {
         {"err_str", "SWSS_RC_SUCCESS"},
-        {"state_attrs", R"#(["protocol", "bgp", "nexthop", "2.2.2.2,3.3.3.3", "ifname", "Ethernet0,Ethernet4", "weight", "1,1"])#"},
+        {"protocol", "bgp"},
     });
 
     EXPECT_TRUE(msg.isSetOperation());
@@ -21,20 +21,13 @@ TEST(FpmSyncd, RouteResponseMsgV4)
     EXPECT_EQ(msg.getPrefix().to_string(), "1.0.0.0/24");
     EXPECT_EQ(msg.getVrf(), "");
     EXPECT_EQ(msg.getProtocol(), "bgp");
-    ASSERT_EQ(msg.getNextHops().size(), 2);
-    EXPECT_EQ(msg.getNextHops()[0].address.to_string(), "2.2.2.2");
-    EXPECT_EQ(msg.getNextHops()[1].address.to_string(), "3.3.3.3");
-    EXPECT_EQ(msg.getNextHops()[0].ifaceName, "Ethernet0");
-    EXPECT_EQ(msg.getNextHops()[1].ifaceName, "Ethernet4");
-    EXPECT_EQ(msg.getNextHops()[0].weight, 1);
-    EXPECT_EQ(msg.getNextHops()[1].weight, 1);
 }
 
 TEST(FpmSyncd, RouteResponseMsgV4WithVrf)
 {
     RouteResponseMsg msg("Vrf0:1.0.0.0/24", {
         {"err_str", "SWSS_RC_SUCCESS"},
-        {"state_attrs", R"#(["protocol", "200", "nexthop", "2.2.2.2,3.3.3.3", "ifname", "Ethernet0,Ethernet4", "weight", "1,1"])#"},
+        {"protocol", "200"},
     });
 
     EXPECT_TRUE(msg.isSetOperation());
@@ -42,53 +35,32 @@ TEST(FpmSyncd, RouteResponseMsgV4WithVrf)
     EXPECT_EQ(msg.getPrefix().to_string(), "1.0.0.0/24");
     EXPECT_EQ(msg.getProtocol(), "200");
     EXPECT_EQ(msg.getVrf(), "Vrf0");
-    ASSERT_EQ(msg.getNextHops().size(), 2);
-    EXPECT_EQ(msg.getNextHops()[0].address.to_string(), "2.2.2.2");
-    EXPECT_EQ(msg.getNextHops()[1].address.to_string(), "3.3.3.3");
-    EXPECT_EQ(msg.getNextHops()[0].ifaceName, "Ethernet0");
-    EXPECT_EQ(msg.getNextHops()[1].ifaceName, "Ethernet4");
-    EXPECT_EQ(msg.getNextHops()[0].weight, 1);
-    EXPECT_EQ(msg.getNextHops()[1].weight, 1);
 }
 
 TEST(FpmSyncd, RouteResponseMsgV6)
 {
     RouteResponseMsg msg("1::/64", {
         {"err_str", "SWSS_RC_SUCCESS"},
-        {"state_attrs", R"#(["nexthop", "2::2,3::3", "ifname", "Ethernet0,Ethernet4", "weight", "1,1"])#"},
+        {"protocol", "bgp"},
     });
 
     EXPECT_TRUE(msg.isSetOperation());
     EXPECT_TRUE(msg.isOperationSuccessful());
     EXPECT_EQ(msg.getPrefix().to_string(), "1::/64");
     EXPECT_EQ(msg.getVrf(), "");
-    ASSERT_EQ(msg.getNextHops().size(), 2);
-    EXPECT_EQ(msg.getNextHops()[0].address.to_string(), "2::2");
-    EXPECT_EQ(msg.getNextHops()[1].address.to_string(), "3::3");
-    EXPECT_EQ(msg.getNextHops()[0].ifaceName, "Ethernet0");
-    EXPECT_EQ(msg.getNextHops()[1].ifaceName, "Ethernet4");
-    EXPECT_EQ(msg.getNextHops()[0].weight, 1);
-    EXPECT_EQ(msg.getNextHops()[1].weight, 1);
 }
 
 TEST(FpmSyncd, RouteResponseMsgV6WithVrf)
 {
     RouteResponseMsg msg("Vrf0:1::/64", {
         {"err_str", "SWSS_RC_SUCCESS"},
-        {"state_attrs", R"#(["nexthop", "2::2,3::3", "ifname", "Ethernet0,Ethernet4", "weight", "1,1"])#"},
+        {"protocol", "bgp"},
     });
 
     EXPECT_TRUE(msg.isSetOperation());
     EXPECT_TRUE(msg.isOperationSuccessful());
     EXPECT_EQ(msg.getPrefix().to_string(), "1::/64");
     EXPECT_EQ(msg.getVrf(), "Vrf0");
-    ASSERT_EQ(msg.getNextHops().size(), 2);
-    EXPECT_EQ(msg.getNextHops()[0].address.to_string(), "2::2");
-    EXPECT_EQ(msg.getNextHops()[1].address.to_string(), "3::3");
-    EXPECT_EQ(msg.getNextHops()[0].ifaceName, "Ethernet0");
-    EXPECT_EQ(msg.getNextHops()[1].ifaceName, "Ethernet4");
-    EXPECT_EQ(msg.getNextHops()[0].weight, 1);
-    EXPECT_EQ(msg.getNextHops()[1].weight, 1);
 }
 
 class MockFpm : public FpmInterface
@@ -119,7 +91,7 @@ TEST_F(FpmSyncdResponseTest, RouteResponseFeedbackV4)
 {
     RouteResponseMsg msg("1.0.0.0/24", {
         {"err_str", "SWSS_RC_SUCCESS"},
-        {"state_attrs", R"#(["protocol", "bgp", "nexthop", "2.2.2.2,3.3.3.3", "ifname", "Ethernet0,Ethernet4", "weight", "1,1"])#"},
+        {"protocol", "bgp"},
     });
 
     // Expect the message to zebra is sent
@@ -133,7 +105,6 @@ TEST_F(FpmSyncdResponseTest, RouteResponseFeedbackV4)
 
         // Offload flag is set
         EXPECT_EQ(rtnl_route_get_flags(routeObject) & RTM_F_OFFLOAD, RTM_F_OFFLOAD);
-        EXPECT_EQ(rtnl_route_get_nnexthops(routeObject), 2);
 
         return 1;
     });
@@ -145,7 +116,7 @@ TEST_F(FpmSyncdResponseTest, RouteResponseFeedbackV4Vrf)
 {
     RouteResponseMsg msg("Vrf0:1.0.0.0/24", {
         {"err_str", "SWSS_RC_SUCCESS"},
-        {"state_attrs", R"#(["protocol", "200", "nexthop", "2.2.2.2,3.3.3.3", "ifname", "Ethernet0,Ethernet4", "weight", "1,1"])#"},
+        {"protocol", "200"},
     });
 
     // Expect the message to zebra is sent
@@ -159,7 +130,6 @@ TEST_F(FpmSyncdResponseTest, RouteResponseFeedbackV4Vrf)
 
         // Offload flag is set
         EXPECT_EQ(rtnl_route_get_flags(routeObject) & RTM_F_OFFLOAD, RTM_F_OFFLOAD);
-        EXPECT_EQ(rtnl_route_get_nnexthops(routeObject), 2);
 
         return 1;
     });

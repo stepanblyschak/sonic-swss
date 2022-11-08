@@ -13,28 +13,12 @@ RouteResponseMsg::RouteResponseMsg(const std::string& key, const std::vector<sws
         {
             m_errString = value;
         }
-        else if (field == "state_attrs")
+        else if (field == "protocol")
         {
-            std::vector<swss::FieldValueTuple> stateFieldValues;
-            swss::JSon::readJson(value, stateFieldValues);
-
-            if (!stateFieldValues.empty())
-            {
-                // State attributes presence indicates a set operation
-                m_isSetOperation = true;
-            }
-
-            initRouteFields(stateFieldValues);
+            m_isSetOperation = true;
+            m_protocol = value;
         }
     }
-}
-
-RouteResponseMsg::RouteResponseMsg(const std::string& key, const std::string& errString, const std::vector<swss::FieldValueTuple>& fieldValues) :
-    m_errString(errString),
-    m_isSetOperation(true)
-{
-    initVrfAndPrefix(key);
-    initRouteFields(fieldValues);
 }
 
 void RouteResponseMsg::initVrfAndPrefix(const std::string& key)
@@ -53,50 +37,4 @@ void RouteResponseMsg::initVrfAndPrefix(const std::string& key)
     }
 
     m_prefix = swss::IpPrefix{prefixString};
-}
-
-void RouteResponseMsg::initRouteFields(const std::vector<swss::FieldValueTuple>& fieldValues)
-{
-    std::vector<std::string> nextHops;
-    std::vector<std::string> ifaceNames;
-    std::vector<uint8_t> weights;
-
-    for (const auto& fieldValue: fieldValues)
-    {
-        std::string field = fvField(fieldValue);
-        std::string value = fvValue(fieldValue);
-
-        if (field == "protocol")
-        {
-            m_protocol = value;
-        }
-        else if (field == "nexthop")
-        {
-            nextHops = swss::tokenize(value, ',');
-        }
-        else if (field == "ifname")
-        {
-            ifaceNames = swss::tokenize(value, ',');
-        }
-        else if (field == "weight")
-        {
-            auto weightsStr = swss::tokenize(value, ',');
-
-            for (const auto& weightStr: weightsStr)
-            {
-                weights.emplace_back(swss::to_uint<uint8_t>(weightStr));
-            }
-        }
-    }
-
-    for (size_t i = 0; i < nextHops.size(); i++)
-    {
-        uint8_t weight{};
-        // if weight is set in DB
-        if (!weights.empty())
-        {
-            weight = weights.at(i);
-        }
-        m_nextHops.emplace_back(NextHop{nextHops[i], ifaceNames.at(i), weight});
-    }
 }

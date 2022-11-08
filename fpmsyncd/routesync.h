@@ -3,6 +3,7 @@
 
 #include "dbconnector.h"
 #include "producerstatetable.h"
+#include "notificationconsumer.h"
 #include "netmsg.h"
 #include "warmRestartHelper.h"
 #include "fpmsyncd/fpminterface.h"
@@ -30,9 +31,12 @@ public:
     virtual void onMsgRaw(struct nlmsghdr *obj);
     WarmStartHelper  m_warmStartHelper;
 
-    void onRouteResponseMsg(FpmInterface& fpm, const std::string& key, const std::vector<FieldValueTuple>& fieldValues);
+    void onRouteResponseMsg(FpmInterface& fpm, NotificationConsumer& responseChannel);
 
     void onWarmStartEnd(FpmInterface& fpm, DBConnector& applStateDb);
+
+    void setSuppressionState(bool enabled);
+
 private:
     /* regular route table */
     ProducerStateTable  m_routeTable;
@@ -95,8 +99,6 @@ private:
 
     /* Get next hop weights*/
     string getNextHopWt(struct rtnl_route *route_obj);
-
-    void initRouteFeedbackChannelState();
 };
 
 }

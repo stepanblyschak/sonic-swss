@@ -14,15 +14,7 @@
 class RouteResponseMsg
 {
 public:
-    struct NextHop
-    {
-        swss::IpAddress address;
-        std::string ifaceName;
-        uint8_t weight{};
-    };
-
     RouteResponseMsg(const std::string& key, const std::vector<swss::FieldValueTuple>& fieldValues);
-    RouteResponseMsg(const std::string& key, const std::string& errString, const std::vector<swss::FieldValueTuple>& fieldValues);
 
     bool isSetOperation() const
     {
@@ -49,12 +41,7 @@ public:
         return m_prefix;
     }
 
-    const std::vector<NextHop>& getNextHops() const
-    {
-        return m_nextHops;
-    }
-
-    std::string getProtocol() const
+    const std::string& getProtocol() const
     {
         return m_protocol;
     }
@@ -70,6 +57,4 @@ private:
     swss::IpPrefix m_prefix;
 
     std::string m_protocol{};
-
-    std::vector<NextHop> m_nextHops;
 };

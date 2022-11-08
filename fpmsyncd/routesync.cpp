@@ -55,28 +55,6 @@ RouteSync::RouteSync(RedisPipeline *pipeline) :
     m_nl_sock = nl_socket_alloc();
     nl_connect(m_nl_sock, NETLINK_ROUTE);
     rtnl_link_alloc_cache(m_nl_sock, AF_UNSPEC, &m_link_cache);
-
-    initRouteFeedbackChannelState();
-}
-
-void RouteSync::initRouteFeedbackChannelState()
-{
-    SWSS_LOG_ENTER();
-
-    DBConnector cfgDb{"CONFIG_DB", 0};
-    Table deviceMetadataTable{&cfgDb, CFG_DEVICE_METADATA_TABLE_NAME};
-    std::vector<swss::FieldValueTuple> fvs;
-    deviceMetadataTable.get("localhost", fvs);
-
-    auto iter = std::find_if(fvs.begin(), fvs.end(),
-        [](const auto& fv)
-        {
-            return fvField(fv) == "bgp-suppress-fib-pending" && fvValue(fv) == "enabled";
-        }
-    );
-    m_isFeedbackChannelEnabled = (iter != fvs.end());
-
-    SWSS_LOG_NOTICE("Route response channel is %s", m_isFeedbackChannelEnabled ? "enabled" : "disabled");
 }
 
 char *RouteSync::prefixMac2Str(char *mac, char *buf, int size)
@@ -1260,7 +1238,7 @@ string RouteSync::getNextHopWt(struct rtnl_route *route_obj)
     return result;
 }
 
-void RouteSync::onRouteResponseMsg(FpmInterface& fpm, const std::string& key, const std::vector<FieldValueTuple>& fieldValues)
+void RouteSync::onRouteResponseMsg(FpmInterface& fpm, NotificationConsumer& responseChannel)
 {
     SWSS_LOG_ENTER();
 
@@ -1269,8 +1247,17 @@ void RouteSync::onRouteResponseMsg(FpmInterface& fpm, const std::string& key, co
         return;
     }
 
-    RouteResponseMsg routeResponse{key, fieldValues};
-    m_feedbackChannel.sendRouteOffloadMessage(fpm, routeResponse);
+    std::deque<KeyOpFieldsValuesTuple> notifications;
+    responseChannel.pops(notifications);
+
+    for (const auto& notification: notifications)
+    {
+        const std::string& key = kfvKey(notification);
+        const std::vector<swss::FieldValueTuple>& fieldValues = kfvFieldsValues(notification);
+
+        RouteResponseMsg routeResponse{key, fieldValues};
+        m_feedbackChannel.sendRouteOffloadMessage(fpm, routeResponse);
+    }
 }
 
 void RouteSync::onWarmStartEnd(FpmInterface& fpm, DBConnector& applStateDb)
@@ -1288,8 +1275,9 @@ void RouteSync::onWarmStartEnd(FpmInterface& fpm, DBConnector& applStateDb)
         {
             std::vector<FieldValueTuple> fieldValues;
             routeStateTable.get(key, fieldValues);
+            fieldValues.emplace_back("err_str", "SWSS_RC_SUCCESS");
 
-            RouteResponseMsg routeResponse{key, "SWSS_RC_SUCCESS", fieldValues};
+            RouteResponseMsg routeResponse{key, fieldValues};
             m_feedbackChannel.sendRouteOffloadMessage(fpm, routeResponse);
         }
     }
@@ -1299,4 +1287,11 @@ void RouteSync::onWarmStartEnd(FpmInterface& fpm, DBConnector& applStateDb)
         m_warmStartHelper.reconcile();
         SWSS_LOG_NOTICE("Warm-Restart reconciliation processed.");
     }
+}
+
+void RouteSync::setSuppressionState(bool enabled)
+{
+    m_isFeedbackChannelEnabled = enabled;
+
+    SWSS_LOG_NOTICE("Pending routes suppression is %s", (m_isFeedbackChannelEnabled ? "enabled": "disabled"));
 }

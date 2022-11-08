@@ -15,21 +15,6 @@ extern string gMySwitchType;
 
 extern std::unique_ptr<MockResponsePublisher> gMockResponsePublisher;
 
-/* Saved original switch API since we will be mocking SAI calls*/
-static sai_switch_api_t* orig_switch_api;
-
-/* Fake SAI to return test values */
-sai_status_t fake_switch_get_attribute(sai_object_id_t oid, uint32_t count, sai_attribute_t* attrs)
-{
-    if (count == 1 && attrs[0].id == SAI_SWITCH_ATTR_NUMBER_OF_ECMP_GROUPS)
-    {
-        attrs[0].value.s32 = 0;
-        return SAI_STATUS_SUCCESS;
-    }
-
-    return orig_switch_api->get_switch_attribute(oid, count, attrs);
-}
-
 using ::testing::_;
 
 namespace routeorch_test
@@ -37,7 +22,6 @@ namespace routeorch_test
     using namespace std;
 
     shared_ptr<swss::DBConnector> m_app_db;
-    shared_ptr<swss::DBConnector> m_app_state_db;
     shared_ptr<swss::DBConnector> m_config_db;
     shared_ptr<swss::DBConnector> m_state_db;
     shared_ptr<swss::DBConnector> m_chassis_app_db;
@@ -112,9 +96,7 @@ namespace routeorch_test
 
     struct RouteOrchTest : public ::testing::Test
     {
-        bool m_noHwEcmpGroups{false};
-
-        RouteOrchTest(bool noHwEcmpGroups = false) : m_noHwEcmpGroups(noHwEcmpGroups)
+        RouteOrchTest()
         {
         }
 
@@ -143,7 +125,6 @@ namespace routeorch_test
 
             // Init switch and create dependencies
             m_app_db = make_shared<swss::DBConnector>("APPL_DB", 0);
-            m_app_state_db = make_shared<swss::DBConnector>("APPL_STATE_DB", 0);
             m_config_db = make_shared<swss::DBConnector>("CONFIG_DB", 0);
             m_state_db = make_shared<swss::DBConnector>("STATE_DB", 0);
             if(gMySwitchType == "voq")
@@ -179,10 +160,6 @@ namespace routeorch_test
             TableConnector stateDbSwitchTable(m_state_db.get(), "SWITCH_CAPABILITY");
             TableConnector conf_asic_sensors(m_config_db.get(), CFG_ASIC_SENSORS_TABLE_NAME);
             TableConnector app_switch_table(m_app_db.get(),  APP_SWITCH_TABLE_NAME);
-
-            // Enable response channel
-            Table appStateLoggingTable(m_config_db.get(), CFG_APP_STATE_LOGGING);
-            appStateLoggingTable.set(APP_ROUTE_TABLE_NAME, {{"state", "enabled"}});
 
             vector<TableConnector> switch_tables = {
                 conf_asic_sensors,
@@ -272,27 +249,7 @@ namespace routeorch_test
                 { APP_ROUTE_TABLE_NAME,        routeorch_pri },
                 { APP_LABEL_ROUTE_TABLE_NAME,  routeorch_pri }
             };
-
-            TableConnector applStateLogging{m_config_db.get(), CFG_APP_STATE_LOGGING};
-
-            if (m_noHwEcmpGroups)
-            {
-                // save original api since we will spy
-                orig_switch_api = sai_switch_api;
-                sai_switch_api = new sai_switch_api_t();
-                memcpy(sai_switch_api, orig_switch_api, sizeof(*sai_switch_api));
-
-                sai_switch_api->get_switch_attribute = fake_switch_get_attribute;
-            }
-
-            gRouteOrch = new RouteOrch(m_app_db.get(), route_tables, applStateLogging, gSwitchOrch, gNeighOrch, gIntfsOrch, gVrfOrch, gFgNhgOrch, gSrv6Orch);
-
-            if (m_noHwEcmpGroups)
-            {
-                delete sai_switch_api;
-                sai_switch_api = orig_switch_api;
-            }
-
+            gRouteOrch = new RouteOrch(m_app_db.get(), route_tables, gSwitchOrch, gNeighOrch, gIntfsOrch, gVrfOrch, gFgNhgOrch, gSrv6Orch);
             gNhgOrch = new NhgOrch(m_app_db.get(), APP_NEXTHOP_GROUP_TABLE_NAME);
 
             // Recreate buffer orch to read populated data
@@ -397,11 +354,6 @@ namespace routeorch_test
         }
     };
 
-    struct RouteOrchTestNoEcmpGroups : RouteOrchTest
-    {
-        RouteOrchTestNoEcmpGroups() : RouteOrchTest(true) {}
-    };
-
     TEST_F(RouteOrchTest, RouteOrchTestDelSetSameNexthop)
     {
         std::deque<KeyOpFieldsValuesTuple> entries;
@@ -487,23 +439,25 @@ namespace routeorch_test
 
         std::deque<KeyOpFieldsValuesTuple> entries;
         std::string key = "2.2.2.0/24";
-        std::vector<FieldValueTuple> fvs{{"ifname", "Ethernet0,Ethernet0"},
-                                         {"nexthop", "10.0.0.2,10.0.0.3"}};
+        std::vector<FieldValueTuple> fvs{{"ifname", "Ethernet0,Ethernet0"}, {"nexthop", "10.0.0.2,10.0.0.3"}, {"protocol", "bgp"}};
         entries.push_back({key, "SET", fvs});
 
         auto consumer = dynamic_cast<Consumer *>(gRouteOrch->getExecutor(APP_ROUTE_TABLE_NAME));
         consumer->addToSync(entries);
 
-        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, fvs, ReturnCode(SAI_STATUS_SUCCESS), fvs, true)).Times(1);
+        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{{"protocol", "bgp"}}, ReturnCode(SAI_STATUS_SUCCESS), true)).Times(1);
         static_cast<Orch *>(gRouteOrch)->doTask();
+
+        entries.clear();
+
+        // Route deletion
 
         entries.clear();
         entries.push_back({key, "DEL", {}});
 
         consumer->addToSync(entries);
 
-        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{},
-            ReturnCode(SAI_STATUS_SUCCESS), std::vector<FieldValueTuple>{}, true)).Times(1);
+        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{}, ReturnCode(SAI_STATUS_SUCCESS), true)).Times(1);
         static_cast<Orch *>(gRouteOrch)->doTask();
 
         gMockResponsePublisher.reset();
@@ -515,91 +469,13 @@ namespace routeorch_test
 
         std::deque<KeyOpFieldsValuesTuple> entries;
         std::string key = "11.0.0.1/32";
-        std::vector<FieldValueTuple> fvs{{"ifname", "Ethernet4"},
-                                         {"nexthop", "0.0.0.0"}};
+        std::vector<FieldValueTuple> fvs{{"ifname", "Ethernet4"}, {"nexthop", "0.0.0.0"}, {"protocol", "bgp"}};
         entries.push_back({key, "SET", fvs});
 
         auto consumer = dynamic_cast<Consumer *>(gRouteOrch->getExecutor(APP_ROUTE_TABLE_NAME));
         consumer->addToSync(entries);
 
-        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, fvs, ReturnCode(SAI_STATUS_SUCCESS), fvs, true)).Times(1);
-        static_cast<Orch *>(gRouteOrch)->doTask();
-
-        // TODO(stepanb): It is not possible to remove /32 prefix which is an IP2ME route
-#if 0
-        entries.clear();
-        entries.push_back({key, "DEL", {}});
-
-        consumer->addToSync(entries);
-
-        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{},
-            ReturnCode(SAI_STATUS_SUCCESS), std::vector<FieldValueTuple>{}, true)).Times(1);
-        static_cast<Orch *>(gRouteOrch)->doTask();
-#endif
-
-        gMockResponsePublisher.reset();
-    }
-
-    /* Test case when HW ECMP groups 0, then all routes are temporary routes and we are testing whether their response has state attributes with only one nexthop */
-    TEST_F(RouteOrchTestNoEcmpGroups, RouteOrchTestSetDelResponse)
-    {
-        gMockResponsePublisher = std::make_unique<MockResponsePublisher>();
-
-        std::deque<KeyOpFieldsValuesTuple> entries;
-        std::string key = "2.2.2.0/24";
-        std::vector<FieldValueTuple> fvs{{"ifname", "Ethernet0,Ethernet0"},
-                                         {"nexthop", "10.0.0.2,10.0.0.3"},
-                                         {"weight", "1,1"}};
-        entries.push_back({key, "SET", fvs});
-
-        auto consumer = dynamic_cast<Consumer *>(gRouteOrch->getExecutor(APP_ROUTE_TABLE_NAME));
-        consumer->addToSync(entries);
-
-        /* Make sure publish is called and the actual FVS contains only 1 nexthop */
-        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, fvs, ReturnCode(SAI_STATUS_SUCCESS), _, true)).Times(1).WillOnce(
-            [](const std::string& table, const std::string& key,
-               const std::vector<swss::FieldValueTuple>& intentAttrs,
-               const ReturnCode& status,  const std::vector<swss::FieldValueTuple>& stateAttrs,
-               bool replace)
-            {
-                EXPECT_NE(stateAttrs.size(), 0);
-                std::vector<std::string> nexthops;
-                std::vector<std::string> ifnames;
-                std::vector<std::string> weights;
-
-                for (const auto& fieldValue: stateAttrs)
-                {
-                    if (fvField(fieldValue) == "nexthop")
-                    {
-                        nexthops = swss::tokenize(fvValue(fieldValue), ',');
-                        EXPECT_EQ(nexthops.size(), 1);
-                    }
-                    else if (fvField(fieldValue) == "ifname")
-                    {
-                        ifnames = swss::tokenize(fvValue(fieldValue), ',');
-                        EXPECT_EQ(ifnames.size(), 1);
-                    }
-                    else if (fvField(fieldValue) == "weight")
-                    {
-                        weights = swss::tokenize(fvValue(fieldValue), ',');
-                        EXPECT_EQ(weights.size(), 1);
-                    }
-                }
-
-                EXPECT_FALSE(nexthops.empty());
-                EXPECT_FALSE(ifnames.empty());
-                EXPECT_FALSE(weights.empty());
-            }
-        );
-        static_cast<Orch *>(gRouteOrch)->doTask();
-
-        entries.clear();
-        entries.push_back({key, "DEL", {}});
-
-        consumer->addToSync(entries);
-
-        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{},
-            ReturnCode(SAI_STATUS_SUCCESS), std::vector<FieldValueTuple>{}, true)).Times(1);
+        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{{"protocol", "bgp"}}, ReturnCode(SAI_STATUS_SUCCESS), true)).Times(1);
         static_cast<Orch *>(gRouteOrch)->doTask();
 
         gMockResponsePublisher.reset();

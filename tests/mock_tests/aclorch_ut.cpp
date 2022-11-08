@@ -424,8 +424,7 @@ namespace aclorch_test
                 { APP_ROUTE_TABLE_NAME,        routeorch_pri },
                 { APP_LABEL_ROUTE_TABLE_NAME,  routeorch_pri }
             };
-            TableConnector applStateLogging{m_config_db.get(), CFG_APP_STATE_LOGGING};
-            gRouteOrch = new RouteOrch(m_app_db.get(), route_tables, applStateLogging, gSwitchOrch, gNeighOrch, gIntfsOrch, gVrfOrch, gFgNhgOrch, gSrv6Orch);
+            gRouteOrch = new RouteOrch(m_app_db.get(), route_tables, gSwitchOrch, gNeighOrch, gIntfsOrch, gVrfOrch, gFgNhgOrch, gSrv6Orch);
 
             vector<TableConnector> policer_tables = {
                 TableConnector(m_config_db.get(), CFG_POLICER_TABLE_NAME),

@@ -31,8 +31,7 @@ extern size_t gMaxBulkSize;
 #define DEFAULT_NUMBER_OF_ECMP_GROUPS   128
 #define DEFAULT_MAX_ECMP_GROUP_SIZE     32
 
-RouteOrch::RouteOrch(DBConnector *db, vector<table_name_with_pri_t> &tableNames, TableConnector applStateLoggingTable,
-                     SwitchOrch *switchOrch, NeighOrch *neighOrch, IntfsOrch *intfsOrch, VRFOrch *vrfOrch, FgNhgOrch *fgNhgOrch, Srv6Orch *srv6Orch) :
+RouteOrch::RouteOrch(DBConnector *db, vector<table_name_with_pri_t> &tableNames, SwitchOrch *switchOrch, NeighOrch *neighOrch, IntfsOrch *intfsOrch, VRFOrch *vrfOrch, FgNhgOrch *fgNhgOrch, Srv6Orch *srv6Orch) :
         gRouteBulker(sai_route_api, gMaxBulkSize),
         gLabelRouteBulker(sai_mpls_api, gMaxBulkSize),
         gNextHopGroupMemberBulker(sai_next_hop_group_api, gSwitchId, gMaxBulkSize),
@@ -44,14 +43,11 @@ RouteOrch::RouteOrch(DBConnector *db, vector<table_name_with_pri_t> &tableNames,
         m_fgNhgOrch(fgNhgOrch),
         m_nextHopGroupCount(0),
         m_srv6Orch(srv6Orch),
-        m_resync(false),
-        m_appStateLoggingTable(applStateLoggingTable.first, applStateLoggingTable.second)
+        m_resync(false)
 {
     SWSS_LOG_ENTER();
 
     m_publisher.setBuffered(true);
-
-    initAppStateLoggingState();
 
     sai_attribute_t attr;
     attr.id = SAI_SWITCH_ATTR_NUMBER_OF_ECMP_GROUPS;
@@ -513,7 +509,7 @@ void RouteOrch::doTask(Consumer& consumer)
             {
                 ctx.clear();
             }
-            ctx.kofvs = t;
+            ctx.key = key;
 
             /* Get notification from application */
             /* resync application:
@@ -637,6 +633,11 @@ void RouteOrch::doTask(Consumer& consumer)
 
                     if (fvField(i) == "seg_src")
                         srv6_source = fvValue(i);
+
+                    if (fvField(i) == "protocol")
+                    {
+                        ctx.protocol = fvValue(i);
+                    }
                 }
 
                 /*
@@ -1627,7 +1628,6 @@ void RouteOrch::addTempRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextH
     /* Set the route's temporary next hop to be the randomly picked one */
     NextHopGroupKey tmp_next_hop((*it).to_string());
     ctx.tmp_next_hop = tmp_next_hop;
-    ctx.using_temp_nhg = true;
 
     addRoute(ctx, tmp_next_hop);
 }
@@ -2590,65 +2590,22 @@ void RouteOrch::decNhgRefCount(const std::string &nhg_index)
     }
 }
 
-void RouteOrch::initAppStateLoggingState()
-{
-    SWSS_LOG_ENTER();
-
-    std::vector<swss::FieldValueTuple> fvs;
-    m_appStateLoggingTable.get(APP_ROUTE_TABLE_NAME, fvs);
-
-    auto iter = std::find_if(fvs.begin(), fvs.end(),
-        [](const auto& fv)
-        {
-            return fvField(fv) == "state" && fvValue(fv) == "enabled";
-        }
-    );
-    m_publishRouteState = (iter != fvs.end());
-
-    SWSS_LOG_NOTICE("Route response channel is %s", m_publishRouteState ? "enabled" : "disabled");
-}
-
 void RouteOrch::publishRouteState(const std::string& table, const RouteBulkContext& ctx, const ReturnCode& status)
 {
     SWSS_LOG_ENTER();
 
-    if (!m_publishRouteState)
+    std::vector<FieldValueTuple> fvs;
+
+    if (!ctx.protocol.empty())
     {
-        return;
-    }
-
-    std::vector<FieldValueTuple> stateAttrsVec{kfvFieldsValues(ctx.kofvs)};
-
-    /* If route is using temporary next hop replace appl db attributes with actual next hop */
-    if (ctx.using_temp_nhg)
-    {
-        const auto& tempNextHop = *ctx.tmp_next_hop.getNextHops().begin();
-
-        for (auto& fieldValue: stateAttrsVec)
-        {
-            const auto& field = fvField(fieldValue);
-            auto& value = fvValue(fieldValue);
-
-            if (field == "nexthop")
-            {
-                value = tempNextHop.ip_address.to_string();
-            }
-            else if (field == "ifname")
-            {
-                value = tempNextHop.alias;
-            }
-            else if (field == "weight")
-            {
-                value = std::to_string(tempNextHop.weight);
-            }
-        }
-    }
+        fvs.emplace_back("protocol", ctx.protocol);
+    };
 
     const bool replace = true;
 
     /* If operation is "DEL" then ctx.kofvs will contain empty fvs
      * which will make ResponsePublisher::publish() remove the state
      * entry from APPL_STATE_DB */
-    m_publisher.publish(table, kfvKey(ctx.kofvs), kfvFieldsValues(ctx.kofvs), status, stateAttrsVec, replace);
+    m_publisher.publish(table, ctx.key, fvs, status, replace);
 }
 

@@ -82,33 +82,6 @@ void RouteFeedbackChannel::sendRouteOffloadMessage(FpmInterface& fpm, const Rout
     // Mark route as OFFLOAD
     rtnl_route_set_flags(routeObject.get(), RTM_F_OFFLOAD);
 
-    for (const auto& nextHop: routeResponse.getNextHops())
-    {
-        auto nhAddr = makeNlAddr(nextHop.address);
-
-        auto* nhLink = m_linkCache.getLinkByName(nextHop.ifaceName.c_str());
-        if (!nhLink)
-        {
-            SWSS_LOG_DEBUG("Failed to find link for interface %s when constructing response message for prefix %s(%s). "
-                "This message is probably outdated", nextHop.ifaceName.c_str(),
-                routeResponse.getPrefix().to_string().c_str(), routeResponse.getVrf().c_str());
-            return;
-        }
-
-        auto* nlNextHop = rtnl_route_nh_alloc();
-
-        rtnl_route_nh_set_gateway(nlNextHop, nhAddr.get());
-        rtnl_route_nh_set_ifindex(nlNextHop, rtnl_link_get_ifindex(nhLink));
-
-        // if weight was set in DB
-        if (nextHop.weight)
-        {
-            rtnl_route_nh_set_weight(nlNextHop, nextHop.weight);
-        }
-
-        rtnl_route_add_nexthop(routeObject.get(), nlNextHop);
-    }
-
     nl_msg* msg{};
     rtnl_route_build_add_request(routeObject.get(), NLM_F_CREATE, &msg);
 

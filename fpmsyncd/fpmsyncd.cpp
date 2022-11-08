@@ -5,6 +5,7 @@
 #include "selectabletimer.h"
 #include "netdispatcher.h"
 #include "notificationconsumer.h"
+#include "subscriberstatetable.h"
 #include "warmRestartHelper.h"
 #include "fpmsyncd/fpmlink.h"
 #include "fpmsyncd/routesync.h"
@@ -14,6 +15,10 @@
 
 using namespace std;
 using namespace swss;
+
+constexpr auto LOCALHOST_KEY = "localhost";
+constexpr auto SUPPRESS_PENDING_FIB_FIELD = "suppress-pending-fib";
+constexpr auto ENABLED_STR = "enabled";
 
 /*
  * Default warm-restart timer interval for routing-stack app. To be used only if
@@ -51,6 +56,9 @@ int main(int argc, char **argv)
 {
     swss::Logger::linkToDbNative("fpmsyncd");
     DBConnector db("APPL_DB", 0);
+    DBConnector cfgDb("CONFIG_DB", 0);
+    SubscriberStateTable deviceMetadataTableSubscriber(&cfgDb, CFG_DEVICE_METADATA_TABLE_NAME);
+    Table deviceMetadataTable(&cfgDb, CFG_DEVICE_METADATA_TABLE_NAME);
     DBConnector applStateDb("APPL_STATE_DB", 0);
     NotificationConsumer responseChannel(&applStateDb, "APPL_DB_ROUTE_TABLE_RESPONSE_CHANNEL");
     RedisPipeline pipeline(&db);
@@ -63,6 +71,11 @@ int main(int argc, char **argv)
     NetDispatcher::getInstance().registerMessageHandler(RTM_DELROUTE, &sync);
 
     rtnl_route_read_protocol_names(DEFAULT_RT_PROTO_PATH);
+
+    std::string suppressionEnabledStr;
+
+    deviceMetadataTable.hget(LOCALHOST_KEY, SUPPRESS_PENDING_FIB_FIELD, suppressionEnabledStr);
+    sync.setSuppressionState(suppressionEnabledStr == ENABLED_STR);
 
     while (true)
     {
@@ -88,6 +101,7 @@ int main(int argc, char **argv)
 
             s.addSelectable(&fpm);
             s.addSelectable(&responseChannel);
+            s.addSelectable(&deviceMetadataTableSubscriber);
 
             /* If warm-restart feature is enabled, execute 'restoration' logic */
             bool warmStartEnabled = sync.m_warmStartHelper.checkAndStart();
@@ -187,17 +201,14 @@ int main(int argc, char **argv)
                         s.removeSelectable(&eoiuCheckTimer);
                     }
                 }
+                else if (temps == &deviceMetadataTableSubscriber)
+                {
+                    deviceMetadataTable.hget(LOCALHOST_KEY, SUPPRESS_PENDING_FIB_FIELD, suppressionEnabledStr);
+                    sync.setSuppressionState(suppressionEnabledStr == ENABLED_STR);
+                }
                 else if (temps == &responseChannel)
                 {
-                    std::deque<KeyOpFieldsValuesTuple> notifications;
-                    responseChannel.pops(notifications);
-
-                    for (const auto& notification: notifications)
-                    {
-                        const std::string& key = kfvKey(notification);
-                        const std::vector<swss::FieldValueTuple>& values = kfvFieldsValues(notification);
-                        sync.onRouteResponseMsg(fpm, key, values);
-                    }
+                    sync.onRouteResponseMsg(fpm, responseChannel);
                 }
                 else if (!warmStartEnabled || sync.m_warmStartHelper.isReconciled())
                 {
