@@ -122,8 +122,11 @@ struct RouteBulkContext
     // using_temp_nhg will track if the NhgOrch's owned NHG is temporary or not
     bool                                using_temp_nhg;
 
-    RouteBulkContext()
-        : excp_intfs_flag(false), using_temp_nhg(false)
+    std::string                         key;       // Key in database table
+    std::string                         protocol;  // Protocol string
+
+    RouteBulkContext(const std::string& key)
+        : key(key), excp_intfs_flag(false), using_temp_nhg(false)
     {
     }
 
@@ -139,6 +142,8 @@ struct RouteBulkContext
         excp_intfs_flag = false;
         vrf_id = SAI_NULL_OBJECT_ID;
         using_temp_nhg = false;
+        key.clear();
+        protocol.clear();
     }
 };
 
@@ -269,6 +274,8 @@ private:
     const NhgBase &getNhg(const std::string& nhg_index);
     void incNhgRefCount(const std::string& nhg_index);
     void decNhgRefCount(const std::string& nhg_index);
+
+    void publishRouteState(const RouteBulkContext& ctx, const ReturnCode& status);
 };
 
 #endif /* SWSS_ROUTEORCH_H */
