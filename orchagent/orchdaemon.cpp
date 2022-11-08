@@ -677,6 +677,11 @@ void OrchDaemon::flush()
         SWSS_LOG_ERROR("Failed to flush redis pipeline %d", status);
         abort();
     }
+
+    for (auto* orch: m_orchList)
+    {
+        orch->flushResponses();
+    }
 }
 
 /* Release the file handle so the log can be rotated */
@@ -689,11 +694,6 @@ void OrchDaemon::logRotate() {
     if (status != SAI_STATUS_SUCCESS)
     {
         SWSS_LOG_ERROR("Failed to release the file handle on sairedis log %d", status);
-    }
-
-    for (auto* orch: m_orchList)
-    {
-        orch->flushResponses();
     }
 }
 

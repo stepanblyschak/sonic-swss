@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 
-#include <swss/json.h>
-
 #include "timestamp.h"
 
 extern bool gResponsePublisherRecord;
@@ -114,14 +112,10 @@ void ResponsePublisher::publish(const std::string &table, const std::string &key
     std::string response_channel = "APPL_DB_" + table + "_RESPONSE_CHANNEL";
     swss::NotificationProducer notificationProducer{m_pipe.get(), response_channel, m_buffered};
 
-    auto intent_attrs_copy = state_attrs;
+    auto intent_attrs_copy = intent_attrs;
     // Add error message as the first field-value-pair.
     swss::FieldValueTuple err_str("err_str", PrependedComponent(status) + status.message());
     intent_attrs_copy.insert(intent_attrs_copy.begin(), err_str);
-    // Send state attrs
-    std::string state_attrs_serialized = swss::JSon::buildJson(state_attrs);
-    swss::FieldValueTuple state_attrs_fv("state_attrs", state_attrs_serialized);
-    intent_attrs_copy.insert(intent_attrs_copy.begin(), state_attrs_fv);
     // Sends the response to the notification channel.
     notificationProducer.send(status.codeStr(), key, intent_attrs_copy);
     RecordResponse(response_channel, key, intent_attrs_copy, status.codeStr());
