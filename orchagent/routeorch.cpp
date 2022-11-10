@@ -838,8 +838,9 @@ void RouteOrch::doTask(Consumer& consumer)
                     /* fullmask subnet route is same as ip2me route */
                     else if (ip_prefix.isFullMask() && m_intfsOrch->isPrefixSubnet(ip_prefix, alsv[0]))
                     {
-                        /* We're not programming any route in this case but we do have to publish response
-                         * for it because the route was already programmed by IntfOrch as part of interface configuration */
+                        /* The prefix is full mask (/32 or /128) and it is an interface subnet route, so IntfOrch has already
+                         * created an IP2ME route for it and we skip programming such route here as it already exists.
+                         * However, to keep APPL_DB and APPL_STATE_DB consistent we have to publish it. */
                         publishRouteState(ctx, ReturnCode(SAI_STATUS_SUCCESS));
                         it = consumer.m_toSync.erase(it);
                     }
@@ -2603,7 +2604,7 @@ void RouteOrch::publishRouteState(const RouteBulkContext& ctx, const ReturnCode&
     if (!ctx.protocol.empty())
     {
         fvs.emplace_back("protocol", ctx.protocol);
-    };
+    }
 
     const bool replace = true;
 
