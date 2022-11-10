@@ -96,7 +96,7 @@ void RouteFeedbackChannel::sendRouteOffloadMessage(FpmInterface& fpm, const Rout
         return;
     }
 
-    SWSS_LOG_DEBUG("Sent response to zebra on prefix %s(%s)",
+    SWSS_LOG_ERROR("Sent response to zebra on prefix %s(%s)",
         routeResponse.getPrefix().to_string().c_str(), routeResponse.getVrf().c_str());
 }
 

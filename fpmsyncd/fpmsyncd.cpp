@@ -74,7 +74,7 @@ int main(int argc, char **argv)
 
     std::string suppressionEnabledStr;
 
-    deviceMetadataTable.hget(LOCALHOST_KEY, SUPPRESS_PENDING_FIB_FIELD, suppressionEnabledStr);
+    deviceMetadataTable.hget("localhost", "suppress-pending-fib", suppressionEnabledStr);
     sync.setSuppressionState(suppressionEnabledStr == ENABLED_STR);
 
     while (true)
@@ -88,6 +88,8 @@ int main(int argc, char **argv)
             SelectableTimer eoiuCheckTimer(timespec{0, 0});
             // After eoiu flags are detected, start a hold timer before starting reconciliation.
             SelectableTimer eoiuHoldTimer(timespec{0, 0});
+
+            sync.m_fpm = &fpm;
 
             /*
              * Pipeline should be flushed right away to deal with state pending
@@ -203,8 +205,47 @@ int main(int argc, char **argv)
                 }
                 else if (temps == &deviceMetadataTableSubscriber)
                 {
-                    deviceMetadataTable.hget(LOCALHOST_KEY, SUPPRESS_PENDING_FIB_FIELD, suppressionEnabledStr);
-                    sync.setSuppressionState(suppressionEnabledStr == ENABLED_STR);
+                    std::deque<KeyOpFieldsValuesTuple> keyOpFvsQueue;
+                    deviceMetadataTableSubscriber.pops(keyOpFvsQueue);
+
+                    for (const auto& keyOpFvs: keyOpFvsQueue)
+                    {
+                        const auto& key = kfvKey(keyOpFvs);
+                        const auto& op = kfvOp(keyOpFvs);
+                        const auto& fvs = kfvFieldsValues(keyOpFvs);
+
+                        if (op != SET_COMMAND)
+                        {
+                            continue;
+                        }
+
+                        if (key != "localhost")
+                        {
+                            continue;
+                        }
+
+                        for (const auto& fv: fvs)
+                        {
+                            const auto& field = fvField(fv);
+                            const auto& value = fvValue(fv);
+
+                            if (field != "suppress-pending-fib")
+                            {
+                                continue;
+                            }
+
+                            if (value == "enabled")
+                            {
+                                sync.setSuppressionState(true);
+                                s.addSelectable(&responseChannel);
+                            }
+                            else
+                            {
+                                sync.setSuppressionState(false);
+                                s.removeSelectable(&responseChannel);
+                            }
+                        }
+                    }
                 }
                 else if (temps == &responseChannel)
                 {

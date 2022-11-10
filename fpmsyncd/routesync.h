@@ -37,6 +37,8 @@ public:
 
     void setSuppressionState(bool enabled);
 
+    FpmInterface* m_fpm{nullptr};
+
 private:
     /* regular route table */
     ProducerStateTable  m_routeTable;

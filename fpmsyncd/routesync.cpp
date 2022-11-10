@@ -611,6 +611,22 @@ void RouteSync::onMsg(int nlmsg_type, struct nl_object *obj)
     {
         onRouteMsg(nlmsg_type, obj, NULL);
     }
+
+    if (!m_isFeedbackChannelEnabled)
+    {
+        rtnl_route_set_flags(route_obj, RTM_F_OFFLOAD);
+
+        nl_msg* msg{};
+        rtnl_route_build_add_request(route_obj, NLM_F_CREATE, &msg);
+
+        auto ownedMsg = std::unique_ptr<nl_msg, void(*)(nl_msg*)>(msg, nlmsg_free);
+
+        // Send to zebra
+        if (!m_fpm->send(ownedMsg.get()))
+        {
+            return;
+        }
+    }
 }
 
 /*
