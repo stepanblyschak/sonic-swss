@@ -43,6 +43,8 @@ public:
 
     void onRouteResponse(const std::string& key, const std::vector<FieldValueTuple>& fieldValues);
 
+    void onWarmStartEnd(swss::DBConnector& applStateDb);
+
     WarmStartHelper  m_warmStartHelper;
     FpmInterface* m_fpmInterface {nullptr};
 

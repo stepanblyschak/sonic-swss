@@ -1418,3 +1418,31 @@ void RouteSync::onRouteResponse(const std::string& key, const std::vector<FieldV
     SWSS_LOG_INFO("Sent response to zebra for prefix %s(%s)",
         prefix.to_string().c_str(), vrfName.c_str());
 }
+
+void RouteSync::onWarmStartEnd(DBConnector& applStateDb)
+{
+    SWSS_LOG_ENTER();
+
+    if (isSuppressionEnabled())
+    {
+        Table routeStateTable{&applStateDb, APP_ROUTE_TABLE_NAME};
+
+        std::vector<std::string> keys;
+        routeStateTable.getKeys(keys);
+
+        for (const auto& key: keys)
+        {
+            std::vector<FieldValueTuple> fieldValues;
+            routeStateTable.get(key, fieldValues);
+            fieldValues.emplace_back("err_str", "SWSS_RC_SUCCESS");
+            
+            onRouteResponse(key, fieldValues);
+        }
+    }
+
+    if (m_warmStartHelper.inProgress())
+    {
+        m_warmStartHelper.reconcile();
+        SWSS_LOG_NOTICE("Warm-Restart reconciliation processed.");
+    }
+}

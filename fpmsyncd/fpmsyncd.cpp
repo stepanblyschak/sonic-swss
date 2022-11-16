@@ -164,11 +164,8 @@ int main(int argc, char **argv)
                         SWSS_LOG_NOTICE("Warm-Restart EOIU hold timer expired.");
                     }
 
-                    if (sync.m_warmStartHelper.inProgress())
-                    {
-                        sync.m_warmStartHelper.reconcile();
-                        SWSS_LOG_NOTICE("Warm-Restart reconciliation processed.");
-                    }
+                    sync.onWarmStartEnd(applStateDb);
+
                     // remove the one-shot timer.
                     s.removeSelectable(temps);
                     pipeline.flush();
