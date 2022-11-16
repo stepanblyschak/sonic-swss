@@ -4,9 +4,13 @@
 #include "dbconnector.h"
 #include "producerstatetable.h"
 #include "netmsg.h"
+#include "linkcache.h"
+#include "fpminterface.h"
 #include "warmRestartHelper.h"
 #include <string.h>
 #include <bits/stdc++.h>
+
+#include <netlink/route/route.h>
 
 using namespace std;
 
@@ -29,8 +33,17 @@ public:
     virtual void onMsg(int nlmsg_type, struct nl_object *obj);
 
     virtual void onMsgRaw(struct nlmsghdr *obj);
-    WarmStartHelper  m_warmStartHelper;
 
+    void setSuppressionEnabled(bool enabled);
+
+    bool isSuppressionEnabled() const
+    {
+        return m_isSuppressionEnabled;
+    }
+
+    void onRouteResponse(const std::string& key, const std::vector<FieldValueTuple>& fieldValues);
+
+    WarmStartHelper  m_warmStartHelper;
     FpmInterface* m_fpmInterface {nullptr};
 
 private:
@@ -44,6 +57,8 @@ private:
     ProducerStateTable  m_vnet_tunnelTable; 
     struct nl_cache    *m_link_cache;
     struct nl_sock     *m_nl_sock;
+
+    LinkCache& m_linkCache{LinkCache::getInstance()};
 
     bool m_isSuppressionEnabled{false};
 

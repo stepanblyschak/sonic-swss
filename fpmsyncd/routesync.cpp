@@ -10,6 +10,7 @@
 #include "fpmsyncd/fpmlink.h"
 #include "fpmsyncd/routesync.h"
 #include "macaddress.h"
+#include "converter.h"
 #include <string.h>
 #include <arpa/inet.h>
 
@@ -57,6 +58,22 @@ static string getProtocolString(int proto)
 
     return buffer;
 }
+
+/* Helper to create unique pointer with custom destructor */
+template<typename T, typename F>
+static decltype(auto) makeUniqueWithDestructor(T* ptr, F func)
+{
+    return std::unique_ptr<T, F>(ptr, func);
+}
+
+template<typename T>
+static decltype(auto) makeNlAddr(const T& ip)
+{
+    nl_addr* addr;
+    nl_addr_parse(ip.to_string().c_str(), AF_UNSPEC, &addr);
+    return makeUniqueWithDestructor(addr, nl_addr_put);
+}
+
 
 RouteSync::RouteSync(RedisPipeline *pipeline) :
     m_routeTable(pipeline, APP_ROUTE_TABLE_NAME, true),
@@ -641,7 +658,7 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
     struct nl_addr *dip;
     char destipprefix[IFNAMSIZ + MAX_ADDR_SIZE + 2] = {0};
 
-    if (!m_isSuppressionEnabled)
+    if (!isSuppressionEnabled())
     {
         sendOffloadReply(route_obj);
     }
@@ -1286,4 +1303,118 @@ void RouteSync::sendOffloadReply(struct rtnl_route* route_obj)
     auto ownedMsg = std::unique_ptr<nl_msg, void(*)(nl_msg*)>(msg, nlmsg_free);
 
     sendOffloadReply(nlmsg_hdr(ownedMsg.get()));
+}
+
+void RouteSync::setSuppressionEnabled(bool enabled)
+{
+    SWSS_LOG_ENTER();
+
+    m_isSuppressionEnabled = enabled;
+
+    SWSS_LOG_NOTICE("Pending routes suppression is %s", (m_isSuppressionEnabled ? "enabled": "disabled"));
+}
+
+void RouteSync::onRouteResponse(const std::string& key, const std::vector<FieldValueTuple>& fieldValues)
+{
+    IpPrefix prefix;
+    std::string vrfName;
+    std::string protocol;
+
+    bool isSetOperation{false};
+    bool isSuccessReply{false};
+
+    if (!isSuppressionEnabled())
+    {
+        return;
+    }
+
+    auto colon = key.find(':');
+    if (colon != std::string::npos && key.substr(0, colon).find("Vrf") != std::string::npos)
+    {
+        vrfName = key.substr(0, colon);
+        prefix = IpPrefix{key.substr(colon + 1)};
+    }
+    else
+    {
+        prefix = IpPrefix{key};
+    }
+
+    for (const auto& fieldValue: fieldValues)
+    {
+        std::string field = fvField(fieldValue);
+        std::string value = fvValue(fieldValue);
+
+        if (field == "err_str")
+        {
+            isSuccessReply = (value == "SWSS_RC_SUCCESS");
+        }
+        else if (field == "protocol")
+        {
+            isSetOperation = true;
+            protocol = value;
+        }
+    }
+
+    if (!isSetOperation)
+    {
+        SWSS_LOG_DEBUG("Received response for prefix %s(%s) deletion, ignoring ",
+            prefix.to_string().c_str(), vrfName.c_str());
+        return;
+    }
+
+    auto routeObject = makeUniqueWithDestructor(rtnl_route_alloc(), rtnl_route_put);
+    auto dstAddr = makeNlAddr(prefix);
+
+    rtnl_route_set_dst(routeObject.get(), dstAddr.get());
+
+    auto proto = rtnl_route_str2proto(protocol.c_str());
+    if (proto < 0)
+    {
+        proto = swss::to_uint<uint8_t>(protocol);
+    }
+
+    rtnl_route_set_protocol(routeObject.get(), static_cast<uint8_t>(proto));
+    rtnl_route_set_family(routeObject.get(), prefix.isV4() ? AF_INET : AF_INET6);
+
+    unsigned int vrfIfIndex = 0;
+    if (!vrfName.empty())
+    {
+        auto* link = m_linkCache.getLinkByName(vrfName.c_str());
+        if (!link)
+        {
+            SWSS_LOG_DEBUG("Failed to find VRF when constructing response message for prefix %s(%s). "
+                "This message is probably outdated", prefix.to_string().c_str(),
+                vrfName.c_str());
+            return;
+        }
+        vrfIfIndex = rtnl_link_get_ifindex(link);
+    }
+
+    rtnl_route_set_table(routeObject.get(), vrfIfIndex);
+
+    unsigned int flags = 0;
+
+    if (isSuccessReply)
+    {
+        flags |= RTM_F_OFFLOAD;
+    }
+
+    // Mark route as OFFLOAD
+    rtnl_route_set_flags(routeObject.get(), RTM_F_OFFLOAD);
+
+    nl_msg* msg{};
+    rtnl_route_build_add_request(routeObject.get(), NLM_F_CREATE, &msg);
+
+    auto ownedMsg = makeUniqueWithDestructor(msg, nlmsg_free);
+
+    // Send to zebra
+    if (!m_fpmInterface->send(nlmsg_hdr(ownedMsg.get())))
+    {
+        SWSS_LOG_ERROR("Failed to send RTM_NEWROUTE message to zebra on prefix %s(%s)",
+            prefix.to_string().c_str(), vrfName.c_str());
+        return;
+    }
+
+    SWSS_LOG_INFO("Sent response to zebra for prefix %s(%s)",
+        prefix.to_string().c_str(), vrfName.c_str());
 }

@@ -170,7 +170,16 @@ tests_intfmgrd_LDADD = $(LDADD_GTEST) $(LDADD_SAI) -lnl-genl-3 -lhiredis -lhired
 ## fpmsyncd unit tests
 
 tests_fpmsyncd_SOURCES = fpmsyncd/test_fpmlink.cpp \
-                         $(top_srcdir)/fpmsyncd/fpmlink.cpp
+                         fpmsyncd/test_routesync.cpp \
+                         fpmsyncd/fake_linkcache.cpp \
+                         fpmsyncd/fake_warmstarthelper.cpp \
+                         fpmsyncd/fake_producerstatetable.cpp \
+                         mock_dbconnector.cpp \
+                         mock_table.cpp \
+                         mock_hiredis.cpp \
+                         $(top_srcdir)/warmrestart/ \
+                         $(top_srcdir)/fpmsyncd/fpmlink.cpp \
+                         $(top_srcdir)/fpmsyncd/routesync.cpp
 
 tests_fpmsyncd_INCLUDES = $(tests_INCLUDES) -I$(top_srcdir)/tests_fpmsyncd -I$(top_srcdir)/lib -I$(top_srcdir)/warmrestart
 tests_fpmsyncd_CFLAGS = $(DBGFLAGS) $(AM_CFLAGS) $(CFLAGS_COMMON) $(CFLAGS_GTEST) $(CFLAGS_SAI)
