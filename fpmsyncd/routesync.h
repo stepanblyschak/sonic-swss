@@ -31,6 +31,8 @@ public:
     virtual void onMsgRaw(struct nlmsghdr *obj);
     WarmStartHelper  m_warmStartHelper;
 
+    FpmInterface* m_fpmInterface {nullptr};
+
 private:
     /* regular route table */
     ProducerStateTable  m_routeTable;
@@ -42,6 +44,8 @@ private:
     ProducerStateTable  m_vnet_tunnelTable; 
     struct nl_cache    *m_link_cache;
     struct nl_sock     *m_nl_sock;
+
+    bool m_isSuppressionEnabled{false};
 
     /* Handle regular route (include VRF route) */
     void onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf);
@@ -90,6 +94,12 @@ private:
 
     /* Get next hop weights*/
     string getNextHopWt(struct rtnl_route *route_obj);
+
+    /* Sends FPM message with RTM_F_OFFLOAD flag set to zebra */
+    void sendOffloadReply(struct nlmsghdr* hdr);
+
+    /* Sends FPM message with RTM_F_OFFLOAD flag set to zebra */
+    void sendOffloadReply(struct rtnl_route* route_obj);
 };
 
 }

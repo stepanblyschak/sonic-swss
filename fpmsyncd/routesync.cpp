@@ -371,6 +371,8 @@ void RouteSync::onEvpnRouteMsg(struct nlmsghdr *h, int len)
     int nlmsg_type = h->nlmsg_type;
     unsigned int vrf_index;
 
+    sendOffloadReply(h);
+
     rtm = (struct rtmsg *)NLMSG_DATA(h);
 
     /* Parse attributes and extract fields of interest. */
@@ -639,6 +641,11 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
     struct nl_addr *dip;
     char destipprefix[IFNAMSIZ + MAX_ADDR_SIZE + 2] = {0};
 
+    if (!m_isSuppressionEnabled)
+    {
+        sendOffloadReply(route_obj);
+    }
+
     if (vrf)
     {
         /*
@@ -807,6 +814,8 @@ void RouteSync::onLabelRouteMsg(int nlmsg_type, struct nl_object *obj)
     struct nl_addr *daddr;
     char destaddr[MAX_ADDR_SIZE + 1] = {0};
 
+    sendOffloadReply(route_obj);
+
     daddr = rtnl_route_get_dst(route_obj);
     nl_addr2str(daddr, destaddr, MAX_ADDR_SIZE);
     SWSS_LOG_INFO("Receive new LabelRoute message dest addr: %s", destaddr);
@@ -897,6 +906,8 @@ void RouteSync::onLabelRouteMsg(int nlmsg_type, struct nl_object *obj)
 void RouteSync::onVnetRouteMsg(int nlmsg_type, struct nl_object *obj, string vnet)
 {
     struct rtnl_route *route_obj = (struct rtnl_route *)obj;
+
+    sendOffloadReply(route_obj);
 
     /* Get the destination IP prefix */
     struct nl_addr *dip = rtnl_route_get_dst(route_obj);
@@ -1240,4 +1251,39 @@ string RouteSync::getNextHopWt(struct rtnl_route *route_obj)
     }
 
     return result;
+}
+
+void RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
+{
+    SWSS_LOG_ENTER();
+
+    assert(m_fpmInterface);
+
+    if (hdr->nlmsg_type != RTM_NEWROUTE)
+    {
+        return;
+    }
+
+    struct rtmsg *rtm = static_cast<struct rtmsg*>(NLMSG_DATA(hdr));
+
+    rtm->rtm_flags |= RTM_F_OFFLOAD;
+
+    // Send to zebra
+    if (!m_fpmInterface->send(hdr))
+    {
+        SWSS_LOG_ERROR("Failed to send reply to zebra");
+        return;
+    }
+}
+
+void RouteSync::sendOffloadReply(struct rtnl_route* route_obj)
+{
+    SWSS_LOG_ENTER();
+
+    nl_msg* msg{};
+    rtnl_route_build_add_request(route_obj, NLM_F_CREATE, &msg);
+
+    auto ownedMsg = std::unique_ptr<nl_msg, void(*)(nl_msg*)>(msg, nlmsg_free);
+
+    sendOffloadReply(nlmsg_hdr(ownedMsg.get()));
 }
