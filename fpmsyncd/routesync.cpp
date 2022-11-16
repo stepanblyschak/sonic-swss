@@ -44,6 +44,20 @@ using namespace swss;
 
 #define ETHER_ADDR_STRLEN (3*ETH_ALEN)
 
+/* Returns name of the protocol passed number represents */
+static string getProtocolString(int proto)
+{
+    static constexpr size_t protocolNameBufferSize = 128;
+    char buffer[protocolNameBufferSize] = {};
+
+    if (!rtnl_route_proto2str(proto, buffer, sizeof(buffer)))
+    {
+        return std::to_string(proto);
+    }
+
+    return buffer;
+}
+
 RouteSync::RouteSync(RedisPipeline *pipeline) :
     m_routeTable(pipeline, APP_ROUTE_TABLE_NAME, true),
     m_label_routeTable(pipeline, APP_LABEL_ROUTE_TABLE_NAME, true),
@@ -737,10 +751,15 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
         }
     }
 
+    auto proto_num = rtnl_route_get_protocol(route_obj);
+    auto proto_str = getProtocolString(proto_num);
+
     vector<FieldValueTuple> fvVector;
+    FieldValueTuple proto("protocol", proto_str);
     FieldValueTuple gw("nexthop", gw_list);
     FieldValueTuple intf("ifname", intf_list);
 
+    fvVector.push_back(proto);
     fvVector.push_back(gw);
     fvVector.push_back(intf);
     if (!mpls_list.empty())

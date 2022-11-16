@@ -8,6 +8,7 @@
 #include "fpmsyncd/fpmlink.h"
 #include "fpmsyncd/routesync.h"
 
+#include <netlink/route/route.h>
 
 using namespace std;
 using namespace swss;
@@ -56,6 +57,8 @@ int main(int argc, char **argv)
 
     NetDispatcher::getInstance().registerMessageHandler(RTM_NEWROUTE, &sync);
     NetDispatcher::getInstance().registerMessageHandler(RTM_DELROUTE, &sync);
+
+    rtnl_route_read_protocol_names(DefaultRtProtoPath);
 
     while (true)
     {
