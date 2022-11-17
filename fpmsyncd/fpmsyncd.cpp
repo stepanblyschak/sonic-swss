@@ -106,6 +106,11 @@ int main(int argc, char **argv)
             s.addSelectable(&fpm);
             s.addSelectable(&deviceMetadataTableSubscriber);
 
+            if (sync.isSuppressionEnabled())
+            {
+                s.addSelectable(routeResponseChannel.get());
+            }
+
             /* If warm-restart feature is enabled, execute 'restoration' logic */
             bool warmStartEnabled = sync.m_warmStartHelper.checkAndStart();
             if (warmStartEnabled)
