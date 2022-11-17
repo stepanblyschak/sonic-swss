@@ -2606,7 +2606,7 @@ void RouteOrch::publishRouteState(const RouteBulkContext& ctx, const ReturnCode&
         fvs.emplace_back("protocol", ctx.protocol);
     }
 
-    const bool replace = true;
+    const bool replace = false;
 
     m_publisher.publish(APP_ROUTE_TABLE_NAME, ctx.key, fvs, status, replace);
 }
