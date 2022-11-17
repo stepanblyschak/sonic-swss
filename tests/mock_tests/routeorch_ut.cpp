@@ -443,7 +443,7 @@ namespace routeorch_test
         auto consumer = dynamic_cast<Consumer *>(gRouteOrch->getExecutor(APP_ROUTE_TABLE_NAME));
         consumer->addToSync(entries);
 
-        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{{"protocol", "bgp"}}, ReturnCode(SAI_STATUS_SUCCESS), true)).Times(1);
+        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{{"protocol", "bgp"}}, ReturnCode(SAI_STATUS_SUCCESS), false)).Times(1);
         static_cast<Orch *>(gRouteOrch)->doTask();
 
         entries.clear();
@@ -455,7 +455,7 @@ namespace routeorch_test
 
         consumer->addToSync(entries);
 
-        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{}, ReturnCode(SAI_STATUS_SUCCESS), true)).Times(1);
+        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{}, ReturnCode(SAI_STATUS_SUCCESS), false)).Times(1);
         static_cast<Orch *>(gRouteOrch)->doTask();
 
         gMockResponsePublisher.reset();
@@ -473,7 +473,7 @@ namespace routeorch_test
         auto consumer = dynamic_cast<Consumer *>(gRouteOrch->getExecutor(APP_ROUTE_TABLE_NAME));
         consumer->addToSync(entries);
 
-        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{{"protocol", "bgp"}}, ReturnCode(SAI_STATUS_SUCCESS), true)).Times(1);
+        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{{"protocol", "bgp"}}, ReturnCode(SAI_STATUS_SUCCESS), false)).Times(1);
         static_cast<Orch *>(gRouteOrch)->doTask();
 
         gMockResponsePublisher.reset();
