@@ -12,6 +12,12 @@
 
 #include <netlink/route/route.h>
 
+// Add RTM_F_OFFLOAD define if it is not there.
+// Debian buster does not provide one but it is neccessary for compilation.
+#ifndef RTM_F_OFFLOAD
+#define RTM_F_OFFLOAD 0x4000 /* route is offloaded */
+#endif
+
 using namespace std;
 
 /* Parse the Raw netlink msg */
