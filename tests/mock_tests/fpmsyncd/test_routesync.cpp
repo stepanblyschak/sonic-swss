@@ -10,9 +10,9 @@ using ::testing::_;
 class MockFpm : public FpmInterface
 {
 public:
-    MOCK_METHOD(bool, send, (nlmsghdr*), (override));
-    MOCK_METHOD(int, getFd, (), (override));
-    MOCK_METHOD(uint64_t, readData, (), (override));
+    MOCK_METHOD1(send, bool(nlmsghdr*));
+    MOCK_METHOD0(getFd, int());
+    MOCK_METHOD0(readData, uint64_t());
 };
 
 class FpmSyncdResponseTest : public ::testing::Test
