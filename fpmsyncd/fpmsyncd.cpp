@@ -72,7 +72,7 @@ int main(int argc, char **argv)
     rtnl_route_read_protocol_names(DefaultRtProtoPath);
 
     std::string suppressionEnabledStr;
-    deviceMetadataTable.hget("localhost", "suppress-pending-fib", suppressionEnabledStr);
+    deviceMetadataTable.hget("localhost", "suppress-fib-pending", suppressionEnabledStr);
     if (suppressionEnabledStr == "enabled")
     {
         routeResponseChannel = std::make_unique<NotificationConsumer>(&applStateDb, routeResponseChannelName);
@@ -235,7 +235,7 @@ int main(int argc, char **argv)
                             const auto& field = fvField(fv);
                             const auto& value = fvValue(fv);
 
-                            if (field != "suppress-pending-fib")
+                            if (field != "suppress-fib-pending")
                             {
                                 continue;
                             }
