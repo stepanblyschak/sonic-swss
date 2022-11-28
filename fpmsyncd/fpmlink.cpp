@@ -159,10 +159,14 @@ FpmLink::FpmLink(RouteSync *rsync, unsigned short port) :
     m_server_up = true;
     m_messageBuffer = new char[m_bufSize];
     m_sendBuffer = new char[m_bufSize];
+
+    m_routesync->onFpmConnect(*this);
 }
 
 FpmLink::~FpmLink()
 {
+    m_routesync->onFpmDisconnect();
+
     delete[] m_messageBuffer;
     delete[] m_sendBuffer;
     if (m_connected)

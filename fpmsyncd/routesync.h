@@ -51,8 +51,17 @@ public:
 
     void onWarmStartEnd(swss::DBConnector& applStateDb);
 
+    void onFpmConnect(FpmInterface& fpm)
+    {
+        m_fpmInterface = &fpm;
+    }
+
+    void onFpmDisconnect()
+    {
+        m_fpmInterface = nullptr;
+    }
+
     WarmStartHelper  m_warmStartHelper;
-    FpmInterface* m_fpmInterface {nullptr};
 
 private:
     /* regular route table */
@@ -66,9 +75,9 @@ private:
     struct nl_cache    *m_link_cache;
     struct nl_sock     *m_nl_sock;
 
-    LinkCache& m_linkCache{LinkCache::getInstance()};
-
-    bool m_isSuppressionEnabled{false};
+    LinkCache&          m_linkCache{LinkCache::getInstance()};
+    bool                m_isSuppressionEnabled{false};
+    FpmInterface*       m_fpmInterface {nullptr};
 
     /* Handle regular route (include VRF route) */
     void onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf);

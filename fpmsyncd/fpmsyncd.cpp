@@ -84,7 +84,6 @@ int main(int argc, char **argv)
         try
         {
             FpmLink fpm(&sync);
-            sync.m_fpmInterface = &fpm;
 
             Select s;
             SelectableTimer warmStartTimer(timespec{0, 0});

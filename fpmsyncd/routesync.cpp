@@ -1274,8 +1274,6 @@ bool RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
 {
     SWSS_LOG_ENTER();
 
-    assert(m_fpmInterface);
-
     if (hdr->nlmsg_type != RTM_NEWROUTE)
     {
         return false;
@@ -1284,6 +1282,12 @@ bool RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
     struct rtmsg *rtm = static_cast<struct rtmsg*>(NLMSG_DATA(hdr));
 
     rtm->rtm_flags |= RTM_F_OFFLOAD;
+
+    if (!m_fpmInterface)
+    {
+        SWSS_LOG_ERROR("Cannot send offload reply to zebra: FPM is disconnected");
+        return false;
+    }
 
     // Send to zebra
     if (!m_fpmInterface->send(hdr))

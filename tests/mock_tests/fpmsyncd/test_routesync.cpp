@@ -21,7 +21,7 @@ public:
     void SetUp() override
     {
         EXPECT_EQ(rtnl_route_read_protocol_names(DefaultRtProtoPath), 0);
-        m_routeSync.m_fpmInterface = &m_mockFpm;
+        m_routeSync.onFpmConnect(m_mockFpm);
         m_routeSync.setSuppressionEnabled(true);
     }
 
