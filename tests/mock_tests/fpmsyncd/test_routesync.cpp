@@ -10,9 +10,23 @@ using ::testing::_;
 class MockFpm : public FpmInterface
 {
 public:
+    MockFpm(RouteSync* routeSync) :
+        m_routeSync(routeSync)
+    {
+        m_routeSync->onFpmConnected(*this);
+    }
+
+    ~MockFpm() override
+    {
+        m_routeSync->onFpmDisconnected();
+    }
+
     MOCK_METHOD1(send, bool(nlmsghdr*));
     MOCK_METHOD0(getFd, int());
     MOCK_METHOD0(readData, uint64_t());
+
+private:
+    RouteSync* m_routeSync{};
 };
 
 class FpmSyncdResponseTest : public ::testing::Test
@@ -21,7 +35,6 @@ public:
     void SetUp() override
     {
         EXPECT_EQ(rtnl_route_read_protocol_names(DefaultRtProtoPath), 0);
-        m_routeSync.onFpmConnect(m_mockFpm);
         m_routeSync.setSuppressionEnabled(true);
     }
 
@@ -32,7 +45,7 @@ public:
     DBConnector m_db{"APPL_DB", 0};
     RedisPipeline m_pipeline{&m_db, 1};
     RouteSync m_routeSync{&m_pipeline};
-    MockFpm m_mockFpm;
+    MockFpm m_mockFpm{&m_routeSync};
 };
 
 TEST_F(FpmSyncdResponseTest, RouteResponseFeedbackV4)

@@ -51,12 +51,12 @@ public:
 
     void onWarmStartEnd(swss::DBConnector& applStateDb);
 
-    void onFpmConnect(FpmInterface& fpm)
+    void onFpmConnected(FpmInterface& fpm)
     {
         m_fpmInterface = &fpm;
     }
 
-    void onFpmDisconnect()
+    void onFpmDisconnected()
     {
         m_fpmInterface = nullptr;
     }
