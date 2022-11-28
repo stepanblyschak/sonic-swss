@@ -119,10 +119,10 @@ private:
     string getNextHopWt(struct rtnl_route *route_obj);
 
     /* Sends FPM message with RTM_F_OFFLOAD flag set to zebra */
-    void sendOffloadReply(struct nlmsghdr* hdr);
+    bool sendOffloadReply(struct nlmsghdr* hdr);
 
     /* Sends FPM message with RTM_F_OFFLOAD flag set to zebra */
-    void sendOffloadReply(struct rtnl_route* route_obj);
+    bool sendOffloadReply(struct rtnl_route* route_obj);
 };
 
 }

@@ -282,9 +282,14 @@ void FpmLink::processFpmMessage(fpm_msg_hdr_t* hdr)
 
 bool FpmLink::send(nlmsghdr* nl_hdr)
 {
-    fpm_msg_hdr_t hdr;
+    fpm_msg_hdr_t hdr{};
 
     size_t len = fpm_msg_align(sizeof(hdr) + nl_hdr->nlmsg_len);
+
+    if (len > m_bufSize)
+    {
+        SWSS_LOG_THROW("Message length %zu is greater then the send buffer size %d", len, m_bufSize);
+    }
 
     hdr.version = FPM_PROTO_VERSION;
     hdr.msg_type = FPM_MSG_TYPE_NETLINK;

@@ -1270,7 +1270,7 @@ string RouteSync::getNextHopWt(struct rtnl_route *route_obj)
     return result;
 }
 
-void RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
+bool RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
 {
     SWSS_LOG_ENTER();
 
@@ -1278,7 +1278,7 @@ void RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
 
     if (hdr->nlmsg_type != RTM_NEWROUTE)
     {
-        return;
+        return false;
     }
 
     struct rtmsg *rtm = static_cast<struct rtmsg*>(NLMSG_DATA(hdr));
@@ -1289,20 +1289,22 @@ void RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
     if (!m_fpmInterface->send(hdr))
     {
         SWSS_LOG_ERROR("Failed to send reply to zebra");
-        return;
+        return false;
     }
+
+    return true;
 }
 
-void RouteSync::sendOffloadReply(struct rtnl_route* route_obj)
+bool RouteSync::sendOffloadReply(struct rtnl_route* route_obj)
 {
     SWSS_LOG_ENTER();
 
     nl_msg* msg{};
     rtnl_route_build_add_request(route_obj, NLM_F_CREATE, &msg);
 
-    auto ownedMsg = std::unique_ptr<nl_msg, void(*)(nl_msg*)>(msg, nlmsg_free);
+    auto nlMsg = makeUniqueWithDestructor(msg, nlmsg_free);
 
-    sendOffloadReply(nlmsg_hdr(ownedMsg.get()));
+    return sendOffloadReply(nlmsg_hdr(nlMsg.get()));
 }
 
 void RouteSync::setSuppressionEnabled(bool enabled)
@@ -1329,7 +1331,7 @@ void RouteSync::onRouteResponse(const std::string& key, const std::vector<FieldV
     }
 
     auto colon = key.find(':');
-    if (colon != std::string::npos && key.substr(0, colon).find("Vrf") != std::string::npos)
+    if (colon != std::string::npos && key.substr(0, colon).find(VRF_PREFIX) != std::string::npos)
     {
         vrfName = key.substr(0, colon);
         prefix = IpPrefix{key.substr(colon + 1)};
@@ -1350,6 +1352,9 @@ void RouteSync::onRouteResponse(const std::string& key, const std::vector<FieldV
         }
         else if (field == "protocol")
         {
+            // If field "protocol" is present in the field values then
+            // it is a SET operation. This field is absent only if we are
+            // processing DEL operation.
             isSetOperation = true;
             protocol = value;
         }
@@ -1400,15 +1405,9 @@ void RouteSync::onRouteResponse(const std::string& key, const std::vector<FieldV
     }
 
     // Mark route as OFFLOAD
-    rtnl_route_set_flags(routeObject.get(), RTM_F_OFFLOAD);
+    rtnl_route_set_flags(routeObject.get(), flags);
 
-    nl_msg* msg{};
-    rtnl_route_build_add_request(routeObject.get(), NLM_F_CREATE, &msg);
-
-    auto ownedMsg = makeUniqueWithDestructor(msg, nlmsg_free);
-
-    // Send to zebra
-    if (!m_fpmInterface->send(nlmsg_hdr(ownedMsg.get())))
+    if (!sendOffloadReply(routeObject.get()))
     {
         SWSS_LOG_ERROR("Failed to send RTM_NEWROUTE message to zebra on prefix %s(%s)",
             prefix.to_string().c_str(), vrfName.c_str());
