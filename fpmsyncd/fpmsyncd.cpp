@@ -253,8 +253,8 @@ int main(int argc, char **argv)
                                 s.removeSelectable(routeResponseChannel.get());
                                 routeResponseChannel.reset();
                             }
-                        }
-                    }
+                        } // end for fvs
+                    } // end for keyOpFvsQueue
                 }
                 else if (routeResponseChannel && (temps == routeResponseChannel.get()))
                 {
