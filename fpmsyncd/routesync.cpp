@@ -1274,6 +1274,8 @@ bool RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
 {
     SWSS_LOG_ENTER();
 
+    hdr->nlmsg_flags |= NLM_F_REQUEST;
+
     if (hdr->nlmsg_type != RTM_NEWROUTE)
     {
         return false;
