@@ -720,15 +720,6 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
 
     if (!isSuppressionEnabled())
     {
-
-    {
-        struct nl_addr *dip;
-        dip = rtnl_route_get_dst(route_obj);
-        char destipprefix[IFNAMSIZ + MAX_ADDR_SIZE + 2] = {0};
-        nl_addr2str(dip, destipprefix, MAX_ADDR_SIZE);
-        SWSS_LOG_INFO("Route %s (ifindex %u) prefix: %s protocol %d type %d msg type %d", vrf,
-                rtnl_route_get_table(route_obj), destipprefix, rtnl_route_get_protocol(route_obj), rtnl_route_get_type(route_obj), nlmsg_type);
-    }
         sendOffloadReply(route_obj);
     }
 
@@ -1293,8 +1284,6 @@ bool RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
     struct rtmsg *rtm = static_cast<struct rtmsg*>(NLMSG_DATA(hdr));
 
     rtm->rtm_flags |= RTM_F_OFFLOAD;
-
-    SWSS_LOG_ERROR("Sending type %d", rtm->rtm_type);
 
     if (!m_fpmInterface)
     {
