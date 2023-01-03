@@ -388,8 +388,6 @@ void RouteSync::onEvpnRouteMsg(struct nlmsghdr *h, int len)
     int nlmsg_type = h->nlmsg_type;
     unsigned int vrf_index;
 
-    sendOffloadReply(h);
-
     rtm = (struct rtmsg *)NLMSG_DATA(h);
 
     /* Parse attributes and extract fields of interest. */
@@ -501,6 +499,8 @@ void RouteSync::onEvpnRouteMsg(struct nlmsghdr *h, int len)
     {
         return;
     }
+
+    sendOffloadReply(h);
 
     switch (rtm->rtm_type)
     {
@@ -658,11 +658,6 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
     struct nl_addr *dip;
     char destipprefix[IFNAMSIZ + MAX_ADDR_SIZE + 2] = {0};
 
-    if (!isSuppressionEnabled())
-    {
-        sendOffloadReply(route_obj);
-    }
-
     if (vrf)
     {
         /*
@@ -721,6 +716,11 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
     {
         SWSS_LOG_INFO("Unknown message-type: %d for %s", nlmsg_type, destipprefix);
         return;
+    }
+
+    if (!isSuppressionEnabled())
+    {
+        sendOffloadReply(route_obj);
     }
 
     switch (rtnl_route_get_type(route_obj))
@@ -831,8 +831,6 @@ void RouteSync::onLabelRouteMsg(int nlmsg_type, struct nl_object *obj)
     struct nl_addr *daddr;
     char destaddr[MAX_ADDR_SIZE + 1] = {0};
 
-    sendOffloadReply(route_obj);
-
     daddr = rtnl_route_get_dst(route_obj);
     nl_addr2str(daddr, destaddr, MAX_ADDR_SIZE);
     SWSS_LOG_INFO("Receive new LabelRoute message dest addr: %s", destaddr);
@@ -848,6 +846,8 @@ void RouteSync::onLabelRouteMsg(int nlmsg_type, struct nl_object *obj)
         SWSS_LOG_INFO("Unknown message-type: %d for LabelRoute %s", nlmsg_type, destaddr);
         return;
     }
+
+    sendOffloadReply(route_obj);
 
     /* Get the index of the master device */
     uint32_t master_index = rtnl_route_get_table(route_obj);
@@ -924,8 +924,6 @@ void RouteSync::onVnetRouteMsg(int nlmsg_type, struct nl_object *obj, string vne
 {
     struct rtnl_route *route_obj = (struct rtnl_route *)obj;
 
-    sendOffloadReply(route_obj);
-
     /* Get the destination IP prefix */
     struct nl_addr *dip = rtnl_route_get_dst(route_obj);
     char destipprefix[MAX_ADDR_SIZE + 1] = {0};
@@ -955,6 +953,8 @@ void RouteSync::onVnetRouteMsg(int nlmsg_type, struct nl_object *obj, string vne
         SWSS_LOG_INFO("Unknown message-type: %d for %s", nlmsg_type, vnet_dip.c_str());
         return;
     }
+
+    sendOffloadReply(route_obj);
 
     switch (rtnl_route_get_type(route_obj))
     {
