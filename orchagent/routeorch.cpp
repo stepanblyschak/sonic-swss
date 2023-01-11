@@ -501,7 +501,7 @@ void RouteOrch::doTask(Consumer& consumer)
 
             auto rc = toBulk.emplace(std::piecewise_construct,
                     std::forward_as_tuple(key, op),
-                    std::forward_as_tuple(key));
+                    std::forward_as_tuple(key, (op == SET_COMMAND)));
 
             bool inserted = rc.second;
             auto& ctx = rc.first->second;
@@ -2598,10 +2598,10 @@ void RouteOrch::publishRouteState(const RouteBulkContext& ctx, const ReturnCode&
 
     std::vector<FieldValueTuple> fvs;
 
-    /* If the operation type is "DEL" then ctx.protocol is empty and fvs is left empty.
+    /* Leave the fvs empty if the operation type is "DEL".
      * An empty fvs makes ResponsePublisher::publish() remove the state entry from APPL_STATE_DB
      */
-    if (!ctx.protocol.empty())
+    if (ctx.is_set)
     {
         fvs.emplace_back("protocol", ctx.protocol);
     }

@@ -124,9 +124,10 @@ struct RouteBulkContext
 
     std::string                         key;       // Key in database table
     std::string                         protocol;  // Protocol string
+    bool                                is_set;    // True if set operation
 
-    RouteBulkContext(const std::string& key)
-        : key(key), excp_intfs_flag(false), using_temp_nhg(false)
+    RouteBulkContext(const std::string& key, bool is_set)
+        : key(key), excp_intfs_flag(false), using_temp_nhg(false), is_set(is_set)
     {
     }
 
