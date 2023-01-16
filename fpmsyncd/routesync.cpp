@@ -10,6 +10,7 @@
 #include "fpmsyncd/fpmlink.h"
 #include "fpmsyncd/routesync.h"
 #include "macaddress.h"
+#include "converter.h"
 #include <string.h>
 #include <arpa/inet.h>
 
@@ -43,6 +44,36 @@ using namespace swss;
 #define IPV6_MAX_BITLEN    128
 
 #define ETHER_ADDR_STRLEN (3*ETH_ALEN)
+
+/* Returns name of the protocol passed number represents */
+static string getProtocolString(int proto)
+{
+    static constexpr size_t protocolNameBufferSize = 128;
+    char buffer[protocolNameBufferSize] = {};
+
+    if (!rtnl_route_proto2str(proto, buffer, sizeof(buffer)))
+    {
+        return std::to_string(proto);
+    }
+
+    return buffer;
+}
+
+/* Helper to create unique pointer with custom destructor */
+template<typename T, typename F>
+static decltype(auto) makeUniqueWithDestructor(T* ptr, F func)
+{
+    return std::unique_ptr<T, F>(ptr, func);
+}
+
+template<typename T>
+static decltype(auto) makeNlAddr(const T& ip)
+{
+    nl_addr* addr;
+    nl_addr_parse(ip.to_string().c_str(), AF_UNSPEC, &addr);
+    return makeUniqueWithDestructor(addr, nl_addr_put);
+}
+
 
 RouteSync::RouteSync(RedisPipeline *pipeline) :
     m_routeTable(pipeline, APP_ROUTE_TABLE_NAME, true),
@@ -357,6 +388,8 @@ void RouteSync::onEvpnRouteMsg(struct nlmsghdr *h, int len)
     int nlmsg_type = h->nlmsg_type;
     unsigned int vrf_index;
 
+    sendOffloadReply(h);
+
     rtm = (struct rtmsg *)NLMSG_DATA(h);
 
     /* Parse attributes and extract fields of interest. */
@@ -625,6 +658,11 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
     struct nl_addr *dip;
     char destipprefix[IFNAMSIZ + MAX_ADDR_SIZE + 2] = {0};
 
+    if (!isSuppressionEnabled())
+    {
+        sendOffloadReply(route_obj);
+    }
+
     if (vrf)
     {
         /*
@@ -737,10 +775,15 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
         }
     }
 
+    auto proto_num = rtnl_route_get_protocol(route_obj);
+    auto proto_str = getProtocolString(proto_num);
+
     vector<FieldValueTuple> fvVector;
+    FieldValueTuple proto("protocol", proto_str);
     FieldValueTuple gw("nexthop", gw_list);
     FieldValueTuple intf("ifname", intf_list);
 
+    fvVector.push_back(proto);
     fvVector.push_back(gw);
     fvVector.push_back(intf);
     if (!mpls_list.empty())
@@ -787,6 +830,8 @@ void RouteSync::onLabelRouteMsg(int nlmsg_type, struct nl_object *obj)
     struct rtnl_route *route_obj = (struct rtnl_route *)obj;
     struct nl_addr *daddr;
     char destaddr[MAX_ADDR_SIZE + 1] = {0};
+
+    sendOffloadReply(route_obj);
 
     daddr = rtnl_route_get_dst(route_obj);
     nl_addr2str(daddr, destaddr, MAX_ADDR_SIZE);
@@ -878,6 +923,8 @@ void RouteSync::onLabelRouteMsg(int nlmsg_type, struct nl_object *obj)
 void RouteSync::onVnetRouteMsg(int nlmsg_type, struct nl_object *obj, string vnet)
 {
     struct rtnl_route *route_obj = (struct rtnl_route *)obj;
+
+    sendOffloadReply(route_obj);
 
     /* Get the destination IP prefix */
     struct nl_addr *dip = rtnl_route_get_dst(route_obj);
@@ -1221,4 +1268,186 @@ string RouteSync::getNextHopWt(struct rtnl_route *route_obj)
     }
 
     return result;
+}
+
+bool RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
+{
+    SWSS_LOG_ENTER();
+
+    hdr->nlmsg_flags |= NLM_F_REQUEST;
+
+    if (hdr->nlmsg_type != RTM_NEWROUTE)
+    {
+        return false;
+    }
+
+    struct rtmsg *rtm = static_cast<struct rtmsg*>(NLMSG_DATA(hdr));
+
+    rtm->rtm_flags |= RTM_F_OFFLOAD;
+
+    if (!m_fpmInterface)
+    {
+        SWSS_LOG_ERROR("Cannot send offload reply to zebra: FPM is disconnected");
+        return false;
+    }
+
+    // Send to zebra
+    if (!m_fpmInterface->send(hdr))
+    {
+        SWSS_LOG_ERROR("Failed to send reply to zebra");
+        return false;
+    }
+
+    return true;
+}
+
+bool RouteSync::sendOffloadReply(struct rtnl_route* route_obj)
+{
+    SWSS_LOG_ENTER();
+
+    nl_msg* msg{};
+    rtnl_route_build_add_request(route_obj, NLM_F_CREATE, &msg);
+
+    auto nlMsg = makeUniqueWithDestructor(msg, nlmsg_free);
+
+    return sendOffloadReply(nlmsg_hdr(nlMsg.get()));
+}
+
+void RouteSync::setSuppressionEnabled(bool enabled)
+{
+    SWSS_LOG_ENTER();
+
+    m_isSuppressionEnabled = enabled;
+
+    SWSS_LOG_NOTICE("Pending routes suppression is %s", (m_isSuppressionEnabled ? "enabled": "disabled"));
+}
+
+void RouteSync::onRouteResponse(const std::string& key, const std::vector<FieldValueTuple>& fieldValues)
+{
+    IpPrefix prefix;
+    std::string vrfName;
+    std::string protocol;
+
+    bool isSetOperation{false};
+    bool isSuccessReply{false};
+
+    if (!isSuppressionEnabled())
+    {
+        return;
+    }
+
+    auto colon = key.find(':');
+    if (colon != std::string::npos && key.substr(0, colon).find(VRF_PREFIX) != std::string::npos)
+    {
+        vrfName = key.substr(0, colon);
+        prefix = IpPrefix{key.substr(colon + 1)};
+    }
+    else
+    {
+        prefix = IpPrefix{key};
+    }
+
+    for (const auto& fieldValue: fieldValues)
+    {
+        std::string field = fvField(fieldValue);
+        std::string value = fvValue(fieldValue);
+
+        if (field == "err_str")
+        {
+            isSuccessReply = (value == "SWSS_RC_SUCCESS");
+        }
+        else if (field == "protocol")
+        {
+            // If field "protocol" is present in the field values then
+            // it is a SET operation. This field is absent only if we are
+            // processing DEL operation.
+            isSetOperation = true;
+            protocol = value;
+        }
+    }
+
+    if (!isSetOperation)
+    {
+        SWSS_LOG_DEBUG("Received response for prefix %s(%s) deletion, ignoring ",
+            prefix.to_string().c_str(), vrfName.c_str());
+        return;
+    }
+
+    auto routeObject = makeUniqueWithDestructor(rtnl_route_alloc(), rtnl_route_put);
+    auto dstAddr = makeNlAddr(prefix);
+
+    rtnl_route_set_dst(routeObject.get(), dstAddr.get());
+
+    auto proto = rtnl_route_str2proto(protocol.c_str());
+    if (proto < 0)
+    {
+        proto = swss::to_uint<uint8_t>(protocol);
+    }
+
+    rtnl_route_set_protocol(routeObject.get(), static_cast<uint8_t>(proto));
+    rtnl_route_set_family(routeObject.get(), prefix.isV4() ? AF_INET : AF_INET6);
+
+    unsigned int vrfIfIndex = 0;
+    if (!vrfName.empty())
+    {
+        auto* link = m_linkCache.getLinkByName(vrfName.c_str());
+        if (!link)
+        {
+            SWSS_LOG_DEBUG("Failed to find VRF when constructing response message for prefix %s(%s). "
+                "This message is probably outdated", prefix.to_string().c_str(),
+                vrfName.c_str());
+            return;
+        }
+        vrfIfIndex = rtnl_link_get_ifindex(link);
+    }
+
+    rtnl_route_set_table(routeObject.get(), vrfIfIndex);
+
+    unsigned int flags = 0;
+
+    if (isSuccessReply)
+    {
+        flags |= RTM_F_OFFLOAD;
+    }
+
+    // Mark route as OFFLOAD
+    rtnl_route_set_flags(routeObject.get(), flags);
+
+    if (!sendOffloadReply(routeObject.get()))
+    {
+        SWSS_LOG_ERROR("Failed to send RTM_NEWROUTE message to zebra on prefix %s(%s)",
+            prefix.to_string().c_str(), vrfName.c_str());
+        return;
+    }
+
+    SWSS_LOG_INFO("Sent response to zebra for prefix %s(%s)",
+        prefix.to_string().c_str(), vrfName.c_str());
+}
+
+void RouteSync::onWarmStartEnd(DBConnector& applStateDb)
+{
+    SWSS_LOG_ENTER();
+
+    if (isSuppressionEnabled())
+    {
+        Table routeStateTable{&applStateDb, APP_ROUTE_TABLE_NAME};
+
+        std::vector<std::string> keys;
+        routeStateTable.getKeys(keys);
+
+        for (const auto& key: keys)
+        {
+            std::vector<FieldValueTuple> fieldValues;
+            routeStateTable.get(key, fieldValues);
+            fieldValues.emplace_back("err_str", "SWSS_RC_SUCCESS");
+            
+            onRouteResponse(key, fieldValues);
+        }
+    }
+
+    if (m_warmStartHelper.inProgress())
+    {
+        m_warmStartHelper.reconcile();
+        SWSS_LOG_NOTICE("Warm-Restart reconciliation processed.");
+    }
 }
