@@ -677,6 +677,11 @@ void OrchDaemon::flush()
         SWSS_LOG_ERROR("Failed to flush redis pipeline %d", status);
         abort();
     }
+
+    for (auto* orch: m_orchList)
+    {
+        orch->flushResponses();
+    }
 }
 
 /* Release the file handle so the log can be rotated */
