@@ -1291,15 +1291,17 @@ bool RouteSync::sendOffloadReply(struct nlmsghdr* hdr)
 {
     SWSS_LOG_ENTER();
 
-    hdr->nlmsg_flags |= NLM_F_REQUEST;
-
     if (hdr->nlmsg_type != RTM_NEWROUTE)
     {
         return false;
     }
 
-    struct rtmsg *rtm = static_cast<struct rtmsg*>(NLMSG_DATA(hdr));
+    // Add request flag (required by zebra)
+    hdr->nlmsg_flags |= NLM_F_REQUEST;
 
+    rtmsg *rtm = static_cast<rtmsg*>(NLMSG_DATA(hdr));
+
+    // Add offload flag
     rtm->rtm_flags |= RTM_F_OFFLOAD;
 
     if (!m_fpmInterface)
@@ -1390,6 +1392,13 @@ void RouteSync::onRouteResponse(const std::string& key, const std::vector<FieldV
         return;
     }
 
+    if (!isSuccessReply)
+    {
+        SWSS_LOG_INFO("Received failure response for prefix %s(%s)",
+            prefix.to_string().c_str(), vrfName.c_str());
+        return;
+    }
+
     auto routeObject = makeUniqueWithDestructor(rtnl_route_alloc(), rtnl_route_put);
     auto dstAddr = makeNlAddr(prefix);
 
@@ -1419,16 +1428,6 @@ void RouteSync::onRouteResponse(const std::string& key, const std::vector<FieldV
     }
 
     rtnl_route_set_table(routeObject.get(), vrfIfIndex);
-
-    unsigned int flags = 0;
-
-    if (isSuccessReply)
-    {
-        flags |= RTM_F_OFFLOAD;
-    }
-
-    // Mark route as OFFLOAD
-    rtnl_route_set_flags(routeObject.get(), flags);
 
     if (!sendOffloadReply(routeObject.get()))
     {
