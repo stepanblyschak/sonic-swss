@@ -4,6 +4,7 @@
 #include "select.h"
 #include "selectabletimer.h"
 #include "netdispatcher.h"
+#include "netlink.h"
 #include "notificationconsumer.h"
 #include "subscriberstatetable.h"
 #include "warmRestartHelper.h"
@@ -66,8 +67,14 @@ int main(int argc, char **argv)
     DBConnector stateDb("STATE_DB", 0);
     Table bgpStateTable(&stateDb, STATE_BGP_TABLE_NAME);
 
+    NetLink netlink;
+
+    netlink.registerGroup(RTNLGRP_LINK);
+
     NetDispatcher::getInstance().registerMessageHandler(RTM_NEWROUTE, &sync);
     NetDispatcher::getInstance().registerMessageHandler(RTM_DELROUTE, &sync);
+    NetDispatcher::getInstance().registerMessageHandler(RTM_NEWLINK, &sync);
+    NetDispatcher::getInstance().registerMessageHandler(RTM_DELLINK, &sync);
 
     rtnl_route_read_protocol_names(DefaultRtProtoPath);
 
@@ -103,6 +110,7 @@ int main(int argc, char **argv)
             cout << "Connected!" << endl;
 
             s.addSelectable(&fpm);
+            s.addSelectable(&netlink);
             s.addSelectable(&deviceMetadataTableSubscriber);
 
             if (sync.isSuppressionEnabled())

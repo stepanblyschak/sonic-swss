@@ -75,7 +75,6 @@ private:
     struct nl_cache    *m_link_cache;
     struct nl_sock     *m_nl_sock;
 
-    LinkCache&          m_linkCache{LinkCache::getInstance()};
     bool                m_isSuppressionEnabled{false};
     FpmInterface*       m_fpmInterface {nullptr};
 
@@ -101,6 +100,9 @@ private:
 
     /* Get interface name based on interface index */
     bool getIfName(int if_index, char *if_name, size_t name_len);
+
+    /* Get interface if_index based on interface name */
+    rtnl_link* getLinkByName(const char *name);
 
     void getEvpnNextHopSep(string& nexthops, string& vni_list,  
                        string& mac_list, string& intf_list);

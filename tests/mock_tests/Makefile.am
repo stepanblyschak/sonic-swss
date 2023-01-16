@@ -171,7 +171,7 @@ tests_intfmgrd_LDADD = $(LDADD_GTEST) $(LDADD_SAI) -lnl-genl-3 -lhiredis -lhired
 
 tests_fpmsyncd_SOURCES = fpmsyncd/test_fpmlink.cpp \
                          fpmsyncd/test_routesync.cpp \
-                         fake_linkcache.cpp \
+                         fake_netlink.cpp \
                          fake_warmstarthelper.cpp \
                          fake_producerstatetable.cpp \
                          mock_dbconnector.cpp \

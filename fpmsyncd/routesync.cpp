@@ -602,6 +602,11 @@ void RouteSync::onMsgRaw(struct nlmsghdr *h)
 
 void RouteSync::onMsg(int nlmsg_type, struct nl_object *obj)
 {
+    if (nlmsg_type == RTM_NEWLINK || nlmsg_type == RTM_DELLINK)
+    {
+        nl_cache_refill(m_nl_sock, m_link_cache);
+    }
+
     struct rtnl_route *route_obj = (struct rtnl_route *)obj;
 
     /* Supports IPv4 or IPv6 address, otherwise return immediately */
@@ -1056,6 +1061,18 @@ bool RouteSync::getIfName(int if_index, char *if_name, size_t name_len)
     return true;
 }
 
+rtnl_link* RouteSync::getLinkByName(const char *name)
+{
+    auto link = rtnl_link_get_by_name(m_link_cache, name);
+    if (link == nullptr)
+    {
+        /* Trying to refill cache */
+        nl_cache_refill(m_nl_sock ,m_link_cache);
+        link = rtnl_link_get_by_name(m_link_cache, name);
+    }
+    return link;
+}
+
 /*
  * getNextHopList() - parses next hop list attached to route_obj
  * @arg route_obj     (input) Netlink route object
@@ -1390,7 +1407,7 @@ void RouteSync::onRouteResponse(const std::string& key, const std::vector<FieldV
     unsigned int vrfIfIndex = 0;
     if (!vrfName.empty())
     {
-        auto* link = m_linkCache.getLinkByName(vrfName.c_str());
+        auto* link = getLinkByName(vrfName.c_str());
         if (!link)
         {
             SWSS_LOG_DEBUG("Failed to find VRF when constructing response message for prefix %s(%s). "
