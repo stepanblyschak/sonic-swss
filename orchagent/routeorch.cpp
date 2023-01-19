@@ -841,7 +841,7 @@ void RouteOrch::doTask(Consumer& consumer)
                         /* The prefix is full mask (/32 or /128) and it is an interface subnet route, so IntfOrch has already
                          * created an IP2ME route for it and we skip programming such route here as it already exists.
                          * However, to keep APPL_DB and APPL_STATE_DB consistent we have to publish it. */
-                        publishRouteState(ctx, ReturnCode(SAI_STATUS_SUCCESS));
+                        publishRouteState(ctx);
                         it = consumer.m_toSync.erase(it);
                     }
                     /* subnet route, vrf leaked route, etc */
@@ -871,7 +871,9 @@ void RouteOrch::doTask(Consumer& consumer)
                 }
                 else
                 {
-                    /* Duplicate entry */
+                    /* Duplicate entry. Publish route state anyway since there could be multiple DEL, SET operations
+                     * consolidated by ConsumerStateTable leading to orchagent receiving only the last SET update. */
+                    publishRouteState(ctx);
                     it = consumer.m_toSync.erase(it);
                 }
 
@@ -2238,7 +2240,7 @@ bool RouteOrch::addRoutePost(const RouteBulkContext& ctx, const NextHopGroupKey 
     notifyNextHopChangeObservers(vrf_id, ipPrefix, nextHops, true);
 
     /* Publish and update APPL STATE DB route entry programming status */
-    publishRouteState(ctx, ReturnCode(SAI_STATUS_SUCCESS));
+    publishRouteState(ctx);
 
     /*
      * If the route uses a temporary synced NHG owned by NhgOrch, return false
@@ -2435,7 +2437,7 @@ bool RouteOrch::removeRoutePost(const RouteBulkContext& ctx)
             ipPrefix.to_string().c_str(), it_route->second.nhg_key.to_string().c_str());
     
     /* Publish removal status, removes route entry from APPL STATE DB */
-    publishRouteState(ctx, ReturnCode(SAI_STATUS_SUCCESS));
+    publishRouteState(ctx);
 
     if (ipPrefix.isDefaultRoute() && vrf_id == gVirtualRouterId)
     {

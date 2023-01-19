@@ -276,7 +276,7 @@ private:
     void incNhgRefCount(const std::string& nhg_index);
     void decNhgRefCount(const std::string& nhg_index);
 
-    void publishRouteState(const RouteBulkContext& ctx, const ReturnCode& status);
+    void publishRouteState(const RouteBulkContext& ctx, const ReturnCode& status = ReturnCode(SAI_STATUS_SUCCESS));
 };
 
 #endif /* SWSS_ROUTEORCH_H */

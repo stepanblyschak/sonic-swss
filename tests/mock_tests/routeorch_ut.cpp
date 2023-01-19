@@ -446,6 +446,12 @@ namespace routeorch_test
         EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{{"protocol", "bgp"}}, ReturnCode(SAI_STATUS_SUCCESS), false)).Times(1);
         static_cast<Orch *>(gRouteOrch)->doTask();
 
+        // add entries again to the consumer queue (in case of rapid DEL/SET operations from fpmsyncd, routeorch just gets the last SET update)
+        consumer->addToSync(entries);
+
+        EXPECT_CALL(*gMockResponsePublisher, publish(APP_ROUTE_TABLE_NAME, key, std::vector<FieldValueTuple>{{"protocol", "bgp"}}, ReturnCode(SAI_STATUS_SUCCESS), false)).Times(1);
+        static_cast<Orch *>(gRouteOrch)->doTask();
+
         entries.clear();
 
         // Route deletion
