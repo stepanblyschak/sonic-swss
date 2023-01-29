@@ -1,0 +1,1 @@
+g++ -std=c++14 -O2 -I ../orchagent/ -I /usr/include/swss -I /usr/include/sai/ ../orchagent/response_publisher.cpp ../orchagent/response_publisher_old.cpp main.cpp -o main -lswsscommon -lhiredis -lbenchmark
