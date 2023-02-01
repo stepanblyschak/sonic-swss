@@ -58,7 +58,7 @@ TEST_F(FpmSyncdResponseTest, RouteResponseFeedbackV4)
 
         // table is 0 when no in default VRF
         EXPECT_EQ(rtnl_route_get_table(routeObject), 0);
-        EXPECT_EQ(rtnl_route_get_protocol(routeObject), RTPROT_BGP);
+        EXPECT_EQ(rtnl_route_get_protocol(routeObject), RTPROT_KERNEL);
 
         // Offload flag is set
         EXPECT_EQ(rtnl_route_get_flags(routeObject) & RTM_F_OFFLOAD, RTM_F_OFFLOAD);
@@ -68,7 +68,7 @@ TEST_F(FpmSyncdResponseTest, RouteResponseFeedbackV4)
 
     m_routeSync.onRouteResponse("1.0.0.0/24", {
         {"err_str", "SWSS_RC_SUCCESS"},
-        {"protocol", "bgp"},
+        {"protocol", "kernel"},
     });
 }
 
@@ -106,7 +106,7 @@ TEST_F(FpmSyncdResponseTest, RouteResponseFeedbackV6)
 
         // table is 0 when no in default VRF
         EXPECT_EQ(rtnl_route_get_table(routeObject), 0);
-        EXPECT_EQ(rtnl_route_get_protocol(routeObject), RTPROT_BGP);
+        EXPECT_EQ(rtnl_route_get_protocol(routeObject), RTPROT_KERNEL);
 
         // Offload flag is set
         EXPECT_EQ(rtnl_route_get_flags(routeObject) & RTM_F_OFFLOAD, RTM_F_OFFLOAD);
@@ -116,7 +116,7 @@ TEST_F(FpmSyncdResponseTest, RouteResponseFeedbackV6)
 
     m_routeSync.onRouteResponse("1::/64", {
         {"err_str", "SWSS_RC_SUCCESS"},
-        {"protocol", "bgp"},
+        {"protocol", "kernel"},
     });
 }
 
@@ -147,7 +147,7 @@ TEST_F(FpmSyncdResponseTest, RouteResponseFeedbackV6Vrf)
 TEST_F(FpmSyncdResponseTest, WarmRestart)
 {
     std::vector<FieldValueTuple> fieldValues = {
-        {"protocol", "bgp"},
+        {"protocol", "kernel"},
     };
 
     DBConnector applStateDb{"APPL_STATE_DB", 0};
