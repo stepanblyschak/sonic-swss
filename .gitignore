@@ -75,6 +75,7 @@ tlm_teamd/tlm_teamd
 teamsyncd/teamsyncd
 tests/tests
 tests/mock_tests/tests_response_publisher
+tests/mock_tests/tests_fpmsyncd
 
 
 # Test Files #

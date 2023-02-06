@@ -78,6 +78,33 @@ sai_udf_api_t *sai_udf_api;
 sai_tunnel_api_t *sai_tunnel_api;
 sai_my_mac_api_t *sai_my_mac_api;
 sai_counter_api_t *sai_counter_api;
+sai_generic_programmable_api_t *sai_generic_programmable_api;
+
+task_process_status handleSaiCreateStatus(sai_api_t api, sai_status_t status, void *context)
+{
+    return task_success;
+}
+
+task_process_status handleSaiSetStatus(sai_api_t api, sai_status_t status, void *context)
+{
+    return task_success;
+}
+
+task_process_status handleSaiRemoveStatus(sai_api_t api, sai_status_t status, void *context)
+{
+    return task_success;
+}
+
+task_process_status handleSaiGetStatus(sai_api_t api, sai_status_t status, void *context)
+{
+    return task_success;
+}
+
+bool parseHandleSaiStatusFailure(task_process_status status)
+{
+    return true;
+}
+
 
 namespace
 {
@@ -170,6 +197,7 @@ int main(int argc, char *argv[])
     sai_my_mac_api_t my_mac_api;
     sai_tunnel_api_t tunnel_api;
     sai_counter_api_t counter_api;
+    sai_generic_programmable_api_t generic_programmable_api;
     sai_router_intfs_api = &router_intfs_api;
     sai_neighbor_api = &neighbor_api;
     sai_next_hop_api = &next_hop_api;
@@ -185,6 +213,7 @@ int main(int argc, char *argv[])
     sai_my_mac_api = &my_mac_api;
     sai_tunnel_api = &tunnel_api;
     sai_counter_api = &counter_api;
+    sai_generic_programmable_api = &generic_programmable_api;
 
     swss::DBConnector appl_db("APPL_DB", 0);
     swss::DBConnector state_db("STATE_DB", 0);
