@@ -605,6 +605,7 @@ void RouteSync::onMsg(int nlmsg_type, struct nl_object *obj)
     if (nlmsg_type == RTM_NEWLINK || nlmsg_type == RTM_DELLINK)
     {
         nl_cache_refill(m_nl_sock, m_link_cache);
+        return;
     }
 
     struct rtnl_route *route_obj = (struct rtnl_route *)obj;
