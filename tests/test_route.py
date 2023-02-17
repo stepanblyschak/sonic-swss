@@ -1073,6 +1073,7 @@ class TestFpmSyncResponse(TestRouteBase):
         route_entry = json.loads(output)
         return bool(route_entry[route][0].get('offloaded'))
 
+    @pytest.mark.xfail(reason="Requires VS docker update in https://github.com/sonic-net/sonic-buildimage/pull/12853")
     @pytest.mark.parametrize("suppress_state", ["enabled", "disabled"])
     def test_offload(self, suppress_state, setup, dvs):
         route = "1.1.1.0/24"
