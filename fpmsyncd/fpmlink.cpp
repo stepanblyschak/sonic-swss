@@ -292,7 +292,7 @@ bool FpmLink::send(nlmsghdr* nl_hdr)
 
     if (len > m_bufSize)
     {
-        SWSS_LOG_THROW("Message length %zu is greater then the send buffer size %d", len, m_bufSize);
+        SWSS_LOG_THROW("Message length %zu is greater than the send buffer size %d", len, m_bufSize);
     }
 
     hdr.version = FPM_PROTO_VERSION;
