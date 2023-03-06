@@ -69,7 +69,9 @@ acl_rule_attr_lookup_t aclMatchLookup =
     { MATCH_INNER_ETHER_TYPE,  SAI_ACL_ENTRY_ATTR_FIELD_INNER_ETHER_TYPE },
     { MATCH_INNER_IP_PROTOCOL, SAI_ACL_ENTRY_ATTR_FIELD_INNER_IP_PROTOCOL },
     { MATCH_INNER_L4_SRC_PORT, SAI_ACL_ENTRY_ATTR_FIELD_INNER_L4_SRC_PORT },
-    { MATCH_INNER_L4_DST_PORT, SAI_ACL_ENTRY_ATTR_FIELD_INNER_L4_DST_PORT }
+    { MATCH_INNER_L4_DST_PORT, SAI_ACL_ENTRY_ATTR_FIELD_INNER_L4_DST_PORT },
+    { MATCH_BTH_OPCODE,        SAI_ACL_ENTRY_ATTR_FIELD_BTH_OPCODE},
+    { MATCH_AETH_SYNDROME,     SAI_ACL_ENTRY_ATTR_FIELD_AETH_SYNDROME}
 };
 
 static acl_range_type_lookup_t aclRangeTypeLookup =
@@ -105,6 +107,11 @@ static acl_rule_attr_lookup_t aclDTelActionLookup =
     { ACTION_DTEL_TAIL_DROP_REPORT_ENABLE,  SAI_ACL_ENTRY_ATTR_ACTION_DTEL_TAIL_DROP_REPORT_ENABLE },
     { ACTION_DTEL_FLOW_SAMPLE_PERCENT,      SAI_ACL_ENTRY_ATTR_ACTION_DTEL_FLOW_SAMPLE_PERCENT },
     { ACTION_DTEL_REPORT_ALL_PACKETS,       SAI_ACL_ENTRY_ATTR_ACTION_DTEL_REPORT_ALL_PACKETS }
+};
+
+static acl_rule_attr_lookup_t aclOtherActionLookup = 
+{
+    { ACTION_COUNTER,                       SAI_ACL_ENTRY_ATTR_ACTION_COUNTER}
 };
 
 static acl_packet_action_lookup_t aclPacketActionLookup =
@@ -351,8 +358,41 @@ static acl_table_match_field_lookup_t stageMandatoryMatchFields =
                 }
             }
         }
+    },
+    {
+        TABLE_TYPE_L3,
+        {
+            {
+                ACL_STAGE_INGRESS,
+                {
+                    SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE
+                }
+            },
+            {
+                ACL_STAGE_EGRESS,
+                {
+                    SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE
+                }
+            }
+        }
+    },
+    {
+        TABLE_TYPE_L3V6,
+        {
+            {
+                ACL_STAGE_INGRESS,
+                {
+                    SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE
+                }
+            },
+            {
+                ACL_STAGE_EGRESS,
+                {
+                    SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE
+                }
+            }
+        }
     }
-
 };
 
 static acl_ip_type_lookup_t aclIpTypeLookup =
@@ -635,6 +675,7 @@ bool AclTableTypeParser::parseAclTableTypeActions(const std::string& value, AclT
         auto l3Action = aclL3ActionLookup.find(action);
         auto mirrorAction = aclMirrorStageLookup.find(action);
         auto dtelAction = aclDTelActionLookup.find(action);
+        auto otherAction = aclOtherActionLookup.find(action);
 
         if (l3Action != aclL3ActionLookup.end())
         {
@@ -648,11 +689,16 @@ bool AclTableTypeParser::parseAclTableTypeActions(const std::string& value, AclT
         {
             saiActionAttr = dtelAction->second;
         }
+        else if (otherAction != aclOtherActionLookup.end())
+        {
+            saiActionAttr = otherAction->second;
+        }
         else
         {
             SWSS_LOG_ERROR("Unknown action %s", action.c_str());
             return false;
         }
+        SWSS_LOG_INFO("Added action %s", action.c_str());
 
         builder.withAction(AclEntryActionToAclAction(saiActionAttr));
     }
@@ -925,6 +971,36 @@ bool AclRule::validateAddMatch(string attr_name, string attr_value)
         {
             matchData.data.u8 = to_uint<uint8_t>(attr_value);
             matchData.mask.u8 = 0xFF;
+        }
+        else if (attr_name == MATCH_BTH_OPCODE)
+        {
+            auto opcode_data = tokenize(attr_value, '/');
+
+            if (opcode_data.size() == 2)
+            {
+                matchData.data.u8 = to_uint<uint8_t>(opcode_data[0]);
+                matchData.mask.u8 = to_uint<uint8_t>(opcode_data[1]);
+            }
+            else
+            {
+                SWSS_LOG_ERROR("Invalid BTH_OPCODE configuration: %s, expected format <data>/<mask>", attr_value.c_str());
+                return false;
+            }
+        }
+        else if (attr_name == MATCH_AETH_SYNDROME)
+        {
+            auto syndrome_data = tokenize(attr_value, '/');
+
+            if (syndrome_data.size() == 2)
+            {
+                matchData.data.u8 = to_uint<uint8_t>(syndrome_data[0]);
+                matchData.mask.u8 = to_uint<uint8_t>(syndrome_data[1]);
+            }
+            else
+            {
+                SWSS_LOG_ERROR("Invalid AETH_SYNDROME configuration: %s, expected format <data>/<mask>", attr_value.c_str());
+                return false;
+            }
         }
     }
     catch (exception &e)
@@ -2080,6 +2156,29 @@ bool AclTable::addMandatoryActions()
     return true;
 }
 
+bool AclTable::addStageMandatoryRangeFields()
+{
+    SWSS_LOG_ENTER();
+
+    string platform = getenv("platform") ? getenv("platform") : "";
+    auto match = SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE;
+
+    if ((platform == BRCM_PLATFORM_SUBSTRING) &&
+        (stage == ACL_STAGE_EGRESS))
+    {
+        return false;
+    }
+
+    type.addMatch(make_shared<AclTableRangeMatch>(set<sai_acl_range_type_t>{
+                    {SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE}}));
+    SWSS_LOG_INFO("Added mandatory match field %s for table type %s stage %d",
+                  sai_serialize_enum(match, &sai_metadata_enum_sai_acl_table_attr_t).c_str(),
+                  type.getName().c_str(), stage);
+
+    return true;
+}
+
+
 bool AclTable::addStageMandatoryMatchFields()
 {
     SWSS_LOG_ENTER();
@@ -2097,10 +2196,17 @@ bool AclTable::addStageMandatoryMatchFields()
             // Add the stage particular matching fields
             for (auto match : fields_for_stage[stage])
             {
-                type.addMatch(make_shared<AclTableMatch>(match));
-                SWSS_LOG_INFO("Added mandatory match field %s for table type %s stage %d",
-                                sai_serialize_enum(match, &sai_metadata_enum_sai_acl_table_attr_t).c_str(),
-                                type.getName().c_str(), stage);
+                if (match != SAI_ACL_TABLE_ATTR_FIELD_ACL_RANGE_TYPE)
+                {
+                    type.addMatch(make_shared<AclTableMatch>(match));
+                    SWSS_LOG_INFO("Added mandatory match field %s for table type %s stage %d",
+                        sai_serialize_enum(match, &sai_metadata_enum_sai_acl_table_attr_t).c_str(),
+                        type.getName().c_str(), stage);
+                }
+                else
+                {
+                    addStageMandatoryRangeFields();
+                }
             }
         }
     }
@@ -2514,6 +2620,12 @@ bool AclTable::clear()
     for (auto& rulepair: rules)
     {
         auto& rule = *rulepair.second;
+
+        if (rule.hasCounter())
+        {
+            m_pAclOrch->deregisterFlexCounter(rule);
+        }
+
         bool suc = rule.remove();
         if (!suc)
         {
@@ -3024,8 +3136,6 @@ void AclOrch::initDefaultTableTypes()
             .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT))
             .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT))
             .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS))
-            .withMatch(make_shared<AclTableRangeMatch>(set<sai_acl_range_type_t>{
-                {SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE}}))
             .build()
     );
 
@@ -3043,8 +3153,6 @@ void AclOrch::initDefaultTableTypes()
             .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_SRC_PORT))
             .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_L4_DST_PORT))
             .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TCP_FLAGS))
-            .withMatch(make_shared<AclTableRangeMatch>(set<sai_acl_range_type_t>{
-                {SAI_ACL_RANGE_TYPE_L4_SRC_PORT_RANGE, SAI_ACL_RANGE_TYPE_L4_DST_PORT_RANGE}}))
             .build()
     );
 
@@ -3080,6 +3188,7 @@ void AclOrch::initDefaultTableTypes()
         builder.withName(TABLE_TYPE_DROP)
             .withBindPointType(SAI_ACL_BIND_POINT_TYPE_PORT)
             .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_TC))
+            .withMatch(make_shared<AclTableMatch>(SAI_ACL_TABLE_ATTR_FIELD_IN_PORTS))
             .build()
     );
 
@@ -3720,7 +3829,7 @@ bool AclOrch::addAclTable(AclTable &newTable)
     }
     // Update matching field according to ACL stage
     newTable.addStageMandatoryMatchFields();
-    
+
     // Add mandatory ACL action if not present
     // We need to call addMandatoryActions here because addAclTable is directly called in other orchs.
     // The action_list is already added if the ACL table creation is triggered by CONFIGDD, but calling addMandatoryActions
@@ -4439,10 +4548,12 @@ void AclOrch::doAclTableTypeTask(Consumer &consumer)
             }
 
             addAclTableType(builder.build());
+            SWSS_LOG_NOTICE("Created ACL table type %s", key.c_str());
         }
         else if (op == DEL_COMMAND)
         {
             removeAclTableType(key);
+            SWSS_LOG_NOTICE("Removed ACL table type %s", key.c_str());
         }
         else
         {

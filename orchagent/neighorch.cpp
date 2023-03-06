@@ -591,6 +591,14 @@ void NeighOrch::decreaseNextHopRefCount(const NextHopKey &nexthop, uint32_t coun
     assert(hasNextHop(nexthop));
     if (m_syncdNextHops.find(nexthop) != m_syncdNextHops.end())
     {
+        if ((m_syncdNextHops[nexthop].ref_count - (int)count) < 0)
+        {
+            SWSS_LOG_ERROR("Ref count cannot be negative for next_hop_id: 0x%" PRIx64 " with ip: %s and alias: %s",
+                   m_syncdNextHops[nexthop].next_hop_id, nexthop.ip_address.to_string().c_str(), nexthop.alias.c_str());
+            // Reset refcount to 0 to match expected value
+            m_syncdNextHops[nexthop].ref_count = 0;
+            return;
+        }
         m_syncdNextHops[nexthop].ref_count -= count;
     }
 }
@@ -731,17 +739,33 @@ void NeighOrch::doTask(Consumer &consumer)
                     mac_address = MacAddress(fvValue(*i));
             }
 
-            if (m_syncdNeighbors.find(neighbor_entry) == m_syncdNeighbors.end()
-                    || m_syncdNeighbors[neighbor_entry].mac != mac_address)
+            bool nbr_not_found = (m_syncdNeighbors.find(neighbor_entry) == m_syncdNeighbors.end());
+            if (nbr_not_found || m_syncdNeighbors[neighbor_entry].mac != mac_address)
             {
-                // only for unresolvable neighbors that are new
-                if (!mac_address) 
+                if (!mac_address)
                 {
-                    if (m_syncdNeighbors.find(neighbor_entry) == m_syncdNeighbors.end())
+                    if (nbr_not_found)
                     {
-                        addZeroMacTunnelRoute(neighbor_entry, mac_address);
+                        // only for unresolvable neighbors that are new
+                        if (addZeroMacTunnelRoute(neighbor_entry, mac_address))
+                        {
+                            it = consumer.m_toSync.erase(it);
+                        }
+                        else
+                        {
+                            it++;
+                            continue;
+                        }
                     }
-                    it = consumer.m_toSync.erase(it);
+                    else
+                    {
+                        /*
+                         * For neighbors that were previously resolvable but are now unresolvable,
+                         * we expect such neighbor entries to be deleted prior to a zero MAC update
+                         * arriving for that same neighbor.
+                         */
+                        it = consumer.m_toSync.erase(it);
+                    }
                 }
                 else if (addNeighbor(neighbor_entry, mac_address))
                 {
@@ -912,15 +936,18 @@ bool NeighOrch::addNeighbor(const NeighborEntry &neighborEntry, const MacAddress
     }
     else if (isHwConfigured(neighborEntry))
     {
-        status = sai_neighbor_api->set_neighbor_entry_attribute(&neighbor_entry, &neighbor_attr);
-        if (status != SAI_STATUS_SUCCESS)
+        for (auto itr : neighbor_attrs)
         {
-            SWSS_LOG_ERROR("Failed to update neighbor %s on %s, rv:%d",
-                           macAddress.to_string().c_str(), alias.c_str(), status);
-            task_process_status handle_status = handleSaiSetStatus(SAI_API_NEIGHBOR, status);
-            if (handle_status != task_success)
+            status = sai_neighbor_api->set_neighbor_entry_attribute(&neighbor_entry, &itr);
+            if (status != SAI_STATUS_SUCCESS)
             {
-                return parseHandleSaiStatusFailure(handle_status);
+                SWSS_LOG_ERROR("Failed to update neighbor %s on %s, attr.id=0x%x, rv:%d",
+                               macAddress.to_string().c_str(), alias.c_str(), itr.id, status);
+                task_process_status handle_status = handleSaiSetStatus(SAI_API_NEIGHBOR, status);
+                if (handle_status != task_success)
+                {
+                    return parseHandleSaiStatusFailure(handle_status);
+                }
             }
         }
         SWSS_LOG_NOTICE("Updated neighbor %s on %s", macAddress.to_string().c_str(), alias.c_str());
@@ -1744,12 +1771,18 @@ void NeighOrch::updateSrv6Nexthop(const NextHopKey &nh, const sai_object_id_t &n
         m_syncdNextHops.erase(nh);
     }
 }
-void NeighOrch::addZeroMacTunnelRoute(const NeighborEntry& entry, const MacAddress& mac)
+
+bool NeighOrch::addZeroMacTunnelRoute(const NeighborEntry& entry, const MacAddress& mac)
 {
     SWSS_LOG_INFO("Creating tunnel route for neighbor %s", entry.ip_address.to_string().c_str());
     MuxOrch* mux_orch = gDirectory.get<MuxOrch*>();
     NeighborUpdate update = {entry, mac, true};
     mux_orch->update(SUBJECT_TYPE_NEIGH_CHANGE, static_cast<void *>(&update));
-    m_syncdNeighbors[entry] = { mac, false };
-}
+    if (mux_orch->isStandaloneTunnelRouteInstalled(entry.ip_address))
+    {
+        m_syncdNeighbors[entry] = { mac, false };
+        return true;
+    }
 
+    return false;
+}
