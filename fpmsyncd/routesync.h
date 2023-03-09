@@ -51,6 +51,9 @@ public:
 
     void onWarmStartEnd(swss::DBConnector& applStateDb);
 
+    /* Mark all routes from DB with offloaded flag */
+    void markRoutesOffloaded(swss::DBConnector& db);
+
     void onFpmConnected(FpmInterface& fpm)
     {
         m_fpmInterface = &fpm;
@@ -134,6 +137,9 @@ private:
 
     /* Sends FPM message with RTM_F_OFFLOAD flag set to zebra */
     bool sendOffloadReply(struct rtnl_route* route_obj);
+
+    /* Sends FPM message with RTM_F_OFFLOAD flag set for all routes in the table */
+    void sendOffloadReply(swss::DBConnector& db, const std::string& table);
 };
 
 }

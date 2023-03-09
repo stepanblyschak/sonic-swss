@@ -1467,25 +1467,39 @@ void RouteSync::onRouteResponse(const std::string& key, const std::vector<FieldV
         prefix.to_string().c_str(), vrfName.c_str());
 }
 
+void RouteSync::sendOffloadReply(DBConnector& db, const std::string& tableName)
+{
+    SWSS_LOG_ENTER();
+
+    Table routeTable{&db, tableName};
+
+    std::vector<std::string> keys;
+    routeTable.getKeys(keys);
+
+    for (const auto& key: keys)
+    {
+        std::vector<FieldValueTuple> fieldValues;
+        routeTable.get(key, fieldValues);
+        fieldValues.emplace_back("err_str", "SWSS_RC_SUCCESS");
+
+        onRouteResponse(key, fieldValues);
+    }
+}
+
+void RouteSync::markRoutesOffloaded(swss::DBConnector& db)
+{
+    SWSS_LOG_ENTER();
+
+    sendOffloadReply(db, APP_ROUTE_TABLE_NAME);
+}
+
 void RouteSync::onWarmStartEnd(DBConnector& applStateDb)
 {
     SWSS_LOG_ENTER();
 
     if (isSuppressionEnabled())
     {
-        Table routeStateTable{&applStateDb, APP_ROUTE_TABLE_NAME};
-
-        std::vector<std::string> keys;
-        routeStateTable.getKeys(keys);
-
-        for (const auto& key: keys)
-        {
-            std::vector<FieldValueTuple> fieldValues;
-            routeStateTable.get(key, fieldValues);
-            fieldValues.emplace_back("err_str", "SWSS_RC_SUCCESS");
-            
-            onRouteResponse(key, fieldValues);
-        }
+        markRoutesOffloaded(applStateDb);
     }
 
     if (m_warmStartHelper.inProgress())

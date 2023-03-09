@@ -257,6 +257,13 @@ int main(int argc, char **argv)
                             }
                             else if (!shouldEnable && sync.isSuppressionEnabled())
                             {
+                                /* When disabling suppression we mark all existing routes offloaded in zebra
+                                 * as there could be some transient routes which are pending response from
+                                 * orchagent, thus such updates might be missing. Since we are disabling suppression
+                                 * we no longer care about real HW offload status and can mark all routes as offloaded
+                                 * to avoid routes stuck in suppressed state after transition. */
+                                sync.markRoutesOffloaded(db);
+
                                 sync.setSuppressionEnabled(false);
                                 s.removeSelectable(routeResponseChannel.get());
                                 routeResponseChannel.reset();
