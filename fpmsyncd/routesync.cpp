@@ -1497,14 +1497,14 @@ void RouteSync::onWarmStartEnd(DBConnector& applStateDb)
 {
     SWSS_LOG_ENTER();
 
-    if (isSuppressionEnabled())
-    {
-        markRoutesOffloaded(applStateDb);
-    }
-
     if (m_warmStartHelper.inProgress())
     {
         m_warmStartHelper.reconcile();
         SWSS_LOG_NOTICE("Warm-Restart reconciliation processed.");
+    }
+
+    if (isSuppressionEnabled())
+    {
+        markRoutesOffloaded(applStateDb);
     }
 }
