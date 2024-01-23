@@ -191,7 +191,7 @@ public:
     sai_object_id_t  m_line_side_id = 0;
 
     /* pre-emphasis */
-    std::map<sai_port_serdes_attr_t, std::vector<uint32_t>> m_preemphasis;
+    std::map<sai_port_serdes_attr_t, std::vector<uint32_t>> m_serdes_attrs;
 
     /* Force initial parameter configuration flags */
     bool m_an_cfg = false;        // Auto-negotiation (AN)
