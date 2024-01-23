@@ -926,7 +926,6 @@ namespace portsorch_test
         std::deque<KeyOpFieldsValuesTuple> kfvSerdes = {{
             "Ethernet0",
             SET_COMMAND, {
-                { "admin_status", "up"              },
                 { "idriver"     , "0x6,0x6,0x6,0x6" }
             }
         }};
