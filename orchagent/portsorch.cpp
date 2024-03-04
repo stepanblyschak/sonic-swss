@@ -3517,11 +3517,8 @@ void PortsOrch::doPortTask(Consumer &consumer)
 
         if (op == SET_COMMAND)
         {
-            if (m_portList.find(key) == m_portList.end())
+            auto parsePortFvs = [&](auto& fvMap) -> bool
             {
-                // Aggregate configuration while the port is not created.
-                auto &fvMap = m_portConfigMap[key];
-
                 for (const auto &cit : kfvFieldsValues(keyOpFieldsValues))
                 {
                     auto fieldName = fvField(cit);
@@ -3535,6 +3532,19 @@ void PortsOrch::doPortTask(Consumer &consumer)
                 pCfg.fieldValueMap = fvMap;
 
                 if (!m_portHlpr.parsePortConfig(pCfg))
+                {
+                    return false;
+                }
+
+                return true;
+            };
+
+            if (m_portList.find(key) == m_portList.end())
+            {
+                // Aggregate configuration while the port is not created.
+                auto &fvMap = m_portConfigMap[key];
+
+                if (!parsePortFvs(fvMap))
                 {
                     it = taskMap.erase(it);
                     continue;
@@ -3554,19 +3564,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                 // Port is already created, gather updated field-values.
                 std::unordered_map<std::string, std::string> fvMap;
 
-                for (const auto &cit : kfvFieldsValues(keyOpFieldsValues))
-                {
-                    auto fieldName = fvField(cit);
-                    auto fieldValue = fvValue(cit);
-
-                    SWSS_LOG_INFO("FIELD: %s, VALUE: %s", fieldName.c_str(), fieldValue.c_str());
-
-                    fvMap[fieldName] = fieldValue;
-                }
-
-                pCfg.fieldValueMap = fvMap;
-
-                if (!m_portHlpr.parsePortConfig(pCfg))
+                if (!parsePortFvs(fvMap))
                 {
                     it = taskMap.erase(it);
                     continue;
