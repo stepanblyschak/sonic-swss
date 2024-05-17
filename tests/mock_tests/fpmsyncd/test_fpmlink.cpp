@@ -30,10 +30,7 @@ public:
         NetDispatcher::getInstance().unregisterMessageHandler(RTM_DELROUTE);
     }
 
-    DBConnector m_db{"APPL_DB", 0};
-    RedisPipeline m_pipeline{&m_db, 1};
-    RouteSync m_routeSync{&m_pipeline};
-    FpmLink m_fpm{&m_routeSync};
+    FpmLink m_fpm{nullptr};
     MockMsgHandler m_mock;
 };
 
