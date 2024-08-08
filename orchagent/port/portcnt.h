@@ -48,7 +48,7 @@ public:
     } speed; // Port speed
 
     struct {
-        bool value;
+        bool value = false;
         bool is_set = false;
     } autoneg; // Port autoneg
 
@@ -68,7 +68,7 @@ public:
     } adv_interface_types; // Port advertised interface types
 
     struct {
-        sai_port_fec_mode_t value;
+        sai_port_fec_mode_t value = SAI_PORT_FEC_MODE_NONE;
         bool is_set = false;
         bool override_fec = false;
     } fec; // Port FEC
@@ -196,6 +196,11 @@ public:
         bool value;
         bool is_set = false;
     } admin_status; // Port admin status
+
+    struct {
+        bool value;
+        bool is_set = false;
+    } oper_status; // Port oper status
 
     struct {
         std::string value;
