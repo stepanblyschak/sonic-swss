@@ -927,6 +927,137 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
     return true;
 }
 
+bool PortsOrch::setPortAttrsBulk(const std::vector<PortConfig> &portList)
+{
+    // The method is used to create ports in a bulk mode.
+    // The action takes place when:
+    // 1. Ports are being initialized at system start
+    // 2. Ports are being added/removed by a user at runtime
+
+    SWSS_LOG_ENTER();
+
+    SWSS_LOG_NOTICE("Bulk set ports attributes start");
+
+    if (portList.empty())
+    {
+        return true;
+    }
+
+    std::vector<PortAttrValue_t> attrValueList;
+    std::vector<std::vector<sai_attribute_t>> attrDataList;
+    std::vector<std::uint32_t> attrCountList;
+    std::vector<const sai_attribute_t*> attrPtrList;
+
+    auto portCount = static_cast<std::uint32_t>(portList.size());
+    std::vector<sai_status_t> statusList(portCount, SAI_STATUS_SUCCESS);
+
+    for (const auto &cit : portList)
+    {
+        sai_attribute_t attr;
+        std::vector<sai_attribute_t> attrList;
+
+        if (cit.mtu.is_set)
+        {
+            attr.id = SAI_PORT_ATTR_MTU;
+            attr.value.u32 = cit.mtu.value;
+            attrList.push_back(attr);
+        }
+
+        if (cit.pfc_asym.is_set)
+        {
+            attr.id = SAI_PORT_ATTR_PRIORITY_FLOW_CONTROL_MODE;
+            attr.value.s32 = cit.pfc_asym.value;
+            attrList.push_back(attr);
+        }
+
+        if (cit.tpid.is_set)
+        {
+            attr.id = SAI_PORT_ATTR_TPID;
+            attr.value.u16 = cit.tpid.value;
+            attrList.push_back(attr);
+        }
+
+        if (cit.link_training.is_set)
+        {
+            attr.id = SAI_PORT_ATTR_LINK_TRAINING_ENABLE;
+            attr.value.booldata = cit.link_training.value;
+            attrs.push_back(attr);
+        }
+
+        if (cit.adv_speeds.is_set)
+        {
+            attr.id = SAI_PORT_ATTR_ADVERTISED_SPEED;
+            attr.value.u32list.list  = cit.adv_speeds.value.data();
+            attr.value.u32list.count = static_cast<std::uint32_t>(cit.adv_speeds.value.size());
+            attrs.push_back(attr);
+        }
+
+        if (cit.interface_type.is_set)
+        {
+            attr.id = SAI_PORT_ATTR_INTERFACE_TYPE;
+            attr.value.s32 = cit.interface_type.value;
+            attrs.push_back(attr);
+        }
+
+        if (cit.adv_interface_types.is_set)
+        {
+            attr.id = SAI_PORT_ATTR_ADVERTISED_INTERFACE_TYPE;
+            attr.value.s32 = cit.adv_interface_types.value.date();
+            attr.value.s32list.count = static_cast<std::uint32_t>(cit.adv_interface_types.value.size());
+            attrs.push_back(attr);
+        }
+
+        attrDataList.push_back(attrList);
+        attrCountList.push_back(static_cast<std::uint32_t>(attrDataList.back().size()));
+        attrPtrList.push_back(attrDataList.back().data());
+    }
+
+    for (std::uint32_t i = 0; i < portCount; i++)
+    {
+        oidList.push_back(m_portListLaneMap[portList.at(i).lanes.value]);
+    }
+
+    auto status = sai_port_api->sai_ports_attribute(
+        portCount, oidList.data(), attrPtrList.data(),
+        SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
+    );
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to set ports attributes with bulk operation, rv:%d", status);
+
+        auto handle_status = handleSaiCreateStatus(SAI_API_PORT, status);
+        if (handle_status != task_process_status::task_success)
+        {
+            SWSS_LOG_THROW("PortsOrch bulk port attributes set failure");
+        }
+
+        return false;
+    }
+
+    for (std::uint32_t i = 0; i < portCount; i++)
+    {
+        if (statusList.at(i) != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR(
+                "Failed to set port %s attributes with bulk operation, rv:%d",
+                portList.at(i).key.c_str(), statusList.at(i)
+            );
+
+            auto handle_status = handleSaiCreateStatus(SAI_API_PORT, statusList.at(i));
+            if (handle_status != task_process_status::task_success)
+            {
+                SWSS_LOG_THROW("PortsOrch bulk port attributes set failure");
+            }
+
+            return false;
+        }
+    }
+
+    SWSS_LOG_NOTICE("Bulk set ports attributes end");
+
+    return true;
+}
+
 bool PortsOrch::removePortBulk(const std::vector<sai_object_id_t> &portList)
 {
     SWSS_LOG_ENTER();
@@ -3717,6 +3848,8 @@ void PortsOrch::doPortTask(Consumer &consumer)
                         SWSS_LOG_THROW("PortsOrch initialization failure");
                     }
 
+                    setPortAttrsBulk(portsToAddList);
+
                     for (const auto &cit : portsToAddList)
                     {
                         if (!initPort(cit))
@@ -3765,6 +3898,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                 // Saved configured admin status
                 bool admin_status = p.m_admin_state_up;
 
+                /*
                 if (pCfg.autoneg.is_set)
                 {
                     if (!p.m_an_cfg || p.m_autoneg != pCfg.autoneg.value)
@@ -3783,7 +3917,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                         }
                         if (p.m_admin_state_up)
                         {
-                            /* Bring port down before applying speed */
+                            // Bring port down before applying speed
                             if (!setPortAdminStatus(p, false))
                             {
                                 SWSS_LOG_ERROR(
@@ -3901,7 +4035,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                         // for backward compatible, if autoneg is off, toggle admin status
                         if (p.m_admin_state_up && !p.m_autoneg)
                         {
-                            /* Bring port down before applying speed */
+                            // Bring port down before applying speed
                             if (!setPortAdminStatus(p, false))
                             {
                                 SWSS_LOG_ERROR(
@@ -3946,7 +4080,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                     {
                         if (m_gearboxEnabled)
                         {
-                            /* Always update Gearbox speed on Gearbox ports */
+                            //Always update Gearbox speed on Gearbox ports
                             setGearboxPortsAttr(p, SAI_PORT_ATTR_SPEED, &pCfg.speed.value);
                         }
                     }
@@ -3958,7 +4092,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                     {
                         if (p.m_admin_state_up && p.m_autoneg)
                         {
-                            /* Bring port down before applying speed */
+                            // Bring port down before applying speed
                             if (!setPortAdminStatus(p, false))
                             {
                                 SWSS_LOG_ERROR(
@@ -4010,7 +4144,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                     {
                         if (p.m_admin_state_up && !p.m_autoneg)
                         {
-                            /* Bring port down before applying speed */
+                            // Bring port down before applying speed
                             if (!setPortAdminStatus(p, false))
                             {
                                 SWSS_LOG_ERROR(
@@ -4060,7 +4194,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                     {
                         if (p.m_admin_state_up && p.m_autoneg)
                         {
-                            /* Bring port down before applying speed */
+                            // Bring port down before applying speed
                             if (!setPortAdminStatus(p, false))
                             {
                                 SWSS_LOG_ERROR(
@@ -4162,7 +4296,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
 
                 if (pCfg.fec.is_set && p.m_fec_mode != pCfg.fec.value)
                 {
-                    /* reset fec mode upon mode change */
+                    // reset fec mode upon mode change
                     if (!p.m_fec_cfg || p.m_fec_mode != pCfg.fec.value || p.m_override_fec != pCfg.fec.override_fec)
                     {
                         if (!pCfg.fec.override_fec && !fec_override_sup)
@@ -4189,7 +4323,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
 
                         if (p.m_admin_state_up)
                         {
-                            /* Bring port down before applying fec mode*/
+                            // Bring port down before applying fec mode
                             if (!setPortAdminStatus(p, false))
                             {
                                 SWSS_LOG_ERROR(
@@ -4284,7 +4418,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                             );
                         }
                     }
-                }
+                }*/
 
                 if (!serdes_attr.empty())
                 {

@@ -170,6 +170,7 @@ void BufferOrch::initBufferReadyList(Table& table, bool isConfigDb)
             m_port_ready_list_ref[port_name].push_back(appldb_key);
         }
     }
+    m_pgsCreated = false;
 }
 
 void BufferOrch::initVoqBufferReadyList(Table& table, bool isConfigDb)
@@ -792,6 +793,171 @@ task_process_status BufferOrch::processBufferProfile(KeyOpFieldsValuesTuple &tup
     return task_process_status::task_success;
 }
 
+task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
+{
+    SWSS_LOG_ENTER();
+    SWSS_LOG_NOTICE("processQueuesBulk start");
+    sai_object_id_t sai_buffer_profile;
+    string buffer_profile_name;
+    const string key = kfvKey(tuple);
+    string op = kfvOp(tuple);
+    vector<string> tokens;
+    sai_uint32_t range_low, range_high;
+    bool need_update_sai = true;
+    bool local_port = false;
+    string local_port_name;
+
+    SWSS_LOG_DEBUG("Processing:%s", key.c_str());
+    tokens = tokenize(key, delimiter);
+
+    vector<string> port_names;
+
+    if (tokens.size() != 2)
+    {
+        SWSS_LOG_ERROR("malformed key:%s. Must contain 2 tokens", key.c_str());
+        return task_process_status::task_invalid_entry;
+    }
+    port_names = tokenize(tokens[0], list_item_delimiter);
+    if (!parseIndexRange(tokens[1], range_low, range_high))
+    {
+        return task_process_status::task_invalid_entry;
+    }
+
+    ref_resolve_status resolve_result = resolveFieldRefValue(m_buffer_type_maps, buffer_profile_field_name,
+                                        buffer_to_ref_table_map.at(buffer_profile_field_name), tuple,
+                                        sai_buffer_profile, buffer_profile_name);
+    if (ref_resolve_status::success != resolve_result)
+    {
+        if (ref_resolve_status::not_resolved == resolve_result)
+        {
+            SWSS_LOG_INFO("Missing or invalid queue buffer profile reference specified");
+            return task_process_status::task_need_retry;
+        }
+
+        SWSS_LOG_ERROR("Resolving queue profile reference failed");
+        return task_process_status::task_failed;
+    }
+
+    SWSS_LOG_NOTICE("Set buffer queue %s to %s", key.c_str(), buffer_profile_name.c_str());
+
+    setObjectReference(m_buffer_type_maps, APP_BUFFER_QUEUE_TABLE_NAME, key, buffer_profile_field_name, buffer_profile_name);
+
+    auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
+
+    std::vector<std::vector<sai_attribute_t>> attrDataList;
+    std::vector<std::uint32_t> attrCountList;
+    std::vector<const sai_attribute_t*> attrPtrList;
+    std::vector<sai_object_id_t> queueIdList;
+
+    sai_attribute_t attr;
+    attr.id = SAI_QUEUE_ATTR_BUFFER_PROFILE_ID;
+    attr.value.oid = sai_buffer_profile;
+    for (string port_name : port_names)
+    {
+        std::vector<sai_attribute_t> attrList;
+        Port port;
+        SWSS_LOG_DEBUG("processing port:%s", port_name.c_str());
+        if(local_port == true)
+        {
+            port_name = local_port_name;
+        }
+        if (!gPortsOrch->getPort(port_name, port))
+        {
+            SWSS_LOG_ERROR("Port with alias:%s not found", port_name.c_str());
+            return task_process_status::task_invalid_entry;
+        }
+        for (size_t ind = range_low; ind <= range_high; ind++)
+        {
+            sai_object_id_t queue_id;
+            queue_id = port.m_queue_ids[ind];
+
+            attrList.push_back(attr);
+            queueIdList.push_back(queue_id);
+        }
+        attrDataList.push_back(attrList);
+        attrCountList.push_back(static_cast<std::uint32_t>(attrDataList.back().size()));
+        attrPtrList.push_back(attrDataList.back().data());
+    }
+    auto queueCount = static_cast<std::uint32_t>(queueIdList.size());
+    std::vector<sai_status_t> statusList(queueCount, SAI_STATUS_SUCCESS);
+
+    auto status = sai_port_api->set_queues_attribute(
+        queueCount, queueIdList.data(), attrPtrList.data(),
+        SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
+    );
+
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to create priority grups with bulk operation, rv:%d", status);
+
+        auto handle_status = handleSaiCreateStatus(SAI_API_QUEUE, status);
+        if (handle_status != task_process_status::task_success)
+        {
+            SWSS_LOG_THROW("BuffersOrch bulk create failure");
+        }
+
+        return false;
+    }
+
+    for (std::uint32_t i = 0; i < queueCount; i++)
+    {
+        if (statusList.at(i) != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR(
+                "Failed to create priority group %s with bulk operation, rv:%d",
+                queueIdList.at(i).c_str(), statusList.at(i)
+            );
+
+            auto handle_status = handleSaiCreateStatus(SAI_API_QUEUE, statusList.at(i));
+            if (handle_status != task_process_status::task_success)
+            {
+                SWSS_LOG_THROW("BuffersOrch bulk create failure");
+            }
+
+            return false;
+        }
+    }
+
+    for (string port_name : port_names)
+    {
+        auto queues = tokens[1];
+        Port port;
+        gPortsOrch->getPort(port_name, port)
+        for (size_t ind = range_low; ind <= range_high; ind++)
+        {
+            if (flexCounterOrch->getQueueCountersState() || flexCounterOrch->getQueueWatermarkCountersState())
+            {
+                gPortsOrch->createPortBufferQueueCounters(port, queues);
+            }
+            /* when we apply buffer configuration we need to increase the ref counter of this port
+             * or decrease the ref counter for this port when we remove buffer cfg
+             * so for each priority cfg in each port we will increase/decrease the ref counter
+             * also we need to know when the set command is for creating a buffer cfg or modifying buffer cfg -
+             * we need to increase ref counter only on create flow.
+             * so we added a map that will help us to know what was the last command for this port and priority -
+             * if the last command was set command then it is a modify command and we dont need to increase the buffer counter
+             * all other cases (no last command exist or del command was the last command) it means that we need to increase the ref counter */
+            if (queue_port_flags[port_name][ind] != SET_COMMAND)
+            {
+                /* if the last operation was not "set" then it's create and not modify - need to increase ref counter */
+                gPortsOrch->increasePortRefCount(port_name);
+            }
+            queue_port_flags[port_name][ind] = SET_COMMAND;
+        }
+    }
+
+    if (m_ready_list.find(key) != m_ready_list.end())
+    {
+        m_ready_list[key] = true;
+    }
+
+    m_queuesCreated = true;
+
+    SWSS_LOG_NOTICE("processQueuesBulk end");
+
+    return task_process_status::task_success;
+}
+
 /*
    Input sample "BUFFER_QUEUE|Ethernet4,Ethernet45|10-15" or
                 "BUFFER_QUEUE|STG01-0101-0400-01T2-LC6|ASIC0|Ethernet4|10-15"
@@ -799,6 +965,10 @@ task_process_status BufferOrch::processBufferProfile(KeyOpFieldsValuesTuple &tup
 task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
 {
     SWSS_LOG_ENTER();
+    if (!m_queuesCreated)
+    {
+        return processQueuesBulk(tuple);
+    }
     sai_object_id_t sai_buffer_profile;
     string buffer_profile_name;
     const string key = kfvKey(tuple);
@@ -1055,6 +1225,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
 task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple &tuple)
 {
     SWSS_LOG_ENTER();
+    SWSS_LOG_NOTICE("processPriorityGroupsBulk start");
     sai_object_id_t sai_buffer_profile;
     string buffer_profile_name;
     const string key = kfvKey(tuple);
@@ -1076,66 +1247,104 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
         SWSS_LOG_ERROR("Failed to obtain pg range values");
         return task_process_status::task_invalid_entry;
     }
+    auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
+
+    std::vector<std::vector<sai_attribute_t>> attrDataList;
+    std::vector<std::uint32_t> attrCountList;
+    std::vector<const sai_attribute_t*> attrPtrList;
+    std::vector<sai_object_id_t> pgIdList;
 
     sai_attribute_t attr;
     attr.id = SAI_INGRESS_PRIORITY_GROUP_ATTR_BUFFER_PROFILE;
     attr.value.oid = sai_buffer_profile;
     for (string port_name : port_names)
     {
+        std::vector<sai_attribute_t> attrList;
         Port port;
         SWSS_LOG_DEBUG("processing port:%s", port_name.c_str());
-
+        if (!gPortsOrch->getPort(port_name, port))
+        {
+            SWSS_LOG_ERROR("Port with alias:%s not found", port_name.c_str());
+            return task_process_status::task_invalid_entry;
+        }
         for (size_t ind = range_low; ind <= range_high; ind++)
         {
             sai_object_id_t pg_id;
             pg_id = port.m_priority_group_ids[ind];
-            SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to port:%s pg index:%zd, pg sai_id:0x%" PRIx64, sai_buffer_profile, port_name.c_str(), ind, pg_id);
-            sai_status_t sai_status = sai_buffer_api->set_ingress_priority_group_attribute(pg_id, &attr);
-            if (sai_status != SAI_STATUS_SUCCESS)
+
+            attrList.push_back(attr);
+            pgIdList.push_back(pg_id);
+        }
+        attrDataList.push_back(attrList);
+        attrCountList.push_back(static_cast<std::uint32_t>(attrDataList.back().size()));
+        attrPtrList.push_back(attrDataList.back().data());
+    }
+
+    auto pgCount = static_cast<std::uint32_t>(pgIdList.size());
+    std::vector<sai_status_t> statusList(pgCount, SAI_STATUS_SUCCESS);
+
+    auto status = sai_port_api->set_ingress_priority_groups_attribute(
+        pgCount, pgIdList.data(), attrPtrList.data(),
+        SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
+    );
+
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to create priority grups with bulk operation, rv:%d", status);
+
+        auto handle_status = handleSaiCreateStatus(SAI_API_BUFFER, status);
+        if (handle_status != task_process_status::task_success)
+        {
+            SWSS_LOG_THROW("BuffersOrch bulk create failure");
+        }
+
+        return false;
+    }
+
+    for (std::uint32_t i = 0; i < pgCount; i++)
+    {
+        if (statusList.at(i) != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR(
+                "Failed to create priority group %s with bulk operation, rv:%d",
+                pgIdList.at(i).c_str(), statusList.at(i)
+            );
+
+            auto handle_status = handleSaiCreateStatus(SAI_API_BUFFER, statusList.at(i));
+            if (handle_status != task_process_status::task_success)
             {
-                SWSS_LOG_ERROR("Failed to set port:%s pg:%zd buffer profile attribute, status:%d", port_name.c_str(), ind, sai_status);
-                task_process_status handle_status = handleSaiSetStatus(SAI_API_BUFFER, sai_status);
-                if (handle_status != task_process_status::task_success)
-                {
-                    return handle_status;
-                }
-            }
-            // create or remove a port PG counter for the PG buffer
-            else
-            {
-                auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
-                auto pgs = tokens[1];
-                if (op == SET_COMMAND &&
-                    (flexCounterOrch->getPgCountersState() || flexCounterOrch->getPgWatermarkCountersState()))
-                {
-                    gPortsOrch->createPortBufferPgCounters(port, pgs);
-                }
-                else if (op == DEL_COMMAND &&
-                            (flexCounterOrch->getPgCountersState() || flexCounterOrch->getPgWatermarkCountersState()))
-                {
-                    gPortsOrch->removePortBufferPgCounters(port, pgs);
-                }
+                SWSS_LOG_THROW("BuffersOrch bulk create failure");
             }
 
+            return false;
+        }
+    }
+
+    for (string port_name : port_names)
+    {
+        auto pgs = tokens[1];
+        Port port;
+        gPortsOrch->getPort(port_name, port)
+        for (size_t ind = range_low; ind <= range_high; ind++)
+        {
+            if (flexCounterOrch->getPgCountersState() || flexCounterOrch->getPgWatermarkCountersState())
+            {
+                gPortsOrch->createPortBufferPgCounters(port, pgs);
+            }
             /* when we apply buffer configuration we need to increase the ref counter of this port
-             * or decrease the ref counter for this port when we remove buffer cfg
-             * so for each priority cfg in each port we will increase/decrease the ref counter
-             * also we need to know when the set command is for creating a buffer cfg or modifying buffer cfg -
-             * we need to increase ref counter only on create flow.
-             * so we added a map that will help us to know what was the last command for this port and priority -
-             * if the last command was set command then it is a modify command and we dont need to increase the buffer counter
-             * all other cases (no last command exist or del command was the last command) it means that we need to increase the ref counter */
-            if (op == SET_COMMAND)
+            * or decrease the ref counter for this port when we remove buffer cfg
+            * so for each priority cfg in each port we will increase/decrease the ref counter
+            * also we need to know when the set command is for creating a buffer cfg or modifying buffer cfg -
+            * we need to increase ref counter only on create flow.
+            * so we added a map that will help us to know what was the last command for this port and priority -
+            * if the last command was set command then it is a modify command and we dont need to increase the buffer counter
+            * all other cases (no last command exist or del command was the last command) it means that we need to increase the ref counter */
+            if (pg_port_flags[port_name][ind] != SET_COMMAND)
             {
-                if (pg_port_flags[port_name][ind] != SET_COMMAND)
-                {
-                    /* if the last operation was not "set" then it's create and not modify - need to increase ref counter */
-                    gPortsOrch->increasePortRefCount(port_name);
-                }
+                /* if the last operation was not "set" then it's create and not modify - need to increase ref counter */
+                gPortsOrch->increasePortRefCount(port_name);
             }
-            /* save the last command (set or delete) */
-            pg_port_flags[port_name][ind] = op;
-
+            pg_port_flags[port_name][ind] = SET_COMMAND;
         }
     }
 
@@ -1143,22 +1352,10 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
     {
         m_ready_list[key] = true;
     }
-    else
-    {
-        // If a buffer pg profile is not in the initial CONFIG_DB BUFFER_PG table
-        // at BufferOrch object instantiation, it is considered being applied
-        // at run time, and, in this case, is not tracked in the m_ready_list. It is up to
-        // the application to guarantee the set order that the buffer pg profile
-        // should be applied to a physical port before the physical port is brought up to
-        // carry traffic. Here, we alert to application through syslog when such a wrong
-        // set order is detected.
-        for (const auto &port_name : port_names)
-        {
-            if (gPortsOrch->isPortAdminUp(port_name)) {
-                SWSS_LOG_WARN("PG profile '%s' applied after port %s is up", key.c_str(), port_name.c_str());
-            }
-        }
-    }
+
+    m_pgsCreated = true;
+
+    SWSS_LOG_NOTICE("processPriorityGroupsBulk end");
 
     return task_process_status::task_success;
 }
@@ -1169,6 +1366,10 @@ Input sample "BUFFER_PG|Ethernet4,Ethernet45|10-15"
 task_process_status BufferOrch::processPriorityGroup(KeyOpFieldsValuesTuple &tuple)
 {
     SWSS_LOG_ENTER();
+    if (!m_pgsCreated)
+    {
+        return processPriorityGroupsBulk(tuple);
+    }
     sai_object_id_t sai_buffer_profile;
     string buffer_profile_name;
     const string key = kfvKey(tuple);

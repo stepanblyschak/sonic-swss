@@ -55,7 +55,9 @@ private:
     task_process_status processBufferPool(KeyOpFieldsValuesTuple &tuple);
     task_process_status processBufferProfile(KeyOpFieldsValuesTuple &tuple);
     task_process_status processQueue(KeyOpFieldsValuesTuple &tuple);
+    task_process_status processQueuesBulk(KeyOpFieldsValuesTuple &tuple);
     task_process_status processPriorityGroup(KeyOpFieldsValuesTuple &tuple);
+    task_process_status processPriorityGroupsBulk(KeyOpFieldsValuesTuple &tuple)
     task_process_status processIngressBufferProfileList(KeyOpFieldsValuesTuple &tuple);
     task_process_status processEgressBufferProfileList(KeyOpFieldsValuesTuple &tuple);
 
@@ -72,6 +74,8 @@ private:
     unique_ptr<DBConnector> m_countersDb;
 
     bool m_isBufferPoolWatermarkCounterIdListGenerated = false;
+    bool m_pgsCreated = false;
+    bool m_queuesCreated = false;
     set<string> m_partiallyAppliedQueues;
 };
 #endif /* SWSS_BUFFORCH_H */
