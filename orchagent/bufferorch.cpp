@@ -845,8 +845,6 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
     auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
 
     std::vector<std::vector<sai_attribute_t>> attrDataList;
-    std::vector<std::uint32_t> attrCountList;
-    std::vector<const sai_attribute_t*> attrPtrList;
     std::vector<sai_object_id_t> queueIdList;
 
     sai_attribute_t attr;
@@ -875,14 +873,12 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
             queueIdList.push_back(queue_id);
         }
         attrDataList.push_back(attrList);
-        attrCountList.push_back(static_cast<std::uint32_t>(attrDataList.back().size()));
-        attrPtrList.push_back(attrDataList.back().data());
     }
     auto queueCount = static_cast<std::uint32_t>(queueIdList.size());
     std::vector<sai_status_t> statusList(queueCount, SAI_STATUS_SUCCESS);
 
     auto status = sai_port_api->set_queues_attribute(
-        queueCount, queueIdList.data(), attrPtrList.data(),
+        queueCount, queueIdList.data(), attrDataList.data(),
         SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
     );
 
@@ -1250,8 +1246,6 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
     auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
 
     std::vector<std::vector<sai_attribute_t>> attrDataList;
-    std::vector<std::uint32_t> attrCountList;
-    std::vector<const sai_attribute_t*> attrPtrList;
     std::vector<sai_object_id_t> pgIdList;
 
     sai_attribute_t attr;
@@ -1276,15 +1270,13 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
             pgIdList.push_back(pg_id);
         }
         attrDataList.push_back(attrList);
-        attrCountList.push_back(static_cast<std::uint32_t>(attrDataList.back().size()));
-        attrPtrList.push_back(attrDataList.back().data());
     }
 
     auto pgCount = static_cast<std::uint32_t>(pgIdList.size());
     std::vector<sai_status_t> statusList(pgCount, SAI_STATUS_SUCCESS);
 
     auto status = sai_port_api->set_ingress_priority_groups_attribute(
-        pgCount, pgIdList.data(), attrPtrList.data(),
+        pgCount, pgIdList.data(), attrDataList.data(),
         SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
     );
 
