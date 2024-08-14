@@ -803,7 +803,6 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
     string op = kfvOp(tuple);
     vector<string> tokens;
     sai_uint32_t range_low, range_high;
-    bool need_update_sai = true;
     bool local_port = false;
     string local_port_name;
 
@@ -842,8 +841,6 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
 
     setObjectReference(m_buffer_type_maps, APP_BUFFER_QUEUE_TABLE_NAME, key, buffer_profile_field_name, buffer_profile_name);
 
-    auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
-
     std::vector<std::vector<sai_attribute_t>> attrDataList;
     std::vector<sai_object_id_t> queueIdList;
 
@@ -877,7 +874,7 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
     auto queueCount = static_cast<std::uint32_t>(queueIdList.size());
     std::vector<sai_status_t> statusList(queueCount, SAI_STATUS_SUCCESS);
 
-    auto status = sai_port_api->set_queues_attribute(
+    auto status = sai_queue_api->set_queues_attribute(
         queueCount, queueIdList.data(), attrDataList.data(),
         SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
     );
@@ -892,7 +889,7 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
             SWSS_LOG_THROW("BuffersOrch bulk create failure");
         }
 
-        return false;
+        return task_process_status::task_failed;
     }
 
     for (std::uint32_t i = 0; i < queueCount; i++)
@@ -901,7 +898,7 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
         {
             SWSS_LOG_ERROR(
                 "Failed to create priority group %s with bulk operation, rv:%d",
-                queueIdList.at(i).c_str(), statusList.at(i)
+                (queueIdList.at(i)).c_str(), statusList.at(i)
             );
 
             auto handle_status = handleSaiCreateStatus(SAI_API_QUEUE, statusList.at(i));
@@ -910,7 +907,7 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
                 SWSS_LOG_THROW("BuffersOrch bulk create failure");
             }
 
-            return false;
+            return task_process_status::task_failed;
         }
     }
 
@@ -918,9 +915,10 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
     {
         auto queues = tokens[1];
         Port port;
-        gPortsOrch->getPort(port_name, port)
+        gPortsOrch->getPort(port_name, port);
         for (size_t ind = range_low; ind <= range_high; ind++)
         {
+            auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
             if (flexCounterOrch->getQueueCountersState() || flexCounterOrch->getQueueWatermarkCountersState())
             {
                 gPortsOrch->createPortBufferQueueCounters(port, queues);
@@ -1228,7 +1226,6 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
     string op = kfvOp(tuple);
     vector<string> tokens;
     sai_uint32_t range_low, range_high;
-    bool need_update_sai = true;
 
     SWSS_LOG_DEBUG("processing:%s", key.c_str());
     tokens = tokenize(key, delimiter);
@@ -1243,7 +1240,6 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
         SWSS_LOG_ERROR("Failed to obtain pg range values");
         return task_process_status::task_invalid_entry;
     }
-    auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
 
     std::vector<std::vector<sai_attribute_t>> attrDataList;
     std::vector<sai_object_id_t> pgIdList;
@@ -1275,7 +1271,7 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
     auto pgCount = static_cast<std::uint32_t>(pgIdList.size());
     std::vector<sai_status_t> statusList(pgCount, SAI_STATUS_SUCCESS);
 
-    auto status = sai_port_api->set_ingress_priority_groups_attribute(
+    auto status = sai_buffer_api->set_ingress_priority_groups_attribute(
         pgCount, pgIdList.data(), attrDataList.data(),
         SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
     );
@@ -1290,7 +1286,7 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
             SWSS_LOG_THROW("BuffersOrch bulk create failure");
         }
 
-        return false;
+        return task_process_status::task_failed;
     }
 
     for (std::uint32_t i = 0; i < pgCount; i++)
@@ -1299,7 +1295,7 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
         {
             SWSS_LOG_ERROR(
                 "Failed to create priority group %s with bulk operation, rv:%d",
-                pgIdList.at(i).c_str(), statusList.at(i)
+                (pgIdList.at(i)).c_str(), statusList.at(i)
             );
 
             auto handle_status = handleSaiCreateStatus(SAI_API_BUFFER, statusList.at(i));
@@ -1308,7 +1304,7 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
                 SWSS_LOG_THROW("BuffersOrch bulk create failure");
             }
 
-            return false;
+            return task_process_status::task_failed;
         }
     }
 
@@ -1316,9 +1312,10 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
     {
         auto pgs = tokens[1];
         Port port;
-        gPortsOrch->getPort(port_name, port)
+        gPortsOrch->getPort(port_name, port);
         for (size_t ind = range_low; ind <= range_high; ind++)
         {
+            auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
             if (flexCounterOrch->getPgCountersState() || flexCounterOrch->getPgWatermarkCountersState())
             {
                 gPortsOrch->createPortBufferPgCounters(port, pgs);

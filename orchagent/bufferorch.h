@@ -57,7 +57,7 @@ private:
     task_process_status processQueue(KeyOpFieldsValuesTuple &tuple);
     task_process_status processQueuesBulk(KeyOpFieldsValuesTuple &tuple);
     task_process_status processPriorityGroup(KeyOpFieldsValuesTuple &tuple);
-    task_process_status processPriorityGroupsBulk(KeyOpFieldsValuesTuple &tuple)
+    task_process_status processPriorityGroupsBulk(KeyOpFieldsValuesTuple &tuple);
     task_process_status processIngressBufferProfileList(KeyOpFieldsValuesTuple &tuple);
     task_process_status processEgressBufferProfileList(KeyOpFieldsValuesTuple &tuple);
 

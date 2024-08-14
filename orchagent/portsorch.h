@@ -523,6 +523,8 @@ private:
     bool addPortBulk(const std::vector<PortConfig> &portList);
     bool removePortBulk(const std::vector<sai_object_id_t> &portList);
 
+    bool setPortAttrsBulk(const std::vector<PortConfig> &portList);
+
 private:
     // Port config aggregator
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> m_portConfigMap;
