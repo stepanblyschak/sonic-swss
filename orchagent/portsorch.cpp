@@ -950,6 +950,7 @@ bool PortsOrch::setPortAttrsBulk(const std::vector<PortConfig> &portList)
 
     auto portCount = static_cast<std::uint32_t>(portList.size());
     std::vector<sai_status_t> statusList(portCount, SAI_STATUS_SUCCESS);
+    std::vector<sai_object_id_t> oidList;
 
     for (const auto &cit : portList)
     {
@@ -981,30 +982,34 @@ bool PortsOrch::setPortAttrsBulk(const std::vector<PortConfig> &portList)
         {
             attr.id = SAI_PORT_ATTR_LINK_TRAINING_ENABLE;
             attr.value.booldata = cit.link_training.value;
-            attrs.push_back(attr);
+            attrList.push_back(attr);
         }
 
         if (cit.adv_speeds.is_set)
         {
             attr.id = SAI_PORT_ATTR_ADVERTISED_SPEED;
-            attr.value.u32list.list  = cit.adv_speeds.value.data();
-            attr.value.u32list.count = static_cast<std::uint32_t>(cit.adv_speeds.value.size());
-            attrs.push_back(attr);
+            auto adv_speeds = swss::join(',', cit.adv_speeds.value.begin(), cit.adv_speeds.value.end());
+            std::vector<std::uint32_t> speedList(adv_speeds.begin(), adv_speeds.end());
+            attr.value.u32list.list  = speedList.data();
+            attr.value.u32list.count = static_cast<std::uint32_t>(speedList.size());
+            attrList.push_back(attr);
         }
 
         if (cit.interface_type.is_set)
         {
             attr.id = SAI_PORT_ATTR_INTERFACE_TYPE;
             attr.value.s32 = cit.interface_type.value;
-            attrs.push_back(attr);
+            attrList.push_back(attr);
         }
 
         if (cit.adv_interface_types.is_set)
         {
             attr.id = SAI_PORT_ATTR_ADVERTISED_INTERFACE_TYPE;
-            attr.value.s32 = cit.adv_interface_types.value.date();
-            attr.value.s32list.count = static_cast<std::uint32_t>(cit.adv_interface_types.value.size());
-            attrs.push_back(attr);
+            std::vector<std::int32_t> interfaceTypeList(
+                cit.adv_interface_types.value.begin(), cit.adv_interface_types.value.end());
+            attr.value.s32 = interfaceTypeList.data();
+            attr.value.s32list.count = static_cast<std::uint32_t>(interfaceTypeList.size());
+            attrList.push_back(attr);
         }
 
         attrDataList.push_back(attrList);
@@ -1017,7 +1022,7 @@ bool PortsOrch::setPortAttrsBulk(const std::vector<PortConfig> &portList)
         oidList.push_back(m_portListLaneMap[portList.at(i).lanes.value]);
     }
 
-    auto status = sai_port_api->sai_ports_attribute(
+    auto status = sai_port_api->set_ports_attribute(
         portCount, oidList.data(), attrPtrList.data(),
         SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
     );

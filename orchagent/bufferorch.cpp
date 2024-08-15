@@ -841,7 +841,6 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
 
     setObjectReference(m_buffer_type_maps, APP_BUFFER_QUEUE_TABLE_NAME, key, buffer_profile_field_name, buffer_profile_name);
 
-    std::vector<std::vector<sai_attribute_t>> attrDataList;
     std::vector<sai_object_id_t> queueIdList;
 
     sai_attribute_t attr;
@@ -849,7 +848,6 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
     attr.value.oid = sai_buffer_profile;
     for (string port_name : port_names)
     {
-        std::vector<sai_attribute_t> attrList;
         Port port;
         SWSS_LOG_DEBUG("processing port:%s", port_name.c_str());
         if(local_port == true)
@@ -865,17 +863,14 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
         {
             sai_object_id_t queue_id;
             queue_id = port.m_queue_ids[ind];
-
-            attrList.push_back(attr);
             queueIdList.push_back(queue_id);
         }
-        attrDataList.push_back(attrList);
     }
     auto queueCount = static_cast<std::uint32_t>(queueIdList.size());
     std::vector<sai_status_t> statusList(queueCount, SAI_STATUS_SUCCESS);
 
     auto status = sai_queue_api->set_queues_attribute(
-        queueCount, queueIdList.data(), attrDataList.data(),
+        queueCount, queueIdList.data(), &attr,
         SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
     );
 
@@ -897,10 +892,9 @@ task_process_status BufferOrch::processQueuesBulk(KeyOpFieldsValuesTuple &tuple)
         if (statusList.at(i) != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR(
-                "Failed to create priority group %s with bulk operation, rv:%d",
-                (queueIdList.at(i)).c_str(), statusList.at(i)
+                "Failed to create priority group %" PRIx64 " with bulk operation, rv:%d",
+                queueIdList.at(i), statusList.at(i)
             );
-
             auto handle_status = handleSaiCreateStatus(SAI_API_QUEUE, statusList.at(i));
             if (handle_status != task_process_status::task_success)
             {
@@ -1241,7 +1235,6 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
         return task_process_status::task_invalid_entry;
     }
 
-    std::vector<std::vector<sai_attribute_t>> attrDataList;
     std::vector<sai_object_id_t> pgIdList;
 
     sai_attribute_t attr;
@@ -1249,7 +1242,6 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
     attr.value.oid = sai_buffer_profile;
     for (string port_name : port_names)
     {
-        std::vector<sai_attribute_t> attrList;
         Port port;
         SWSS_LOG_DEBUG("processing port:%s", port_name.c_str());
         if (!gPortsOrch->getPort(port_name, port))
@@ -1261,18 +1253,15 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
         {
             sai_object_id_t pg_id;
             pg_id = port.m_priority_group_ids[ind];
-
-            attrList.push_back(attr);
             pgIdList.push_back(pg_id);
         }
-        attrDataList.push_back(attrList);
     }
 
     auto pgCount = static_cast<std::uint32_t>(pgIdList.size());
     std::vector<sai_status_t> statusList(pgCount, SAI_STATUS_SUCCESS);
 
     auto status = sai_buffer_api->set_ingress_priority_groups_attribute(
-        pgCount, pgIdList.data(), attrDataList.data(),
+        pgCount, pgIdList.data(), &attr,
         SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
     );
 
@@ -1294,8 +1283,8 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
         if (statusList.at(i) != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR(
-                "Failed to create priority group %s with bulk operation, rv:%d",
-                (pgIdList.at(i)).c_str(), statusList.at(i)
+                "Failed to create priority group %" PRIx64 " with bulk operation, rv:%d",
+                pgIdList.at(i), statusList.at(i)
             );
 
             auto handle_status = handleSaiCreateStatus(SAI_API_BUFFER, statusList.at(i));
