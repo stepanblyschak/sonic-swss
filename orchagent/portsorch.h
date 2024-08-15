@@ -523,7 +523,7 @@ private:
     bool addPortBulk(const std::vector<PortConfig> &portList);
     bool removePortBulk(const std::vector<sai_object_id_t> &portList);
 
-    bool setPortAttrsBulk(const std::vector<PortConfig> &portList);
+    bool setPortAdminStatusBulk(const std::vector<PortConfig> &portList);
 
 private:
     // Port config aggregator

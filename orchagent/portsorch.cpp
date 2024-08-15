@@ -870,93 +870,6 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
             attrList.push_back(attr);
         }
 
-        attrDataList.push_back(attrList);
-        attrCountList.push_back(static_cast<std::uint32_t>(attrDataList.back().size()));
-        attrPtrList.push_back(attrDataList.back().data());
-    }
-
-    auto status = sai_port_api->create_ports(
-        gSwitchId, portCount, attrCountList.data(), attrPtrList.data(),
-        SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR,
-        oidList.data(), statusList.data()
-    );
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Failed to create ports with bulk operation, rv:%d", status);
-
-        auto handle_status = handleSaiCreateStatus(SAI_API_PORT, status);
-        if (handle_status != task_process_status::task_success)
-        {
-            SWSS_LOG_THROW("PortsOrch bulk create failure");
-        }
-
-        return false;
-    }
-
-    for (std::uint32_t i = 0; i < portCount; i++)
-    {
-        if (statusList.at(i) != SAI_STATUS_SUCCESS)
-        {
-            SWSS_LOG_ERROR(
-                "Failed to create port %s with bulk operation, rv:%d",
-                portList.at(i).key.c_str(), statusList.at(i)
-            );
-
-            auto handle_status = handleSaiCreateStatus(SAI_API_PORT, statusList.at(i));
-            if (handle_status != task_process_status::task_success)
-            {
-                SWSS_LOG_THROW("PortsOrch bulk create failure");
-            }
-
-            return false;
-        }
-
-        m_portListLaneMap[portList.at(i).lanes.value] = oidList.at(i);
-        m_portCount++;
-    }
-
-    // newly created ports might be put in the default vlan so remove all ports from
-    // the default vlan.
-    if (gMySwitchType == "voq") {
-        removeDefaultVlanMembers();
-        removeDefaultBridgePorts();
-    }
-
-    SWSS_LOG_NOTICE("Created ports: %s", swss::join(',', oidList.begin(), oidList.end()).c_str());
-
-    return true;
-}
-
-bool PortsOrch::setPortAttrsBulk(const std::vector<PortConfig> &portList)
-{
-    // The method is used to create ports in a bulk mode.
-    // The action takes place when:
-    // 1. Ports are being initialized at system start
-    // 2. Ports are being added/removed by a user at runtime
-
-    SWSS_LOG_ENTER();
-
-    SWSS_LOG_NOTICE("Bulk set ports attributes start");
-
-    if (portList.empty())
-    {
-        return true;
-    }
-
-    std::vector<PortAttrValue_t> attrValueList;
-    std::vector<std::vector<sai_attribute_t>> attrDataList;
-    std::vector<std::uint32_t> attrCountList;
-    std::vector<const sai_attribute_t*> attrPtrList;
-
-    auto portCount = static_cast<std::uint32_t>(portList.size());
-    std::vector<sai_status_t> statusList(portCount, SAI_STATUS_SUCCESS);
-    std::vector<sai_object_id_t> oidList;
-
-    for (const auto &cit : portList)
-    {
-        sai_attribute_t attr;
-        std::vector<sai_attribute_t> attrList;
-
         if (cit.mtu.is_set)
         {
             attr.id = SAI_PORT_ATTR_MTU;
@@ -1017,18 +930,93 @@ bool PortsOrch::setPortAttrsBulk(const std::vector<PortConfig> &portList)
         attrPtrList.push_back(attrDataList.back().data());
     }
 
+    auto status = sai_port_api->create_ports(
+        gSwitchId, portCount, attrCountList.data(), attrPtrList.data(),
+        SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR,
+        oidList.data(), statusList.data()
+    );
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to create ports with bulk operation, rv:%d", status);
+
+        auto handle_status = handleSaiCreateStatus(SAI_API_PORT, status);
+        if (handle_status != task_process_status::task_success)
+        {
+            SWSS_LOG_THROW("PortsOrch bulk create failure");
+        }
+
+        return false;
+    }
+
+    for (std::uint32_t i = 0; i < portCount; i++)
+    {
+        if (statusList.at(i) != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR(
+                "Failed to create port %s with bulk operation, rv:%d",
+                portList.at(i).key.c_str(), statusList.at(i)
+            );
+
+            auto handle_status = handleSaiCreateStatus(SAI_API_PORT, statusList.at(i));
+            if (handle_status != task_process_status::task_success)
+            {
+                SWSS_LOG_THROW("PortsOrch bulk create failure");
+            }
+
+            return false;
+        }
+
+        m_portListLaneMap[portList.at(i).lanes.value] = oidList.at(i);
+        m_portCount++;
+    }
+
+    // newly created ports might be put in the default vlan so remove all ports from
+    // the default vlan.
+    if (gMySwitchType == "voq") {
+        removeDefaultVlanMembers();
+        removeDefaultBridgePorts();
+    }
+
+    SWSS_LOG_NOTICE("Created ports: %s", swss::join(',', oidList.begin(), oidList.end()).c_str());
+
+    return true;
+}
+
+bool PortsOrch::setPortAdminStatusBulk(const std::vector<PortConfig> &portList)
+{
+    // The method is used to create ports in a bulk mode.
+    // The action takes place when:
+    // 1. Ports are being initialized at system start
+    // 2. Ports are being added/removed by a user at runtime
+
+    SWSS_LOG_ENTER();
+
+    SWSS_LOG_NOTICE("Bulk set ports attributes start");
+
+    if (portList.empty())
+    {
+        return true;
+    }
+
+    sai_attribute_t attr;
+    attr.id = SAI_PORT_ATTR_ADMIN_STATE;
+    attr.value.booldata = true;
+
+    auto portCount = static_cast<std::uint32_t>(portList.size());
+    std::vector<sai_status_t> statusList(portCount, SAI_STATUS_SUCCESS);
+    std::vector<sai_object_id_t> oidList;
     for (std::uint32_t i = 0; i < portCount; i++)
     {
         oidList.push_back(m_portListLaneMap[portList.at(i).lanes.value]);
     }
 
     auto status = sai_port_api->set_ports_attribute(
-        portCount, oidList.data(), attrPtrList.data(),
+        portCount, oidList.data(), &attr,
         SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statusList.data()
     );
     if (status != SAI_STATUS_SUCCESS)
     {
-        SWSS_LOG_ERROR("Failed to set ports attributes with bulk operation, rv:%d", status);
+        SWSS_LOG_ERROR("Failed to set ports Admin state to UP with bulk operation, rv:%d", status);
 
         auto handle_status = handleSaiCreateStatus(SAI_API_PORT, status);
         if (handle_status != task_process_status::task_success)
@@ -1044,7 +1032,7 @@ bool PortsOrch::setPortAttrsBulk(const std::vector<PortConfig> &portList)
         if (statusList.at(i) != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR(
-                "Failed to set port %s attributes with bulk operation, rv:%d",
+                "Failed to set port %s Admin state to UP with bulk operation, rv:%d",
                 portList.at(i).key.c_str(), statusList.at(i)
             );
 
@@ -1058,7 +1046,7 @@ bool PortsOrch::setPortAttrsBulk(const std::vector<PortConfig> &portList)
         }
     }
 
-    SWSS_LOG_NOTICE("Bulk set ports attributes end");
+    SWSS_LOG_NOTICE("Bulk set ports Admin state attributes end");
 
     return true;
 }
@@ -3659,6 +3647,8 @@ void PortsOrch::doPortTask(Consumer &consumer)
     auto &taskMap = consumer.m_toSync;
     auto it = taskMap.begin();
 
+    std::vector<PortConfig> portsToAddList;
+
     while (it != taskMap.end())
     {
         auto keyOpFieldsValues = it->second;
@@ -3797,7 +3787,6 @@ void PortsOrch::doPortTask(Consumer &consumer)
              */
             if (getPortConfigState() != PORT_CONFIG_MISSING)
             {
-                std::vector<PortConfig> portsToAddList;
                 std::vector<sai_object_id_t> portsToRemoveList;
 
                 // Port remove comparison logic
@@ -3852,8 +3841,6 @@ void PortsOrch::doPortTask(Consumer &consumer)
                     {
                         SWSS_LOG_THROW("PortsOrch initialization failure");
                     }
-
-                    setPortAttrsBulk(portsToAddList);
 
                     for (const auto &cit : portsToAddList)
                     {
@@ -4475,7 +4462,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
                 }
 
                 /* Last step set port admin status */
-                if (pCfg.admin_status.is_set)
+                /*if (pCfg.admin_status.is_set)
                 {
                     if (p.m_admin_state_up != pCfg.admin_status.value)
                     {
@@ -4497,8 +4484,9 @@ void PortsOrch::doPortTask(Consumer &consumer)
                             p.m_alias.c_str(), m_portHlpr.getAdminStatusStr(pCfg).c_str()
                         );
                     }
-                }
+                }*/
             }
+            setPortAdminStatusBulk(portsToAddList);
         }
         else if (op == DEL_COMMAND)
         {
