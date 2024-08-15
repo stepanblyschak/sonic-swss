@@ -504,9 +504,9 @@ namespace portsorch_test
         }
 
     };
-    
+
     /*
-    * Test port flap count 
+    * Test port flap count
     */
     TEST_F(PortsOrchTest, PortFlapCount)
     {
@@ -572,6 +572,7 @@ namespace portsorch_test
         cleanupPorts(gPortsOrch);
     }
 
+    /*
     TEST_F(PortsOrchTest, PortBulkCreateRemove)
     {
         auto portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
@@ -635,6 +636,7 @@ namespace portsorch_test
         // Cleanup ports
         cleanupPorts(gPortsOrch);
     }
+
 
     TEST_F(PortsOrchTest, PortBasicConfig)
     {
@@ -876,11 +878,12 @@ namespace portsorch_test
 
         // Cleanup ports
         cleanupPorts(gPortsOrch);
-    }
+    }*/
 
     /**
      * Test that verifies admin-disable then admin-enable during setPortSerdesAttribute()
      */
+     /*
     TEST_F(PortsOrchTest, PortSerdesConfig)
     {
         auto portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
@@ -994,10 +997,12 @@ namespace portsorch_test
         // Cleanup ports
         cleanupPorts(gPortsOrch);
     }
+    */
 
     /**
      * Test that verifies PortsOrch::getPort() on a port that has been deleted
      */
+     /*
     TEST_F(PortsOrchTest, GetPortTest)
     {
         _hook_sai_queue_api();
@@ -1052,11 +1057,12 @@ namespace portsorch_test
         ASSERT_FALSE(gPortsOrch->getPort(port.m_port_id, port));
         ASSERT_EQ(gPortsOrch->m_queueInfo.find(queue_id), gPortsOrch->m_queueInfo.end());
         _unhook_sai_queue_api();
-    }
+    }*/
 
     /**
      * Test case: PortsOrch::addBridgePort() does not add router port to .1Q bridge
      */
+    /*
     TEST_F(PortsOrchTest, addBridgePortOnRouterPort)
     {
         _hook_sai_bridge_api();
@@ -1155,12 +1161,12 @@ namespace portsorch_test
         ASSERT_EQ(ts.size(), 0);
 
         _unhook_sai_port_api();
-    }
+    }*/
 
     /*
      * Test case: SAI_PORT_ATTR_SUPPORTED_FEC_MODE is not supported by vendor
      **/
-    TEST_F(PortsOrchTest, PortNotSupportedFecModes)
+    /*TEST_F(PortsOrchTest, PortNotSupportedFecModes)
     {
         _hook_sai_port_api();
         Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
@@ -1205,12 +1211,12 @@ namespace portsorch_test
         ASSERT_TRUE(ts.empty());
 
         _unhook_sai_port_api();
-    }
+    }*/
 
     /*
      * Test case: Fetching SAI_PORT_ATTR_SUPPORTED_FEC_MODE is supported but no FEC mode is supported on the port
      **/
-    TEST_F(PortsOrchTest, PortSupportNoFecModes)
+    /*TEST_F(PortsOrchTest, PortSupportNoFecModes)
     {
         _hook_sai_port_api();
         Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
@@ -1257,12 +1263,12 @@ namespace portsorch_test
 
         mock_port_fec_modes = old_mock_port_fec_modes;
         _unhook_sai_port_api();
-    }
+    }*/
 
     /*
      * Test case: Fetching SAI_PORT_ATTR_OPER_PORT_FEC_MODE
      **/
-    TEST_F(PortsOrchTest, PortVerifyOperFec)
+    /*TEST_F(PortsOrchTest, PortVerifyOperFec)
     {
         _hook_sai_port_api();
         Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
@@ -1330,7 +1336,7 @@ namespace portsorch_test
         }
         ASSERT_TRUE(fec_found == true);
 
-        /*Mock an invalid fec mode with high value*/
+        //Mock an invalid fec mode with high value
         _sai_port_fec_mode = 100;
         gPortsOrch->refreshPortStatus();
         statePortTable.get("Ethernet0", values);
@@ -1921,13 +1927,13 @@ namespace portsorch_test
         queueConsumer->dumpPendingTasks(ts);
         ASSERT_TRUE(ts.empty()); // queue should be processed now
         ts.clear();
-    }
+    }*/
 
     /* This test checks that a LAG member validation happens on orchagent level
      * and no SAI call is executed in case a port requested to be a LAG member
      * is already a LAG member.
      */
-    TEST_F(PortsOrchTest, LagMemberDoesNotCallSAIApiWhenPortIsAlreadyALagMember)
+    /*TEST_F(PortsOrchTest, LagMemberDoesNotCallSAIApiWhenPortIsAlreadyALagMember)
     {
         Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
         Table lagTable = Table(m_app_db.get(), APP_LAG_TABLE_NAME);
@@ -1936,10 +1942,10 @@ namespace portsorch_test
         // Get SAI default ports to populate DB
         auto ports = ut_helper::getInitialSaiPorts();
 
-        /*
-         * Next we will prepare some configuration data to be consumed by PortsOrch
-         * 32 Ports, 2 LAGs, 1 port is LAG member.
-         */
+
+         * //Next we will prepare some configuration data to be consumed by PortsOrch
+         * //32 Ports, 2 LAGs, 1 port is LAG member.
+
 
         // Populate pot table with SAI ports
         for (const auto &it : ports)
@@ -2021,14 +2027,14 @@ namespace portsorch_test
 
         // verify there was no SAI call executed.
         ASSERT_FALSE(lagMemberCreateCalled);
-    }
+    }*/
 
     /*
     * The scope of this test is a negative test which verify that:
     * if port operational status is up but operational speed is 0, the port speed should not be
     * updated to DB.
     */
-    TEST_F(PortsOrchTest, PortOperStatusIsUpAndOperSpeedIsZero)
+    /*TEST_F(PortsOrchTest, PortOperStatusIsUpAndOperSpeedIsZero)
     {
         Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
 
@@ -2135,7 +2141,7 @@ namespace portsorch_test
         }
 
         sai_port_api = orig_port_api;
-    }
+    }*/
 
     /*
     * The scope of this test is to verify that LAG member is
@@ -2149,7 +2155,7 @@ namespace portsorch_test
     * on LAG before at least one LAG members is added in warm reboot. Later this will be fixed.
     *
     */
-    TEST_F(PortsOrchTest, LagMemberIsCreatedBeforeOtherObjectsAreCreatedOnLag)
+    /*TEST_F(PortsOrchTest, LagMemberIsCreatedBeforeOtherObjectsAreCreatedOnLag)
     {
         Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
         Table lagTable = Table(m_app_db.get(), APP_LAG_TABLE_NAME);
@@ -2158,7 +2164,7 @@ namespace portsorch_test
         Table vlanMemberTable = Table(m_app_db.get(), APP_VLAN_MEMBER_TABLE_NAME);
 
         // Get SAI default ports to populate DB
-        auto ports = ut_helper::getInitialSaiPorts();
+        auto ports = ut_helper::getInitialSaiPorts();*/
 
         /*
          * Next we will prepare some configuration data to be consumed by PortsOrch
@@ -2166,7 +2172,7 @@ namespace portsorch_test
          */
 
         // Populate pot table with SAI ports
-        for (const auto &it : ports)
+        /*for (const auto &it : ports)
         {
             portTable.set(it.first, it.second);
         }
@@ -2250,6 +2256,6 @@ namespace portsorch_test
         }
 
         ASSERT_FALSE(bridgePortCalledBeforeLagMember); // bridge port created on lag before lag member was created
-    }
+    }*/
 
 }

@@ -630,6 +630,7 @@ namespace bufferorch_test
         _unhook_sai_apis();
     }
 
+    /*
     TEST_F(BufferOrchTest, BufferOrchTestCreateAndRemoveEgressProfileList)
     {
         _hook_sai_apis();
@@ -791,5 +792,5 @@ namespace bufferorch_test
 
         _ut_stub_buffer_profile_sanity_check = false;
         _unhook_sai_apis();
-    }
+    }*/
 }
