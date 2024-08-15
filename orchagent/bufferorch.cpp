@@ -1235,6 +1235,22 @@ task_process_status BufferOrch::processPriorityGroupsBulk(KeyOpFieldsValuesTuple
         return task_process_status::task_invalid_entry;
     }
 
+    ref_resolve_status  resolve_result = resolveFieldRefValue(m_buffer_type_maps, buffer_profile_field_name,
+                                             buffer_to_ref_table_map.at(buffer_profile_field_name), tuple,
+                                             sai_buffer_profile, buffer_profile_name);
+    if (ref_resolve_status::success != resolve_result)
+    {
+        if (ref_resolve_status::not_resolved == resolve_result)
+        {
+            SWSS_LOG_INFO("Missing or invalid pg profile reference specified");
+            return task_process_status::task_need_retry;
+        }
+
+        SWSS_LOG_ERROR("Resolving pg profile reference failed");
+        return task_process_status::task_failed;
+    }
+    setObjectReference(m_buffer_type_maps, APP_BUFFER_PG_TABLE_NAME, key, buffer_profile_field_name, buffer_profile_name);
+
     std::vector<sai_object_id_t> pgIdList;
 
     sai_attribute_t attr;
