@@ -915,6 +915,7 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
             attrList.push_back(attr);
         }
 
+        /*
         if (cit.adv_interface_types.is_set)
         {
             attr.id = SAI_PORT_ATTR_ADVERTISED_INTERFACE_TYPE;
@@ -923,7 +924,7 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
             attr.value.s32 = interfaceTypeList.data();
             attr.value.s32list.count = static_cast<std::uint32_t>(interfaceTypeList.size());
             attrList.push_back(attr);
-        }
+        }*/
 
         attrDataList.push_back(attrList);
         attrCountList.push_back(static_cast<std::uint32_t>(attrDataList.back().size()));
