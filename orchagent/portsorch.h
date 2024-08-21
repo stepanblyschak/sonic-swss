@@ -339,6 +339,7 @@ private:
     bool oper_fec_sup = false;
     bool saiHwTxSignalSupported = false;
     bool saiTxReadyNotifySupported = false;
+    bool m_supportsHostIfTxQueue = false;
 
     swss::SelectableTimer *m_port_state_poller = nullptr;
 
