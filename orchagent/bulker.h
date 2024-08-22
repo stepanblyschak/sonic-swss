@@ -1,6 +1,7 @@
 #pragma once
 
 #include <assert.h>
+#include <algorithm>
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -10,6 +11,7 @@
 #include "sai.h"
 #include "logger.h"
 #include "sai_serialize.h"
+#include "saiattr.h"
 
 typedef sai_status_t (*sai_bulk_set_outbound_ca_to_pa_entry_attribute_fn) (
         _In_ uint32_t object_count,
@@ -1258,3 +1260,93 @@ inline ObjectBulker<sai_dash_vnet_api_t>::ObjectBulker(SaiBulkerTraits<sai_dash_
     create_entries = api->create_vnets;
     remove_entries = api->remove_vnets;
 }
+
+template<sai_object_type_t>
+struct SaiObjectTrait {};
+
+#define DEFINE_SAI_OBJECT_TRAIT(objectType, apiType, object)                                        \
+    template<>                                                                                      \
+    struct SaiObjectTrait<SAI_OBJECT_TYPE_ ## objectType>                                           \
+    {                                                                                               \
+        using api_t = apiType;                                                                      \
+                                                                                                    \
+        static sai_status_t set(api_t* api, sai_object_id_t oid, const sai_attribute_t* attr)       \
+        {                                                                                           \
+            return api->set_ ##object## _attribute(oid, attr);                                      \
+        }                                                                                           \
+                                                                                                    \
+        static sai_status_t bulkSet(api_t* api, uint32_t size, const sai_object_id_t* oids,         \
+            const sai_attribute_t* attrs, sai_bulk_op_error_mode_t mode, sai_status_t* statuses)    \
+        {                                                                                           \
+            return api->set_ ##object## s_attribute(size, oids, attrs, mode, statuses);             \
+        }                                                                                           \
+    }
+
+DEFINE_SAI_OBJECT_TRAIT(PORT, sai_port_api_t, port);
+DEFINE_SAI_OBJECT_TRAIT(INGRESS_PRIORITY_GROUP, sai_buffer_api_t, ingress_priority_group);
+DEFINE_SAI_OBJECT_TRAIT(QUEUE, sai_queue_api_t, queue);
+
+#undef DEFINE_SAI_OBJECT_TRAIT
+
+template<sai_object_type_t SaiObjectType>
+struct BulkContext
+{
+public:
+    bool bulkEnabled = false;
+    sai_bulk_op_error_mode_t bulkErrorMode = SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR;
+
+    BulkContext(typename SaiObjectTrait<SaiObjectType>::api_t* api) :
+        m_api(api)
+    {
+    }
+
+    sai_status_t set(sai_object_id_t oid, sai_attribute_t attr)
+    {
+        if (bulkEnabled)
+        {
+            m_oids.push_back(oid);
+            m_statuses.push_back(SAI_STATUS_NOT_EXECUTED);
+            m_attrs.emplace_back(SaiObjectType, attr);
+            return SAI_STATUS_SUCCESS;
+        }
+        else
+        {
+            return SaiObjectTrait<SaiObjectType>::set(m_api, oid, &attr);
+        }
+    }
+
+    bool empty() const noexcept
+    {
+        return m_oids.empty();
+    }
+
+    sai_status_t flush()
+    {
+        assert(bulkEnabled && !empty());
+
+        sai_status_t status = SAI_STATUS_SUCCESS;
+
+        std::vector<sai_attribute_t> sai_attrs;
+        std::transform(m_attrs.begin(), m_attrs.end(),
+            std::back_inserter(sai_attrs),
+            [](const auto& attr){ return attr.getSaiAttr(); }
+        );
+
+        status = SaiObjectTrait<SaiObjectType>::bulkSet(
+            m_api, static_cast<uint32_t>(m_oids.size()), m_oids.data(),
+            sai_attrs.data(), bulkErrorMode, m_statuses.data()
+        );
+
+        m_oids.clear();
+        m_statuses.clear();
+        m_attrs.clear();
+
+        return status;
+    }
+private:
+    typename SaiObjectTrait<SaiObjectType>::api_t* m_api;
+    std::vector<sai_object_id_t> m_oids;
+    std::vector<sai_status_t> m_statuses;
+    std::vector<SaiAttrWrapper> m_attrs;
+
+};

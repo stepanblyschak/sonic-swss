@@ -7,6 +7,7 @@
 #include "orch.h"
 #include "portsorch.h"
 #include "redisapi.h"
+#include "bulker.h"
 
 #define BUFFER_POOL_WATERMARK_STAT_COUNTER_FLEX_COUNTER_GROUP "BUFFER_POOL_WATERMARK_STAT_COUNTER"
 #define BUFFER_POOL_WATERMARK_FLEX_STAT_COUNTER_POLL_MSECS  "60000"
@@ -46,6 +47,7 @@ private:
 
     void doTask() override;
     virtual void doTask(Consumer& consumer);
+    void onWarmRestoreFinished() override;
     void clearBufferPoolWatermarkCounterIdList(const sai_object_id_t object_id);
     void initTableHandlers();
     void initBufferReadyLists(DBConnector *confDb, DBConnector *applDb);
@@ -70,6 +72,9 @@ private:
 
     bool m_isBufferPoolWatermarkCounterIdListGenerated = false;
     set<string> m_partiallyAppliedQueues;
+
+    BulkContext<SAI_OBJECT_TYPE_PORT> m_portBulk;
+    BulkContext<SAI_OBJECT_TYPE_INGRESS_PRIORITY_GROUP> m_pgBulk;
+    BulkContext<SAI_OBJECT_TYPE_QUEUE> m_queueBulk;
 };
 #endif /* SWSS_BUFFORCH_H */
-

@@ -8,6 +8,9 @@
 #include "mock_orchagent_main.h"
 #include "mock_table.h"
 #include "mock_response_publisher.h"
+#define private public
+#include "warm_restart.h"
+#undef private
 
 extern string gMySwitchType;
 
@@ -126,17 +129,21 @@ namespace bufferorch_test
         pold_sai_port_api = sai_port_api;
         ut_sai_port_api.set_port_attribute = _ut_stub_sai_set_port_attribute;
         sai_port_api = &ut_sai_port_api;
+        gBufferOrch->m_portBulk.m_api = &ut_sai_port_api;
 
         ut_sai_buffer_api = *sai_buffer_api;
         pold_sai_buffer_api = sai_buffer_api;
         ut_sai_buffer_api.set_ingress_priority_group_attribute = _ut_stub_sai_set_ingress_priority_group_attribute;
         ut_sai_buffer_api.set_buffer_profile_attribute = _ut_stub_sai_set_buffer_profile_attribute;
         sai_buffer_api = &ut_sai_buffer_api;
+        gBufferOrch->m_pgBulk.m_api = &ut_sai_buffer_api;
 
         ut_sai_queue_api = *sai_queue_api;
         pold_sai_queue_api = sai_queue_api;
         ut_sai_queue_api.set_queue_attribute = _ut_stub_sai_set_queue_attribute;
         sai_queue_api = &ut_sai_queue_api;
+        gBufferOrch->m_queueBulk.m_api = &ut_sai_queue_api;
+
     }
 
     void _unhook_sai_apis()
@@ -144,10 +151,16 @@ namespace bufferorch_test
         sai_port_api = pold_sai_port_api;
         sai_buffer_api = pold_sai_buffer_api;
         sai_queue_api = pold_sai_queue_api;
+
+        gBufferOrch->m_portBulk.m_api = sai_port_api;
+        gBufferOrch->m_pgBulk.m_api = sai_buffer_api;
+        gBufferOrch->m_queueBulk.m_api = sai_queue_api;
     }
 
     struct BufferOrchTest : public ::testing::Test
     {
+        bool m_warmBoot = false;
+
         BufferOrchTest()
         {
         }
@@ -184,7 +197,7 @@ namespace bufferorch_test
             consumer->addToSync(entries);
         }
 
-        void SetUp() override
+        void SetUp()
         {
             ASSERT_EQ(sai_route_api, nullptr);
             map<string, string> profile = {
@@ -301,6 +314,11 @@ namespace bufferorch_test
             };
             gQosOrch = new QosOrch(m_config_db.get(), qos_tables);
 
+            if (m_warmBoot)
+            {
+                WarmStart::getInstance().m_enabled = true;
+            }
+
             // Recreate buffer orch to read populated data
             vector<string> buffer_tables = { APP_BUFFER_POOL_TABLE_NAME,
                                              APP_BUFFER_PROFILE_TABLE_NAME,
@@ -367,6 +385,11 @@ namespace bufferorch_test
 
         void TearDown() override
         {
+            if (m_warmBoot)
+            {
+                WarmStart::getInstance().m_enabled = false;
+            }
+
             auto buffer_maps = BufferOrch::m_buffer_type_maps;
             for (auto &i : buffer_maps)
             {
@@ -794,5 +817,60 @@ namespace bufferorch_test
 
         _ut_stub_buffer_profile_sanity_check = false;
         _unhook_sai_apis();
+    }
+
+    struct BufferOrchWarmBootTest : public BufferOrchTest
+    { 
+        BufferOrchWarmBootTest() : BufferOrchTest()
+        {
+            m_warmBoot = true;
+        }
+    };
+
+    uint32_t _ut_stub_set_bulk_pg_count = 0;
+    sai_status_t _ut_stub_sai_set_ingress_priority_groups_attribute(
+        uint32_t object_count,
+        const sai_object_id_t *object_id,
+        const sai_attribute_t *attr_list,
+        sai_bulk_op_error_mode_t mode,
+        sai_status_t *object_statuses)
+    {
+        _ut_stub_set_bulk_pg_count += object_count;
+        return SAI_STATUS_SUCCESS;
+    }
+
+    TEST_F(BufferOrchWarmBootTest, BufferOrchWarmBoot)
+    {
+        vector<string> ts;
+        std::deque<KeyOpFieldsValuesTuple> entries;
+        Table bufferPgTable = Table(m_app_db.get(), APP_BUFFER_PG_TABLE_NAME);
+
+        bufferPgTable.set("Ethernet0:0",
+                          {
+                              {"profile", "ingress_lossy_profile"}
+                          });
+        bufferPgTable.set("Ethernet0:2",
+                          {
+                              {"profile", "ingress_lossy_profile"}
+                          });
+        bufferPgTable.set("Ethernet4:0",
+                          {
+                              {"profile", "ingress_lossy_profile"}
+                          });
+        bufferPgTable.set("Ethernet4:2",
+                          {
+                              {"profile", "ingress_lossy_profile"}
+                          });
+
+        gBufferOrch->addExistingData(&bufferPgTable);
+
+        _ut_stub_set_bulk_pg_count = 0;
+        auto saved_func = gBufferOrch->m_pgBulk.m_api->set_ingress_priority_groups_attribute;
+        gBufferOrch->m_pgBulk.m_api->set_ingress_priority_groups_attribute = &_ut_stub_sai_set_ingress_priority_groups_attribute;
+
+        static_cast<Orch *>(gBufferOrch)->doTask();
+        ASSERT_EQ(_ut_stub_set_bulk_pg_count, 4);
+
+        gBufferOrch->m_pgBulk.m_api->set_ingress_priority_groups_attribute = saved_func;
     }
 }

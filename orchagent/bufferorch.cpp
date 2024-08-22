@@ -4,6 +4,7 @@
 #include "logger.h"
 #include "sai_serialize.h"
 #include "warm_restart.h"
+#include "bulker.h"
 
 #include <inttypes.h>
 #include <sstream>
@@ -50,7 +51,10 @@ std::map<string, std::map<size_t, string>> queue_port_flags;
 BufferOrch::BufferOrch(DBConnector *applDb, DBConnector *confDb, DBConnector *stateDb, vector<string> &tableNames) :
     Orch(applDb, tableNames),
     m_countersDb(new DBConnector("COUNTERS_DB", 0)),
-    m_stateBufferMaximumValueTable(stateDb, STATE_BUFFER_MAXIMUM_VALUE_TABLE)
+    m_stateBufferMaximumValueTable(stateDb, STATE_BUFFER_MAXIMUM_VALUE_TABLE),
+    m_portBulk(sai_port_api),
+    m_pgBulk(sai_buffer_api),
+    m_queueBulk(sai_queue_api)
 {
     SWSS_LOG_ENTER();
     initTableHandlers();
@@ -60,6 +64,13 @@ BufferOrch::BufferOrch(DBConnector *applDb, DBConnector *confDb, DBConnector *st
     if (gMySwitchType != "dpu")
     {
         initBufferConstants();
+    }
+
+    if (WarmStart::isWarmStart())
+    {
+        m_portBulk.bulkEnabled = true;
+        m_pgBulk.bulkEnabled = true;
+        m_queueBulk.bulkEnabled = true;
     }
 };
 
@@ -946,7 +957,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
             if (need_update_sai)
             {
                 SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to queue index:%zd, queue sai_id:0x%" PRIx64, sai_buffer_profile, ind, queue_id);
-                sai_status_t sai_status = sai_queue_api->set_queue_attribute(queue_id, &attr);
+                sai_status_t sai_status = m_queueBulk.set(queue_id, attr);
                 if (sai_status != SAI_STATUS_SUCCESS)
                 {
                     SWSS_LOG_ERROR("Failed to set queue's buffer profile attribute, status:%d", sai_status);
@@ -1146,7 +1157,7 @@ task_process_status BufferOrch::processPriorityGroup(KeyOpFieldsValuesTuple &tup
                     sai_object_id_t pg_id;
                     pg_id = port.m_priority_group_ids[ind];
                     SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to port:%s pg index:%zd, pg sai_id:0x%" PRIx64, sai_buffer_profile, port_name.c_str(), ind, pg_id);
-                    sai_status_t sai_status = sai_buffer_api->set_ingress_priority_group_attribute(pg_id, &attr);
+                    sai_status_t sai_status = m_pgBulk.set(pg_id, attr);
                     if (sai_status != SAI_STATUS_SUCCESS)
                     {
                         SWSS_LOG_ERROR("Failed to set port:%s pg:%zd buffer profile attribute, status:%d", port_name.c_str(), ind, sai_status);
@@ -1300,7 +1311,7 @@ task_process_status BufferOrch::processIngressBufferProfileList(KeyOpFieldsValue
             SWSS_LOG_ERROR("Port with alias:%s not found", port_name.c_str());
             return task_process_status::task_invalid_entry;
         }
-        sai_status_t sai_status = sai_port_api->set_port_attribute(port.m_port_id, &attr);
+        sai_status_t sai_status = m_portBulk.set(port.m_port_id, attr);
         if (sai_status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR("Failed to set ingress buffer profile list on port, status:%d, key:%s", sai_status, port_name.c_str());
@@ -1379,7 +1390,7 @@ task_process_status BufferOrch::processEgressBufferProfileList(KeyOpFieldsValues
             SWSS_LOG_ERROR("Port with alias:%s not found", port_name.c_str());
             return task_process_status::task_invalid_entry;
         }
-        sai_status_t sai_status = sai_port_api->set_port_attribute(port.m_port_id, &attr);
+        sai_status_t sai_status = m_portBulk.set(port.m_port_id, attr);
         if (sai_status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR("Failed to set egress buffer profile list on port, status:%d, key:%s", sai_status, port_name.c_str());
@@ -1426,11 +1437,56 @@ void BufferOrch::doTask()
             continue;
         consumer->drain();
     }
+
+    const bool abortOnFailure = true;
+
+    if (m_portBulk.bulkEnabled && !m_portBulk.empty())
+    {
+        SWSS_LOG_TIMER("Port buffer configuration");
+
+        auto status = m_portBulk.flush();
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            handleSaiFailure(abortOnFailure);
+        }
+    }
+
+    if (m_pgBulk.bulkEnabled && !m_pgBulk.empty())
+    {
+        SWSS_LOG_TIMER("PG buffer configuration");
+
+        auto status = m_pgBulk.flush();
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            handleSaiFailure(abortOnFailure);
+        }
+    }
+
+    if (m_queueBulk.bulkEnabled && !m_queueBulk.empty())
+    {
+        SWSS_LOG_TIMER("Queue buffer configuration");
+
+        auto status = m_queueBulk.flush();
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            handleSaiFailure(abortOnFailure);
+        }
+    }
 }
 
 void BufferOrch::doTask(Consumer &consumer)
 {
     SWSS_LOG_ENTER();
+
+    /* Make sure the handler is initialized for the task */
+    auto map_type_name = consumer.getTableName();
+
+    if (m_bufferHandlerMap.find(map_type_name) == m_bufferHandlerMap.end())
+    {
+        SWSS_LOG_ERROR("No handler for key:%s found.", map_type_name.c_str());
+        consumer.m_toSync.clear();
+        return;
+    }
 
     if (gMySwitchType == "voq")
     {
@@ -1449,15 +1505,6 @@ void BufferOrch::doTask(Consumer &consumer)
     auto it = consumer.m_toSync.begin();
     while (it != consumer.m_toSync.end())
     {
-        /* Make sure the handler is initialized for the task */
-        auto map_type_name = consumer.getTableName();
-        if (m_bufferHandlerMap.find(map_type_name) == m_bufferHandlerMap.end())
-        {
-            SWSS_LOG_ERROR("No handler for key:%s found.", map_type_name.c_str());
-            it = consumer.m_toSync.erase(it);
-            continue;
-        }
-
         auto task_status = (this->*(m_bufferHandlerMap[map_type_name]))(it->second);
         switch(task_status)
         {
@@ -1483,4 +1530,13 @@ void BufferOrch::doTask(Consumer &consumer)
                 break;
         }
     }
+}
+
+void BufferOrch::onWarmRestoreFinished()
+{
+    SWSS_LOG_ENTER();
+
+    m_portBulk.bulkEnabled = false;
+    m_pgBulk.bulkEnabled = false;
+    m_queueBulk.bulkEnabled = false;
 }

@@ -238,6 +238,8 @@ public:
     /* Iterate all consumers in m_consumerMap and run doTask(Consumer) */
     virtual void doTask();
 
+    virtual void onWarmRestoreFinished() {}
+
     /* Run doTask against a specific executor */
     virtual void doTask(Consumer &consumer) { };
     virtual void doTask(swss::NotificationConsumer &consumer) { }
