@@ -110,7 +110,7 @@ void BufferOrch::initBufferReadyLists(DBConnector *applDb, DBConnector *confDb)
         Table pg_table(applDb, APP_BUFFER_PG_TABLE_NAME);
         initBufferReadyList(pg_table, false);
 
-        if(gMySwitchType == "voq") 
+        if(gMySwitchType == "voq")
         {
             Table queue_table(applDb, APP_BUFFER_QUEUE_TABLE_NAME);
             initVoqBufferReadyList(queue_table, false);
@@ -126,7 +126,7 @@ void BufferOrch::initBufferReadyLists(DBConnector *applDb, DBConnector *confDb)
         Table pg_table(confDb, CFG_BUFFER_PG_TABLE_NAME);
         initBufferReadyList(pg_table, true);
 
-        if(gMySwitchType == "voq") 
+        if(gMySwitchType == "voq")
         {
             Table queue_table(confDb, CFG_BUFFER_QUEUE_TABLE_NAME);
             initVoqBufferReadyList(queue_table, true);
@@ -813,7 +813,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
     tokens = tokenize(key, delimiter);
 
     vector<string> port_names;
-    if (gMySwitchType == "voq") 
+    if (gMySwitchType == "voq")
     {
         if (tokens.size() != 4)
         {
@@ -834,7 +834,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
            SWSS_LOG_INFO("System port %s is local port %d local port name %s", port_names[0].c_str(), local_port, local_port_name.c_str());
         }
     }
-    else 
+    else
     {
         if (tokens.size() != 2)
         {
@@ -927,7 +927,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
             SWSS_LOG_DEBUG("processing queue:%zd", ind);
             sai_object_id_t queue_id;
 
-            if (gMySwitchType == "voq") 
+            if (gMySwitchType == "voq")
             {
                 std :: vector<sai_object_id_t> queue_ids = gPortsOrch->getPortVoQIds(port);
                 if (queue_ids.size() <= ind)
@@ -936,7 +936,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
                     return task_process_status::task_invalid_entry;
                 }
                 queue_id = queue_ids[ind];
-            } 
+            }
             else
             {
                 if (port.m_queue_ids.size() <= ind)
@@ -956,7 +956,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
             if (need_update_sai)
             {
                 SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to queue index:%zd, queue sai_id:0x%" PRIx64, sai_buffer_profile, ind, queue_id);
-                sai_status_t sai_status = sai_queue_api->set_queue_attribute(queue_id, &attr);
+                sai_status_t sai_status = setQueueAttribute(queue_id, attr);
                 if (sai_status != SAI_STATUS_SUCCESS)
                 {
                     SWSS_LOG_ERROR("Failed to set queue's buffer profile attribute, status:%d", sai_status);
@@ -1154,7 +1154,7 @@ task_process_status BufferOrch::processPriorityGroup(KeyOpFieldsValuesTuple &tup
                     sai_object_id_t pg_id;
                     pg_id = port.m_priority_group_ids[ind];
                     SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to port:%s pg index:%zd, pg sai_id:0x%" PRIx64, sai_buffer_profile, port_name.c_str(), ind, pg_id);
-                    sai_status_t sai_status = sai_buffer_api->set_ingress_priority_group_attribute(pg_id, &attr);
+                    sai_status_t sai_status = setIngressPriorityGroupAttribute(pg_id, attr);
                     if (sai_status != SAI_STATUS_SUCCESS)
                     {
                         SWSS_LOG_ERROR("Failed to set port:%s pg:%zd buffer profile attribute, status:%d", port_name.c_str(), ind, sai_status);
@@ -1308,7 +1308,7 @@ task_process_status BufferOrch::processIngressBufferProfileList(KeyOpFieldsValue
             SWSS_LOG_ERROR("Port with alias:%s not found", port_name.c_str());
             return task_process_status::task_invalid_entry;
         }
-        sai_status_t sai_status = sai_port_api->set_port_attribute(port.m_port_id, &attr);
+        sai_status_t sai_status = setPortAttribute(port.m_port_id, attr);
         if (sai_status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR("Failed to set ingress buffer profile list on port, status:%d, key:%s", sai_status, port_name.c_str());
@@ -1387,7 +1387,7 @@ task_process_status BufferOrch::processEgressBufferProfileList(KeyOpFieldsValues
             SWSS_LOG_ERROR("Port with alias:%s not found", port_name.c_str());
             return task_process_status::task_invalid_entry;
         }
-        sai_status_t sai_status = sai_port_api->set_port_attribute(port.m_port_id, &attr);
+        sai_status_t sai_status = setPortAttribute(port.m_port_id, attr);
         if (sai_status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR("Failed to set egress buffer profile list on port, status:%d, key:%s", sai_status, port_name.c_str());
@@ -1440,9 +1440,21 @@ void BufferOrch::doTask(Consumer &consumer)
 {
     SWSS_LOG_ENTER();
 
+    /* Make sure the handler is initialized for the task */
+    auto map_type_name = consumer.getTableName();
+
+    if (m_bufferHandlerMap.find(map_type_name) == m_bufferHandlerMap.end())
+    {
+        SWSS_LOG_ERROR("No handler for key:%s found.", map_type_name.c_str());
+        consumer.m_toSync.clear();
+        return;
+    }
+
+    SWSS_LOG_NOTICE("BufferOrch::doTask %s", map_type_name.c_str());
+
     if (gMySwitchType == "voq")
     {
-        if(!gPortsOrch->isInitDone()) 
+        if(!gPortsOrch->isInitDone())
         {
             SWSS_LOG_INFO("Buffer task for %s can't be executed ahead of port config done", consumer.getTableName().c_str());
             return;
@@ -1457,15 +1469,6 @@ void BufferOrch::doTask(Consumer &consumer)
     auto it = consumer.m_toSync.begin();
     while (it != consumer.m_toSync.end())
     {
-        /* Make sure the handler is initialized for the task */
-        auto map_type_name = consumer.getTableName();
-        if (m_bufferHandlerMap.find(map_type_name) == m_bufferHandlerMap.end())
-        {
-            SWSS_LOG_ERROR("No handler for key:%s found.", map_type_name.c_str());
-            it = consumer.m_toSync.erase(it);
-            continue;
-        }
-
         auto task_status = (this->*(m_bufferHandlerMap[map_type_name]))(it->second);
         switch(task_status)
         {
@@ -1491,4 +1494,95 @@ void BufferOrch::doTask(Consumer &consumer)
                 break;
         }
     }
+
+    flushIngressPriorityGroupAttributes();
+    flushQueueAttributes();
+    flushPortAttributes();
+}
+
+void BufferOrch::flushIngressPriorityGroupAttributes()
+{
+    SWSS_LOG_NOTICE("start: %s", __FUNCTION__);
+
+#if 0
+    for (size_t i = 0; i < m_setIngressPriorityGroupBulk.oid.size(); i++)
+    {
+        m_setIngressPriorityGroupBulk.statuses[i] = sai_buffer_api->set_ingress_priority_group_attribute(
+            m_setIngressPriorityGroupBulk.oid[i], &m_setIngressPriorityGroupBulk.attr[i]
+        );
+    }
+#else
+    if (!m_setIngressPriorityGroupBulk.oid.empty())
+    {
+        sai_buffer_api->set_ingress_priority_groups_attribute((uint32_t)m_setIngressPriorityGroupBulk.oid.size(), m_setIngressPriorityGroupBulk.oid.data(),
+            m_setIngressPriorityGroupBulk.attr.data(), SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, m_setIngressPriorityGroupBulk.statuses.data()
+        );
+    }
+#endif
+
+    m_setIngressPriorityGroupBulk.oid.clear();
+    m_setIngressPriorityGroupBulk.statuses.clear();
+    m_setIngressPriorityGroupBulk.attr.clear();
+
+    SWSS_LOG_NOTICE("end: %s", __FUNCTION__);
+}
+
+void BufferOrch::flushQueueAttributes()
+{
+    SWSS_LOG_NOTICE("start: %s", __FUNCTION__);
+
+#if 0
+    for (size_t i = 0; i < m_setQueueBulk.oid.size(); i++)
+    {
+        m_setQueueBulk.statuses[i] = sai_queue_api->set_queue_attribute(
+            m_setQueueBulk.oid[i], &m_setQueueBulk.attr[i]
+        );
+    }
+#else
+    if (!m_setQueueBulk.oid.empty())
+    {
+        sai_queue_api->set_queues_attribute((uint32_t)m_setQueueBulk.oid.size(), m_setQueueBulk.oid.data(),
+            m_setQueueBulk.attr.data(), SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, m_setQueueBulk.statuses.data()
+        );
+    }
+#endif
+
+    m_setQueueBulk.oid.clear();
+    m_setQueueBulk.statuses.clear();
+    m_setQueueBulk.attr.clear();
+
+    SWSS_LOG_NOTICE("end: %s", __FUNCTION__);
+}
+
+void BufferOrch::flushPortAttributes()
+{
+    SWSS_LOG_NOTICE("start: %s", __FUNCTION__);
+
+#if 0
+    for (size_t i = 0; i < m_setPortAttributeBulk.oid.size(); i++)
+    {
+        m_setPortAttributeBulk.statuses[i] = sai_port_api->set_port_attribute(
+            m_setPortAttributeBulk.oid[i], &m_setPortAttributeBulk.attr[i].getSaiAttr()
+        );
+    }
+#else
+    if (!m_setPortAttributeBulk.oid.empty())
+    {
+        std::vector<sai_attribute_t> attrs;
+        std::transform(m_setPortAttributeBulk.attr.begin(), m_setPortAttributeBulk.attr.end(),
+            std::back_inserter(attrs),
+            [](const auto& attr){ return attr.getSaiAttr(); }
+        );
+
+        sai_port_api->set_ports_attribute((uint32_t)m_setPortAttributeBulk.oid.size(), m_setPortAttributeBulk.oid.data(), attrs.data(),
+            SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, m_setPortAttributeBulk.statuses.data()
+        );
+    }
+#endif
+
+    m_setPortAttributeBulk.oid.clear();
+    m_setPortAttributeBulk.statuses.clear();
+    m_setPortAttributeBulk.attr.clear();
+
+    SWSS_LOG_NOTICE("end: %s", __FUNCTION__);
 }

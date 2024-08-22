@@ -8,6 +8,8 @@
 #include "portsorch.h"
 #include "redisapi.h"
 
+#include "saiattr.h"
+
 #define BUFFER_POOL_WATERMARK_STAT_COUNTER_FLEX_COUNTER_GROUP "BUFFER_POOL_WATERMARK_STAT_COUNTER"
 
 const string buffer_size_field_name         = "size";
@@ -73,6 +75,59 @@ private:
 
     bool m_isBufferPoolWatermarkCounterIdListGenerated = false;
     set<string> m_partiallyAppliedQueues;
+
+    // Bulk stuff
+
+    struct
+    {
+        std::vector<sai_object_id_t> oid;
+        std::vector<sai_status_t> statuses;
+        std::vector<sai_attribute_t> attr;
+    } m_setIngressPriorityGroupBulk;
+
+    struct
+    {
+        std::vector<sai_object_id_t> oid;
+        std::vector<sai_status_t> statuses;
+        std::vector<sai_attribute_t> attr;
+    } m_setQueueBulk;
+
+    struct
+    {
+        std::vector<sai_object_id_t> oid;
+        std::vector<sai_status_t> statuses;
+        std::vector<SaiAttrWrapper> attr;
+    } m_setPortAttributeBulk;
+
+    sai_status_t setIngressPriorityGroupAttribute(sai_object_id_t oid, sai_attribute_t attr)
+    {
+        m_setIngressPriorityGroupBulk.oid.push_back(oid);
+        m_setIngressPriorityGroupBulk.statuses.push_back(SAI_STATUS_SUCCESS);
+        m_setIngressPriorityGroupBulk.attr.push_back(attr);
+
+        return SAI_STATUS_SUCCESS;
+    }
+
+    sai_status_t setQueueAttribute(sai_object_id_t oid, sai_attribute_t attr)
+    {
+        m_setQueueBulk.oid.push_back(oid);
+        m_setQueueBulk.statuses.push_back(SAI_STATUS_SUCCESS);
+        m_setQueueBulk.attr.push_back(attr);
+
+        return SAI_STATUS_SUCCESS;
+    }
+
+    sai_status_t setPortAttribute(sai_object_id_t oid, sai_attribute_t attr)
+    {
+        m_setPortAttributeBulk.oid.push_back(oid);
+        m_setPortAttributeBulk.statuses.push_back(SAI_STATUS_SUCCESS);
+        m_setPortAttributeBulk.attr.emplace_back(SAI_OBJECT_TYPE_PORT, attr);
+
+        return SAI_STATUS_SUCCESS;
+    }
+
+    void flushIngressPriorityGroupAttributes();
+    void flushQueueAttributes();
+    void flushPortAttributes();
 };
 #endif /* SWSS_BUFFORCH_H */
-
