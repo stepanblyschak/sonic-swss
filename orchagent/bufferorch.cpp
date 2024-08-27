@@ -50,13 +50,79 @@ map<string, string> buffer_to_ref_table_map = {
 std::map<string, std::map<size_t, string>> pg_port_flags;
 std::map<string, std::map<size_t, string>> queue_port_flags;
 
+SaiBulkContext::SaiBulkContext(sai_api_t api, sai_object_type_t objectType, sai_object_set_attribute_fn setFunc, sai_bulk_object_set_attribute_fn setBulkFunc) :
+    m_api(api),
+    m_objectType(objectType),
+    m_setFunc(setFunc),
+    m_setBulkFunc(setBulkFunc)
+{
+}
+
+sai_status_t SaiBulkContext::set(sai_object_id_t oid, sai_attribute_t attr)
+{
+    if (WarmStart::isWarmStart())
+    {
+        m_oids.push_back(oid);
+        m_attrContainers.emplace_back(m_objectType, attr);
+        m_statuses.push_back(SAI_STATUS_NOT_EXECUTED);
+
+        return SAI_STATUS_SUCCESS;
+    }
+    else
+    {
+        switch (m_objectType)
+        {
+        case SAI_OBJECT_TYPE_PORT:
+            return sai_port_api->set_port_attribute(oid, &attr);
+            break;
+        case SAI_OBJECT_TYPE_INGRESS_PRIORITY_GROUP:
+            return sai_buffer_api->set_ingress_priority_group_attribute(oid, &attr);
+            break;
+        case SAI_OBJECT_TYPE_QUEUE:
+            return sai_queue_api->set_queue_attribute(oid, &attr);
+            break;
+        default:
+            SWSS_LOG_THROW("Uncovered object type");
+        }
+    }
+}
+
+void SaiBulkContext::flush()
+{
+    const auto objectCount = static_cast<uint32_t>(m_oids.size());
+
+    if (objectCount == 0)
+    {
+        return;
+    }
+
+    std::transform(m_attrContainers.begin(), m_attrContainers.end(),
+        std::back_inserter(m_attrs),
+        [](const auto& attr){ return attr.getSaiAttr(); }
+    );
+
+    sai_status_t status = m_setBulkFunc(objectCount, m_oids.data(), m_attrs.data(), SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, m_statuses.data());
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_THROW("Encountered error in bulk operation");
+    }
+
+    m_oids.clear();
+    m_attrContainers.clear();
+    m_attrs.clear();
+    m_statuses.clear();
+}
+
 BufferOrch::BufferOrch(DBConnector *applDb, DBConnector *confDb, DBConnector *stateDb, vector<string> &tableNames) :
     Orch(applDb, tableNames),
     m_flexCounterDb(new DBConnector("FLEX_COUNTER_DB", 0)),
     m_flexCounterTable(new ProducerTable(m_flexCounterDb.get(), FLEX_COUNTER_TABLE)),
     m_flexCounterGroupTable(new ProducerTable(m_flexCounterDb.get(), FLEX_COUNTER_GROUP_TABLE)),
     m_countersDb(new DBConnector("COUNTERS_DB", 0)),
-    m_stateBufferMaximumValueTable(stateDb, STATE_BUFFER_MAXIMUM_VALUE_TABLE)
+    m_stateBufferMaximumValueTable(stateDb, STATE_BUFFER_MAXIMUM_VALUE_TABLE),
+    m_portApi(SAI_API_PORT, SAI_OBJECT_TYPE_PORT, sai_port_api->set_port_attribute, sai_port_api->set_ports_attribute),
+    m_ingressPriorityGroupApi(SAI_API_BUFFER, SAI_OBJECT_TYPE_INGRESS_PRIORITY_GROUP, sai_buffer_api->set_ingress_priority_group_attribute, sai_buffer_api->set_ingress_priority_groups_attribute),
+    m_queueApi(SAI_API_QUEUE, SAI_OBJECT_TYPE_QUEUE, sai_queue_api->set_queue_attribute, sai_queue_api->set_queues_attribute)
 {
     SWSS_LOG_ENTER();
     initTableHandlers();
@@ -110,7 +176,7 @@ void BufferOrch::initBufferReadyLists(DBConnector *applDb, DBConnector *confDb)
         Table pg_table(applDb, APP_BUFFER_PG_TABLE_NAME);
         initBufferReadyList(pg_table, false);
 
-        if(gMySwitchType == "voq") 
+        if(gMySwitchType == "voq")
         {
             Table queue_table(applDb, APP_BUFFER_QUEUE_TABLE_NAME);
             initVoqBufferReadyList(queue_table, false);
@@ -126,7 +192,7 @@ void BufferOrch::initBufferReadyLists(DBConnector *applDb, DBConnector *confDb)
         Table pg_table(confDb, CFG_BUFFER_PG_TABLE_NAME);
         initBufferReadyList(pg_table, true);
 
-        if(gMySwitchType == "voq") 
+        if(gMySwitchType == "voq")
         {
             Table queue_table(confDb, CFG_BUFFER_QUEUE_TABLE_NAME);
             initVoqBufferReadyList(queue_table, true);
@@ -813,7 +879,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
     tokens = tokenize(key, delimiter);
 
     vector<string> port_names;
-    if (gMySwitchType == "voq") 
+    if (gMySwitchType == "voq")
     {
         if (tokens.size() != 4)
         {
@@ -834,7 +900,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
            SWSS_LOG_INFO("System port %s is local port %d local port name %s", port_names[0].c_str(), local_port, local_port_name.c_str());
         }
     }
-    else 
+    else
     {
         if (tokens.size() != 2)
         {
@@ -927,7 +993,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
             SWSS_LOG_DEBUG("processing queue:%zd", ind);
             sai_object_id_t queue_id;
 
-            if (gMySwitchType == "voq") 
+            if (gMySwitchType == "voq")
             {
                 std :: vector<sai_object_id_t> queue_ids = gPortsOrch->getPortVoQIds(port);
                 if (queue_ids.size() <= ind)
@@ -936,7 +1002,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
                     return task_process_status::task_invalid_entry;
                 }
                 queue_id = queue_ids[ind];
-            } 
+            }
             else
             {
                 if (port.m_queue_ids.size() <= ind)
@@ -956,7 +1022,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
             if (need_update_sai)
             {
                 SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to queue index:%zd, queue sai_id:0x%" PRIx64, sai_buffer_profile, ind, queue_id);
-                sai_status_t sai_status = sai_queue_api->set_queue_attribute(queue_id, &attr);
+                sai_status_t sai_status = m_queueApi.set(queue_id, attr);
                 if (sai_status != SAI_STATUS_SUCCESS)
                 {
                     SWSS_LOG_ERROR("Failed to set queue's buffer profile attribute, status:%d", sai_status);
@@ -1154,7 +1220,7 @@ task_process_status BufferOrch::processPriorityGroup(KeyOpFieldsValuesTuple &tup
                     sai_object_id_t pg_id;
                     pg_id = port.m_priority_group_ids[ind];
                     SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to port:%s pg index:%zd, pg sai_id:0x%" PRIx64, sai_buffer_profile, port_name.c_str(), ind, pg_id);
-                    sai_status_t sai_status = sai_buffer_api->set_ingress_priority_group_attribute(pg_id, &attr);
+                    sai_status_t sai_status = m_ingressPriorityGroupApi.set(pg_id, attr);
                     if (sai_status != SAI_STATUS_SUCCESS)
                     {
                         SWSS_LOG_ERROR("Failed to set port:%s pg:%zd buffer profile attribute, status:%d", port_name.c_str(), ind, sai_status);
@@ -1308,7 +1374,7 @@ task_process_status BufferOrch::processIngressBufferProfileList(KeyOpFieldsValue
             SWSS_LOG_ERROR("Port with alias:%s not found", port_name.c_str());
             return task_process_status::task_invalid_entry;
         }
-        sai_status_t sai_status = sai_port_api->set_port_attribute(port.m_port_id, &attr);
+        sai_status_t sai_status = m_portApi.set(port.m_port_id, attr);
         if (sai_status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR("Failed to set ingress buffer profile list on port, status:%d, key:%s", sai_status, port_name.c_str());
@@ -1387,7 +1453,7 @@ task_process_status BufferOrch::processEgressBufferProfileList(KeyOpFieldsValues
             SWSS_LOG_ERROR("Port with alias:%s not found", port_name.c_str());
             return task_process_status::task_invalid_entry;
         }
-        sai_status_t sai_status = sai_port_api->set_port_attribute(port.m_port_id, &attr);
+        sai_status_t sai_status = m_portApi.set(port.m_port_id, attr);
         if (sai_status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR("Failed to set egress buffer profile list on port, status:%d, key:%s", sai_status, port_name.c_str());
@@ -1434,6 +1500,13 @@ void BufferOrch::doTask()
             continue;
         consumer->drain();
     }
+
+    if (WarmStart::isWarmStart())
+    {
+        m_ingressPriorityGroupApi.flush();
+        m_queueApi.flush();
+        m_portApi.flush();
+    }
 }
 
 void BufferOrch::doTask(Consumer &consumer)
@@ -1442,7 +1515,7 @@ void BufferOrch::doTask(Consumer &consumer)
 
     if (gMySwitchType == "voq")
     {
-        if(!gPortsOrch->isInitDone()) 
+        if(!gPortsOrch->isInitDone())
         {
             SWSS_LOG_INFO("Buffer task for %s can't be executed ahead of port config done", consumer.getTableName().c_str());
             return;
