@@ -364,10 +364,7 @@ private:
     void removeDefaultBridgePorts();
 
     bool initializePort(Port &port);
-    void initializePriorityGroups(Port &port);
     void initializePortBufferMaximumParameters(Port &port);
-    void initializeQueues(Port &port);
-    void initializeSchedulerGroups(Port &port);
     void initializeVoqs(Port &port);
 
     bool addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id);
@@ -387,6 +384,7 @@ private:
     bool setDistributionOnLagMember(Port &lagMember, bool enableDistribution);
 
     sai_status_t removePort(sai_object_id_t port_id);
+    void initPorts(const std::vector<PortConfig>& ports);
     bool initPort(const PortConfig &port);
     void deInitPort(string alias, sai_object_id_t port_id);
 
