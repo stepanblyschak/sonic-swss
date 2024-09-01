@@ -2481,7 +2481,6 @@ void PortsOrch::initPortSupportedSpeeds(const std::string& alias, sai_object_id_
     m_portStateTable.set(alias, v);
 }
 
-
 void PortsOrch::initPortCapAutoNeg(Port &port)
 {
     sai_status_t status;
@@ -3104,7 +3103,7 @@ void PortsOrch::updateDbPortFlapCount(Port& port, sai_port_oper_status_t pstatus
     vector<FieldValueTuple> tuples;
     FieldValueTuple tuple("flap_count", std::to_string(port.m_flap_count));
     tuples.push_back(tuple);
-    
+
     auto now = std::chrono::system_clock::now();
     std::time_t now_c = std::chrono::system_clock::to_time_t(now);
     if (pstatus == SAI_PORT_OPER_STATUS_DOWN)
@@ -3114,8 +3113,8 @@ void PortsOrch::updateDbPortFlapCount(Port& port, sai_port_oper_status_t pstatus
         std::strftime(buffer, sizeof(buffer), "%a %b %d %H:%M:%S %Y", std::gmtime(&now_c));
         FieldValueTuple tuple("last_down_time", buffer);
         tuples.push_back(tuple);
-    } 
-    else if (pstatus == SAI_PORT_OPER_STATUS_UP) 
+    }
+    else if (pstatus == SAI_PORT_OPER_STATUS_UP)
     {
         char buffer[32];
         // Format: Www Mmm dd hh:mm:ss yyyy
@@ -3693,16 +3692,24 @@ void PortsOrch::doPortTask(Consumer &consumer)
                         SWSS_LOG_THROW("PortsOrch initialization failure");
                     }
 
-                    for (const auto &cit : portsToAddList)
                     {
-                        if (!initPort(cit))
-                        {
-                            // Failure has been recorded in initPort
-                            continue;
-                        }
+                        SWSS_LOG_TIMER("PERF: Port initialization");
 
-                        initPortSupportedSpeeds(cit.key, m_portListLaneMap[cit.lanes.value]);
-                        initPortSupportedFecModes(cit.key, m_portListLaneMap[cit.lanes.value]);
+                        {
+                            SWSS_LOG_TIMER("PERF: Legacy initPort");
+
+                            for (const auto &cit : portsToAddList)
+                            {
+                                if (!initPort(cit))
+                                {
+                                    // Failure has been recorded in initPort
+                                    continue;
+                                }
+
+                                initPortSupportedSpeeds(cit.key, m_portListLaneMap[cit.lanes.value]);
+                                initPortSupportedFecModes(cit.key, m_portListLaneMap[cit.lanes.value]);
+                            }
+                        }
                     }
                 }
 
