@@ -2609,8 +2609,6 @@ void PortsOrch::initPorts(const std::vector<PortConfig>& portConfigs)
 
     for (size_t i = 0; i < object_count; i++)
     {
-        vector<FieldValueTuple> fvVector;
-
         // TODO (stepanb): Handle error statuses
 
         size_t aidx = 0; // index into attribute list for object
@@ -2627,19 +2625,53 @@ void PortsOrch::initPorts(const std::vector<PortConfig>& portConfigs)
 
             ports[i]->m_queue_ids.resize(numQueues);
             ports[i]->m_queue_lock.resize(numQueues);
+        }
+    }
 
-// TODO (stepanb): See above comment
-#if 0
-            const auto maxHeadroom = attrList[i][aidx++].value.u32;
-            ports[i]->m_maximum_headroom = maxHeadroom;
+    if (gMySwitchType != "dpu")
+    {
+        for (size_t i = 0; i < object_count; i++)
+        {
+            sai_attribute_t attr = {};
+            attrsVector[i].clear();
 
-            // TODO: (stepanb): We might not get max headroom - then don't put it in state db.
-            fvVector.emplace_back("max_headroom_size", to_string(ports[i]->m_maximum_headroom));
+            attr.id = SAI_PORT_ATTR_QOS_MAXIMUM_HEADROOM_SIZE;
+            attrsVector[i].push_back(attr);
+
+            attrList[i] = attrsVector[i].data();
+            attrCount[i] = static_cast<uint32_t>(attrsVector[i].size());
+        }
+
+        // TODO (stepanb): Handle error code ?
+        auto status = sai_port_api->get_ports_attribute(object_count, oids.data(),
+            attrCount.data(), attrList.data(), SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR,
+            statuses.data()
+        );
+        (void)status;
+
+        for (size_t i = 0; i < object_count; i++)
+        {
+            vector<FieldValueTuple> fvVector;
+
+            // TODO (stepanb): Handle error statuses
+
+            if (statuses[i] == SAI_STATUS_SUCCESS)
+            {
+                size_t aidx = 0; // index into attribute list for object
+
+                const auto maxHeadroom = attrList[i][aidx++].value.u32;
+                ports[i]->m_maximum_headroom = maxHeadroom;
+                fvVector.emplace_back("max_headroom_size", to_string(ports[i]->m_maximum_headroom));
+            }
+            else
+            {
+                SWSS_LOG_NOTICE("Unable to get the maximum headroom for port %s: %s, ignored", ports[i]->m_alias.c_str(), sai_serialize_status(statuses[i]).c_str());
+            }
+
             fvVector.emplace_back("max_priority_groups", to_string(ports[i]->m_priority_group_ids.size()));
             fvVector.emplace_back("max_queues", to_string(ports[i]->m_queue_ids.size()));
 
             m_stateBufferMaximumValueTable->set(ports[i]->m_alias, fvVector);
-#endif
         }
     }
 
@@ -5410,11 +5442,6 @@ bool PortsOrch::initializePort(Port &port)
     SWSS_LOG_ENTER();
 
     SWSS_LOG_NOTICE("Initializing port alias:%s pid:%" PRIx64, port.m_alias.c_str(), port.m_port_id);
-
-    if (gMySwitchType != "dpu")
-    {
-        initializePortBufferMaximumParameters(port);
-    }
 
     /* Create host interface */
     if (!addHostIntfs(port, port.m_alias, port.m_hif_id))
