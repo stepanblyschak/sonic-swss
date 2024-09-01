@@ -3229,8 +3229,10 @@ bool PortsOrch::setHostIntfsOperStatus(const Port& port, bool isUp) const
     SWSS_LOG_NOTICE("Set operation status %s to host interface %s",
             isUp ? "UP" : "DOWN", port.m_alias.c_str());
 
-    event_params_t params = {{"ifname",port.m_alias},{"status",isUp ? "up" : "down"}};
-    event_publish(g_events_handle, "if-state", &params);
+    // TODO (stepanb): This is dog slow taking 40% of the initPort time. Do actuall profiling before rushing to implement bulk.
+    // This is also totally incorrect and has a design issue - host if oper status is not necessarily controlled by orchagent!.
+    // event_params_t params = {{"ifname",port.m_alias},{"status",isUp ? "up" : "down"}};
+    // event_publish(g_events_handle, "if-state", &params);
     return true;
 }
 
