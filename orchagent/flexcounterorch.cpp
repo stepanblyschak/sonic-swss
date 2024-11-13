@@ -15,6 +15,7 @@
 #include "macsecorch.h"
 #include "dash/dashorch.h"
 #include "flowcounterrouteorch.h"
+#include "warm_restart.h"
 
 extern sai_port_api_t *sai_port_api;
 extern sai_switch_api_t *sai_switch_api;
@@ -77,9 +78,16 @@ FlexCounterOrch::FlexCounterOrch(DBConnector *db, vector<string> &tableNames):
 {
     SWSS_LOG_ENTER();
     m_delayTimer = new SelectableTimer(timespec{.tv_sec = FLEX_COUNTER_DELAY_SEC, .tv_nsec = 0});
-    auto executor = new ExecutableTimer(m_delayTimer, this, "FLEX_COUNTER_DELAY");
-    Orch::addExecutor(executor);
-    m_delayTimer->start();
+    if (WarmStart::isWarmStart())
+    {
+        auto executor = new ExecutableTimer(m_delayTimer, this, "FLEX_COUNTER_DELAY");
+        Orch::addExecutor(executor);
+        m_delayTimer->start();
+    }
+    else
+    {
+        m_delayTimerExpired = true;
+    }
 }
 
 FlexCounterOrch::~FlexCounterOrch(void)
