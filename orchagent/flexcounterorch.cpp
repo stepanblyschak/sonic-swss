@@ -77,16 +77,19 @@ FlexCounterOrch::FlexCounterOrch(DBConnector *db, vector<string> &tableNames):
     m_deviceMetadataConfigTable(db, CFG_DEVICE_METADATA_TABLE_NAME)
 {
     SWSS_LOG_ENTER();
+
     m_delayTimer = new SelectableTimer(timespec{.tv_sec = FLEX_COUNTER_DELAY_SEC, .tv_nsec = 0});
-    if (WarmStart::isWarmStart())
+    const string no_flex_counter_delay = getenv("NO_FLEX_COUNTER_DELAY") ?: "";
+    if (no_flex_counter_delay == "1")
     {
-        auto executor = new ExecutableTimer(m_delayTimer, this, "FLEX_COUNTER_DELAY");
-        Orch::addExecutor(executor);
-        m_delayTimer->start();
+        m_delayTimerExpired = true;
     }
     else
     {
-        m_delayTimerExpired = true;
+        m_delayTimerExpired = false;
+        auto executor = new ExecutableTimer(m_delayTimer, this, "FLEX_COUNTER_DELAY");
+        Orch::addExecutor(executor);
+        m_delayTimer->start();
     }
 }
 

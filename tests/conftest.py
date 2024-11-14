@@ -406,6 +406,8 @@ class DockerVirtualSwitch:
                     vols[k] = v
             kwargs["volumes"] = vols
 
+            env = ["NO_FLEX_COUNTER_DELAY=1"] + env;
+
             # create virtual switch container
             self.ctn = self.client.containers.run(imgname,
                                                   privileged=True,
@@ -1445,7 +1447,7 @@ class DockerVirtualChassisTopology:
         self.ns = namespace
         self.chassbr = "br4chs"
         self.keeptb = keeptb
-        self.env = env
+        self.env = ["NO_FLEX_COUNTER_DELAY=1"] + env
         self.topoFile = topoFile
         self.imgname = imgname
         self.ctninfo = {}
