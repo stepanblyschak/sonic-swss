@@ -266,9 +266,14 @@ void FlexCounterOrch::doTask(Consumer &consumer)
     }
 }
 
-void FlexCounterOrch::doTask(SelectableTimer &timer)
+void FlexCounterOrch::doTask(SelectableTimer&)
 {
     SWSS_LOG_ENTER();
+
+    if (m_delayTimerExpired)
+    {
+        return;
+    }
 
     SWSS_LOG_NOTICE("Processing counters");
     m_delayTimer->stop();
