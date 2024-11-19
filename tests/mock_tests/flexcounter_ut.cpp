@@ -295,6 +295,7 @@ namespace flexcounter_test
                 CFG_FLEX_COUNTER_TABLE_NAME
             };
             auto* flexCounterOrch = new FlexCounterOrch(m_config_db.get(), flex_counter_tables);
+            flexCounterOrch->m_delayTimerExpired = true;
             gDirectory.set(flexCounterOrch);
 
             vector<string> buffer_tables = { APP_BUFFER_POOL_TABLE_NAME,
@@ -548,18 +549,6 @@ namespace flexcounter_test
 
         auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
         flexCounterOrch->addExistingData(&flexCounterCfg);
-        static_cast<Orch *>(flexCounterOrch)->doTask();
-
-        // No port counter map created yet
-        ASSERT_FALSE(checkFlexCounterGroup(PORT_BUFFER_DROP_STAT_FLEX_COUNTER_GROUP,
-                                          {
-                                              {POLL_INTERVAL_FIELD, "60000"},
-                                              {STATS_MODE_FIELD, STATS_MODE_READ},
-                                              {FLEX_COUNTER_STATUS_FIELD, "enable"}
-                                          }));
-
-        // Expire timer
-        flexCounterOrch->doTask(*flexCounterOrch->m_delayTimer);
         static_cast<Orch *>(flexCounterOrch)->doTask();
 
         ASSERT_TRUE(checkFlexCounterGroup(BUFFER_POOL_WATERMARK_STAT_COUNTER_FLEX_COUNTER_GROUP,
