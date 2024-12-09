@@ -986,6 +986,11 @@ bool OrchDaemon::warmRestoreAndSyncUp()
         return false;
     }
 
+    for (Orch *o : m_orchList)
+    {
+        o->onWarmRestoreFinished();
+    }
+
     SWSS_LOG_NOTICE("Orchagent state restore done");
 
     syncd_apply_view();
