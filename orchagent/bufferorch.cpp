@@ -65,13 +65,6 @@ BufferOrch::BufferOrch(DBConnector *applDb, DBConnector *confDb, DBConnector *st
     {
         initBufferConstants();
     }
-
-    if (WarmStart::isWarmStart())
-    {
-        m_portBulk.bulkEnabled = true;
-        m_pgBulk.bulkEnabled = true;
-        m_queueBulk.bulkEnabled = true;
-    }
 };
 
 void BufferOrch::initTableHandlers()
@@ -957,68 +950,63 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
             if (need_update_sai)
             {
                 SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to queue index:%zd, queue sai_id:0x%" PRIx64, sai_buffer_profile, ind, queue_id);
-                sai_status_t sai_status = m_queueBulk.set(queue_id, attr);
-                if (sai_status != SAI_STATUS_SUCCESS)
-                {
-                    SWSS_LOG_ERROR("Failed to set queue's buffer profile attribute, status:%d", sai_status);
-                    task_process_status handle_status = handleSaiSetStatus(SAI_API_QUEUE, sai_status);
-                    if (handle_status != task_process_status::task_success)
+                m_queueBulk.set(queue_id, attr, [=](sai_status_t sai_status) {
+                    if (sai_status != SAI_STATUS_SUCCESS)
                     {
-                        return handle_status;
+                        SWSS_LOG_ERROR("Failed to set queue's buffer profile attribute, status:%d", sai_status);
+                        handleSaiSetStatus(SAI_API_QUEUE, sai_status);
                     }
-                }
-                // create/remove a port queue counter for the queue buffer.
-                // For VOQ chassis, flexcounterorch adds the Queue Counters for all egress and VOQ queues of all front panel and system ports
-                // to  the FLEX_COUNTER_DB irrespective of BUFFER_QUEUE configuration. So Port Queue counter needs to be updated only for non VOQ switch.
-                else if (gMySwitchType != "voq")
-                {
-                    auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
-                    auto queues = tokens[1];
-                    if (op == SET_COMMAND &&
-                        (flexCounterOrch->getQueueCountersState() || flexCounterOrch->getQueueWatermarkCountersState()))
+                    // create/remove a port queue counter for the queue buffer.
+                    // For VOQ chassis, flexcounterorch adds the Queue Counters for all egress and VOQ queues of all front panel and system ports
+                    // to  the FLEX_COUNTER_DB irrespective of BUFFER_QUEUE configuration. So Port Queue counter needs to be updated only for non VOQ switch.
+                    else if (gMySwitchType != "voq")
                     {
-                        gPortsOrch->createPortBufferQueueCounters(port, queues);
+                        auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
+                        auto queues = tokens[1];
+                        if (op == SET_COMMAND &&
+                            (flexCounterOrch->getQueueCountersState() || flexCounterOrch->getQueueWatermarkCountersState()))
+                        {
+                            gPortsOrch->createPortBufferQueueCounters(port, queues);
+                        }
+                        else if (op == DEL_COMMAND &&
+                                (flexCounterOrch->getQueueCountersState() || flexCounterOrch->getQueueWatermarkCountersState()))
+                        {
+                            gPortsOrch->removePortBufferQueueCounters(port, queues);
+                        }
                     }
-                    else if (op == DEL_COMMAND &&
-                             (flexCounterOrch->getQueueCountersState() || flexCounterOrch->getQueueWatermarkCountersState()))
-                    {
-                        gPortsOrch->removePortBufferQueueCounters(port, queues);
-                    }
-                }
-            }
 
-            /* when we apply buffer configuration we need to increase the ref counter of this port
-             * or decrease the ref counter for this port when we remove buffer cfg
-             * so for each priority cfg in each port we will increase/decrease the ref counter
-             * also we need to know when the set command is for creating a buffer cfg or modifying buffer cfg -
-             * we need to increase ref counter only on create flow.
-             * so we added a map that will help us to know what was the last command for this port and priority -
-             * if the last command was set command then it is a modify command and we dont need to increase the buffer counter
-             * all other cases (no last command exist or del command was the last command) it means that we need to increase the ref counter */
-            if (op == SET_COMMAND)
-            {
-                if (queue_port_flags[port_name][ind] != SET_COMMAND)
+                    /* when we apply buffer configuration we need to increase the ref counter of this port
+                    * or decrease the ref counter for this port when we remove buffer cfg
+                    * so for each priority cfg in each port we will increase/decrease the ref counter
+                    * also we need to know when the set command is for creating a buffer cfg or modifying buffer cfg -
+                    * we need to increase ref counter only on create flow.
+                    * so we added a map that will help us to know what was the last command for this port and priority -
+                    * if the last command was set command then it is a modify command and we dont need to increase the buffer counter
+                    * all other cases (no last command exist or del command was the last command) it means that we need to increase the ref counter */
+                    if (op == SET_COMMAND)
+                    {
+                        if (queue_port_flags[port_name][ind] != SET_COMMAND)
+                        {
+                            /* if the last operation was not "set" then it's create and not modify - need to increase ref counter */
+                            gPortsOrch->increasePortRefCount(port_name);
+                        }
+                    }
+                    else if (op == DEL_COMMAND)
+                    {
+                        if (queue_port_flags[port_name][ind] == SET_COMMAND)
                 {
-                    /* if the last operation was not "set" then it's create and not modify - need to increase ref counter */
-                    gPortsOrch->increasePortRefCount(port_name);
-                }
+                            /* we need to decrease ref counter only if the last operation was "SET_COMMAND" */
+                            gPortsOrch->decreasePortRefCount(port_name);
+                        }
+                    }
+                    else
+                    {
+                        SWSS_LOG_ERROR("operation value is not SET or DEL (op = %s)", op.c_str());
+                    }
+                    /* save the last command (set or delete) */
+                    queue_port_flags[port_name][ind] = op;
+                });
             }
-            else if (op == DEL_COMMAND)
-            {
-                if (queue_port_flags[port_name][ind] == SET_COMMAND)
-		{
-                    /* we need to decrease ref counter only if the last operation was "SET_COMMAND" */
-                    gPortsOrch->decreasePortRefCount(port_name);
-                }
-            }
-            else
-            {
-                SWSS_LOG_ERROR("operation value is not SET or DEL (op = %s)", op.c_str());
-                return task_process_status::task_invalid_entry;
-            }
-            /* save the last command (set or delete) */
-            queue_port_flags[port_name][ind] = op;
-
         }
     }
 
@@ -1157,67 +1145,62 @@ task_process_status BufferOrch::processPriorityGroup(KeyOpFieldsValuesTuple &tup
                     sai_object_id_t pg_id;
                     pg_id = port.m_priority_group_ids[ind];
                     SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to port:%s pg index:%zd, pg sai_id:0x%" PRIx64, sai_buffer_profile, port_name.c_str(), ind, pg_id);
-                    sai_status_t sai_status = m_pgBulk.set(pg_id, attr);
-                    if (sai_status != SAI_STATUS_SUCCESS)
-                    {
-                        SWSS_LOG_ERROR("Failed to set port:%s pg:%zd buffer profile attribute, status:%d", port_name.c_str(), ind, sai_status);
-                        task_process_status handle_status = handleSaiSetStatus(SAI_API_BUFFER, sai_status);
-                        if (handle_status != task_process_status::task_success)
+                    m_pgBulk.set(pg_id, attr, [=](sai_status_t sai_status) {
+                        if (sai_status != SAI_STATUS_SUCCESS)
                         {
-                            return handle_status;
+                            SWSS_LOG_ERROR("Failed to set port:%s pg:%zd buffer profile attribute, status:%d", port_name.c_str(), ind, sai_status);
+                            handleSaiSetStatus(SAI_API_BUFFER, sai_status);
                         }
-                    }
-                    // create or remove a port PG counter for the PG buffer
-                    else
-                    {
-                        auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
-                        auto pgs = tokens[1];
-                        if (op == SET_COMMAND &&
-                            (flexCounterOrch->getPgCountersState() || flexCounterOrch->getPgWatermarkCountersState()))
+                        // create or remove a port PG counter for the PG buffer
+                        else
                         {
-                            gPortsOrch->createPortBufferPgCounters(port, pgs);
+                            auto flexCounterOrch = gDirectory.get<FlexCounterOrch*>();
+                            auto pgs = tokens[1];
+                            if (op == SET_COMMAND &&
+                                (flexCounterOrch->getPgCountersState() || flexCounterOrch->getPgWatermarkCountersState()))
+                            {
+                                gPortsOrch->createPortBufferPgCounters(port, pgs);
+                            }
+                            else if (op == DEL_COMMAND &&
+                                    (flexCounterOrch->getPgCountersState() || flexCounterOrch->getPgWatermarkCountersState()))
+                            {
+                                gPortsOrch->removePortBufferPgCounters(port, pgs);
+                            }
                         }
-                        else if (op == DEL_COMMAND &&
-                                 (flexCounterOrch->getPgCountersState() || flexCounterOrch->getPgWatermarkCountersState()))
-                        {
-                            gPortsOrch->removePortBufferPgCounters(port, pgs);
-                        }
-                    }
-                }
-            }
 
-            /* when we apply buffer configuration we need to increase the ref counter of this port
-             * or decrease the ref counter for this port when we remove buffer cfg
-             * so for each priority cfg in each port we will increase/decrease the ref counter
-             * also we need to know when the set command is for creating a buffer cfg or modifying buffer cfg -
-             * we need to increase ref counter only on create flow.
-             * so we added a map that will help us to know what was the last command for this port and priority -
-             * if the last command was set command then it is a modify command and we dont need to increase the buffer counter
-             * all other cases (no last command exist or del command was the last command) it means that we need to increase the ref counter */
-            if (op == SET_COMMAND)
-            {
-                if (pg_port_flags[port_name][ind] != SET_COMMAND)
-                {
-                    /* if the last operation was not "set" then it's create and not modify - need to increase ref counter */
-                    gPortsOrch->increasePortRefCount(port_name);
+                        /* when we apply buffer configuration we need to increase the ref counter of this port
+                        * or decrease the ref counter for this port when we remove buffer cfg
+                        * so for each priority cfg in each port we will increase/decrease the ref counter
+                        * also we need to know when the set command is for creating a buffer cfg or modifying buffer cfg -
+                        * we need to increase ref counter only on create flow.
+                        * so we added a map that will help us to know what was the last command for this port and priority -
+                        * if the last command was set command then it is a modify command and we dont need to increase the buffer counter
+                        * all other cases (no last command exist or del command was the last command) it means that we need to increase the ref counter */
+                        if (op == SET_COMMAND)
+                        {
+                            if (pg_port_flags[port_name][ind] != SET_COMMAND)
+                            {
+                                /* if the last operation was not "set" then it's create and not modify - need to increase ref counter */
+                                gPortsOrch->increasePortRefCount(port_name);
+                            }
+                        }
+                        else if (op == DEL_COMMAND)
+                        {
+                            if (pg_port_flags[port_name][ind] == SET_COMMAND)
+                            {
+                                /* we need to decrease ref counter only if the last operation was "SET_COMMAND" */
+                                gPortsOrch->decreasePortRefCount(port_name);
+                            }
+                        }
+                        else
+                        {
+                            SWSS_LOG_ERROR("operation value is not SET or DEL (op = %s)", op.c_str());
+                        }
+                        /* save the last command (set or delete) */
+                        pg_port_flags[port_name][ind] = op;
+                    });
                 }
             }
-            else if (op == DEL_COMMAND)
-            {
-                if (pg_port_flags[port_name][ind] == SET_COMMAND)
-                {
-                    /* we need to decrease ref counter only if the last operation was "SET_COMMAND" */
-                    gPortsOrch->decreasePortRefCount(port_name);
-                }
-            }
-            else
-            {
-                SWSS_LOG_ERROR("operation value is not SET or DEL (op = %s)", op.c_str());
-                return task_process_status::task_invalid_entry;
-            }
-            /* save the last command (set or delete) */
-            pg_port_flags[port_name][ind] = op;
-
         }
     }
 
@@ -1311,16 +1294,13 @@ task_process_status BufferOrch::processIngressBufferProfileList(KeyOpFieldsValue
             SWSS_LOG_ERROR("Port with alias:%s not found", port_name.c_str());
             return task_process_status::task_invalid_entry;
         }
-        sai_status_t sai_status = m_portBulk.set(port.m_port_id, attr);
-        if (sai_status != SAI_STATUS_SUCCESS)
-        {
-            SWSS_LOG_ERROR("Failed to set ingress buffer profile list on port, status:%d, key:%s", sai_status, port_name.c_str());
-            task_process_status handle_status = handleSaiSetStatus(SAI_API_PORT, sai_status);
-            if (handle_status != task_process_status::task_success)
+        m_portBulk.set(port.m_port_id, attr, [port_name](sai_status_t sai_status){
+            if (sai_status != SAI_STATUS_SUCCESS)
             {
-                return handle_status;
+                SWSS_LOG_ERROR("Failed to set ingress buffer profile list on port, status:%d, key:%s", sai_status, port_name.c_str());
+                handleSaiSetStatus(SAI_API_PORT, sai_status);
             }
-        }
+        });
     }
 
     return task_process_status::task_success;
@@ -1390,16 +1370,13 @@ task_process_status BufferOrch::processEgressBufferProfileList(KeyOpFieldsValues
             SWSS_LOG_ERROR("Port with alias:%s not found", port_name.c_str());
             return task_process_status::task_invalid_entry;
         }
-        sai_status_t sai_status = m_portBulk.set(port.m_port_id, attr);
-        if (sai_status != SAI_STATUS_SUCCESS)
-        {
-            SWSS_LOG_ERROR("Failed to set egress buffer profile list on port, status:%d, key:%s", sai_status, port_name.c_str());
-            task_process_status handle_status = handleSaiSetStatus(SAI_API_PORT, sai_status);
-            if (handle_status != task_process_status::task_success)
+        m_portBulk.set(port.m_port_id, attr, [port_name](sai_status_t sai_status){
+            if (sai_status != SAI_STATUS_SUCCESS)
             {
-                return handle_status;
+                SWSS_LOG_ERROR("Failed to set egress buffer profile list on port, status:%d, key:%s", sai_status, port_name.c_str());
+                handleSaiSetStatus(SAI_API_PORT, sai_status);
             }
-        }
+        });
     }
 
     return task_process_status::task_success;
@@ -1440,7 +1417,7 @@ void BufferOrch::doTask()
 
     const bool abortOnFailure = true;
 
-    if (m_portBulk.bulkEnabled && !m_portBulk.empty())
+    if (!m_portBulk.empty())
     {
         SWSS_LOG_TIMER("Port buffer configuration");
 
@@ -1451,7 +1428,7 @@ void BufferOrch::doTask()
         }
     }
 
-    if (m_pgBulk.bulkEnabled && !m_pgBulk.empty())
+    if (!m_pgBulk.empty())
     {
         SWSS_LOG_TIMER("PG buffer configuration");
 
@@ -1462,7 +1439,7 @@ void BufferOrch::doTask()
         }
     }
 
-    if (m_queueBulk.bulkEnabled && !m_queueBulk.empty())
+    if (!m_queueBulk.empty())
     {
         SWSS_LOG_TIMER("Queue buffer configuration");
 
@@ -1530,13 +1507,4 @@ void BufferOrch::doTask(Consumer &consumer)
                 break;
         }
     }
-}
-
-void BufferOrch::onWarmRestoreFinished()
-{
-    SWSS_LOG_ENTER();
-
-    m_portBulk.bulkEnabled = false;
-    m_pgBulk.bulkEnabled = false;
-    m_queueBulk.bulkEnabled = false;
 }

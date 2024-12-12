@@ -1270,11 +1270,6 @@ struct SaiObjectTrait {};
     {                                                                                               \
         using api_t = apiType;                                                                      \
                                                                                                     \
-        static sai_status_t set(api_t* api, sai_object_id_t oid, const sai_attribute_t* attr)       \
-        {                                                                                           \
-            return api->set_ ##object## _attribute(oid, attr);                                      \
-        }                                                                                           \
-                                                                                                    \
         static sai_status_t bulkSet(api_t* api, uint32_t size, const sai_object_id_t* oids,         \
             const sai_attribute_t* attrs, sai_bulk_op_error_mode_t mode, sai_status_t* statuses)    \
         {                                                                                           \
@@ -1292,7 +1287,6 @@ template<sai_object_type_t SaiObjectType>
 struct BulkContext
 {
 public:
-    bool bulkEnabled = false;
     sai_bulk_op_error_mode_t bulkErrorMode = SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR;
 
     BulkContext(typename SaiObjectTrait<SaiObjectType>::api_t* api) :
@@ -1300,19 +1294,12 @@ public:
     {
     }
 
-    sai_status_t set(sai_object_id_t oid, sai_attribute_t attr)
+    void set(sai_object_id_t oid, sai_attribute_t attr, std::function<void(sai_status_t)> callback = {})
     {
-        if (bulkEnabled)
-        {
-            m_oids.push_back(oid);
-            m_statuses.push_back(SAI_STATUS_NOT_EXECUTED);
-            m_attrs.emplace_back(SaiObjectType, attr);
-            return SAI_STATUS_SUCCESS;
-        }
-        else
-        {
-            return SaiObjectTrait<SaiObjectType>::set(m_api, oid, &attr);
-        }
+        m_oids.push_back(oid);
+        m_statuses.push_back(SAI_STATUS_NOT_EXECUTED);
+        m_attrs.emplace_back(SaiObjectType, attr);
+        m_callbacks.emplace_back(callback);
     }
 
     bool empty() const noexcept
@@ -1322,7 +1309,7 @@ public:
 
     sai_status_t flush()
     {
-        assert(bulkEnabled && !empty());
+        assert(!empty());
 
         sai_status_t status = SAI_STATUS_SUCCESS;
 
@@ -1337,9 +1324,19 @@ public:
             sai_attrs.data(), bulkErrorMode, m_statuses.data()
         );
 
+        for (size_t i = 0; i < m_statuses.size(); i++)
+        {
+            auto& callback = m_callbacks[i];
+            if (callback)
+            {
+                callback(m_statuses[i]);
+            }
+        }
+
         m_oids.clear();
         m_statuses.clear();
         m_attrs.clear();
+        m_callbacks.clear();
 
         return status;
     }
@@ -1348,5 +1345,6 @@ private:
     std::vector<sai_object_id_t> m_oids;
     std::vector<sai_status_t> m_statuses;
     std::vector<SaiAttrWrapper> m_attrs;
+    std::vector<std::function<void(sai_status_t)>> m_callbacks;
 
 };

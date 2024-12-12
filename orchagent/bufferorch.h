@@ -47,7 +47,6 @@ private:
 
     void doTask() override;
     virtual void doTask(Consumer& consumer);
-    void onWarmRestoreFinished() override;
     void clearBufferPoolWatermarkCounterIdList(const sai_object_id_t object_id);
     void initTableHandlers();
     void initBufferReadyLists(DBConnector *confDb, DBConnector *applDb);
