@@ -866,8 +866,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
         }
     }
 
-    m_queueBulk.emplace_back();
-    auto& task = m_queueBulk.back();
+    QueueTask task;
     task.kofvs = tuple;
 
     if (op == SET_COMMAND)
@@ -950,8 +949,7 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
             return task_process_status::task_invalid_entry;
         }
 
-        task.ports.emplace_back();
-        auto& portContext = task.ports.back();
+        QueueTask::PortContext portContext;
         portContext.port_name = port_name;
         portContext.local_port = local_port;
         portContext.local_port_name = local_port_name;
@@ -987,22 +985,26 @@ task_process_status BufferOrch::processQueue(KeyOpFieldsValuesTuple &tuple)
                 queue_id = port.m_queue_ids[ind];
             }
 
-            portContext.queues.emplace_back();
-            auto& queueContext = portContext.queues.back();
-
             if (need_update_sai)
             {
                 SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to queue index:%zd, queue sai_id:0x%" PRIx64, sai_buffer_profile, ind, queue_id);
             }
 
+            QueueTask::QueueContext queueContext;
             queueContext.queue_id = queue_id;
             queueContext.attr = SaiAttrWrapper(SAI_OBJECT_TYPE_QUEUE, attr);
             queueContext.counter_was_added = counter_was_added;
             queueContext.counter_needs_to_add = counter_needs_to_add;
             queueContext.index = ind;
             queueContext.update_sai = need_update_sai;
+
+            portContext.queues.emplace_back(queueContext);
         }
+
+        task.ports.emplace_back(portContext);
     }
+
+    m_queueBulk[op].emplace_back(task);
 
     return task_process_status::task_success;
 }
@@ -1139,60 +1141,66 @@ task_process_status BufferOrch::processQueuePost(const QueueTask& task)
 
 void BufferOrch::processQueueBulk(Consumer& consumer)
 {
-    std::vector<sai_object_id_t> oids;
-    std::vector<sai_attribute_t> attrs;
-    std::vector<sai_status_t> statuses;
-
-    for (const auto& task: m_queueBulk)
+    for (const auto op: {DEL_COMMAND, SET_COMMAND})
     {
-        for (const auto& port: task.ports)
-            for (const auto& queue: port.queues)
-            {
-                if (queue.update_sai)
-                {
-                    oids.push_back(queue.queue_id);
-                    attrs.push_back(queue.attr.getSaiAttr());
-                    statuses.push_back(SAI_STATUS_NOT_EXECUTED);
-                }
-            }
-    }
+        std::vector<sai_object_id_t> oids;
+        std::vector<sai_attribute_t> attrs;
+        std::vector<sai_status_t> statuses;
 
-    const auto objectCount = static_cast<uint32_t>(oids.size());
-
-    if (objectCount > 0)
-    {
-        SWSS_LOG_TIMER("Set %u queues buffer profile", objectCount);
-
-        sai_queue_api->set_queues_attribute(objectCount, oids.data(), attrs.data(),
-            SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statuses.data());
-    }
-
-    size_t i = 0;
-    for (auto& task: m_queueBulk)
-    {
-        for (auto& port: task.ports)
+        auto& bulk = m_queueBulk[op];
+        for (const auto& task: bulk)
         {
-            for (auto& queue: port.queues)
+            for (const auto& port: task.ports)
             {
-                if (queue.update_sai)
+                for (const auto& queue: port.queues)
                 {
-                    queue.status = statuses[i];
-                    i++;
+                    if (queue.update_sai)
+                    {
+                        oids.push_back(queue.queue_id);
+                        attrs.push_back(queue.attr.getSaiAttr());
+                        statuses.push_back(SAI_STATUS_NOT_EXECUTED);
+                    }
                 }
             }
         }
-    }
 
-    for (const auto& task: m_queueBulk)
-    {
-        auto task_status = processQueuePost(task);
-        if (task_status == task_process_status::task_need_retry)
+        const auto objectCount = static_cast<uint32_t>(oids.size());
+
+        if (objectCount > 0)
         {
-            consumer.m_toSync.emplace(kfvKey(task.kofvs), task.kofvs);
-        }
-    }
+            SWSS_LOG_TIMER("Set %u queues buffer profile", objectCount);
 
-    m_queueBulk.clear();
+            sai_queue_api->set_queues_attribute(objectCount, oids.data(), attrs.data(),
+                SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statuses.data());
+        }
+
+        size_t i = 0;
+        for (auto& task: bulk)
+        {
+            for (auto& port: task.ports)
+            {
+                for (auto& queue: port.queues)
+                {
+                    if (queue.update_sai)
+                    {
+                        queue.status = statuses[i];
+                        i++;
+                    }
+                }
+            }
+        }
+
+        for (const auto& task: bulk)
+        {
+            auto task_status = processQueuePost(task);
+            if (task_status == task_process_status::task_need_retry)
+            {
+                consumer.m_toSync.emplace(kfvKey(task.kofvs), task.kofvs);
+            }
+        }
+
+        bulk.clear();
+    }
 }
 
 /*
@@ -1226,8 +1234,7 @@ task_process_status BufferOrch::processPriorityGroup(KeyOpFieldsValuesTuple &tup
         return task_process_status::task_invalid_entry;
     }
 
-    m_priorityGroupBulk.emplace_back();
-    auto& task = m_priorityGroupBulk.back();
+    PriorityGroupTask task;
     task.kofvs = tuple;
 
     if (op == SET_COMMAND)
@@ -1295,8 +1302,7 @@ task_process_status BufferOrch::processPriorityGroup(KeyOpFieldsValuesTuple &tup
             return task_process_status::task_invalid_entry;
         }
 
-        task.ports.emplace_back();
-        auto& portContext = task.ports.back();
+        PriorityGroupTask::PortContext portContext;
         portContext.port_name = port_name;
 
         for (size_t ind = range_low; ind <= range_high; ind++)
@@ -1309,25 +1315,28 @@ task_process_status BufferOrch::processPriorityGroup(KeyOpFieldsValuesTuple &tup
             }
             else
             {
-                portContext.pgs.emplace_back();
-                auto& pgContext = portContext.pgs.back();
-
                 sai_object_id_t pg_id = port.m_priority_group_ids[ind];
-
                 if (need_update_sai)
                 {
                     SWSS_LOG_DEBUG("Applying buffer profile:0x%" PRIx64 " to port:%s pg index:%zd, pg sai_id:0x%" PRIx64, sai_buffer_profile, port_name.c_str(), ind, pg_id);
                 }
 
+                PriorityGroupTask::PgContext pgContext;
                 pgContext.pg_id = pg_id;
                 pgContext.attr = SaiAttrWrapper(SAI_OBJECT_TYPE_INGRESS_PRIORITY_GROUP, attr);
                 pgContext.counter_was_added = counter_was_added;
                 pgContext.counter_needs_to_add = counter_needs_to_add;
                 pgContext.index = ind;
                 pgContext.update_sai = need_update_sai;
+
+                portContext.pgs.emplace_back(pgContext);
             }
         }
+
+        task.ports.emplace_back(portContext);
     }
+
+    m_priorityGroupBulk[op].emplace_back(task);
 
     return task_process_status::task_success;
 }
@@ -1448,60 +1457,66 @@ task_process_status BufferOrch::processPriorityGroupPost(const PriorityGroupTask
 
 void BufferOrch::processPriorityGroupBulk(Consumer& consumer)
 {
-    std::vector<sai_object_id_t> oids;
-    std::vector<sai_attribute_t> attrs;
-    std::vector<sai_status_t> statuses;
-
-    for (const auto& task: m_priorityGroupBulk)
+    for (const auto op: {DEL_COMMAND, SET_COMMAND})
     {
-        for (const auto& port: task.ports)
-            for (const auto& pg: port.pgs)
-            {
-                if (pg.update_sai)
-                {
-                    oids.push_back(pg.pg_id);
-                    attrs.push_back(pg.attr.getSaiAttr());
-                    statuses.push_back(SAI_STATUS_NOT_EXECUTED);
-                }
-            }
-    }
+        std::vector<sai_object_id_t> oids;
+        std::vector<sai_attribute_t> attrs;
+        std::vector<sai_status_t> statuses;
 
-    const auto objectCount = static_cast<uint32_t>(oids.size());
-
-    if (objectCount > 0)
-    {
-        SWSS_LOG_TIMER("Set %u ingress priority groups buffer profile", objectCount);
-
-        sai_buffer_api->set_ingress_priority_groups_attribute(objectCount, oids.data(), attrs.data(),
-            SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statuses.data());
-    }
-
-    size_t i = 0;
-    for (auto& task: m_priorityGroupBulk)
-    {
-        for (auto& port: task.ports)
+        auto& bulk = m_priorityGroupBulk[op];
+        for (const auto& task: bulk)
         {
-            for (auto& pg: port.pgs)
+            for (const auto& port: task.ports)
             {
-                if (pg.update_sai)
+                for (const auto& pg: port.pgs)
                 {
-                    pg.status = statuses[i];
-                    i++;
+                    if (pg.update_sai)
+                    {
+                        oids.push_back(pg.pg_id);
+                        attrs.push_back(pg.attr.getSaiAttr());
+                        statuses.push_back(SAI_STATUS_NOT_EXECUTED);
+                    }
                 }
             }
         }
-    }
 
-    for (const auto& task: m_priorityGroupBulk)
-    {
-        auto task_status = processPriorityGroupPost(task);
-        if (task_status == task_process_status::task_need_retry)
+        const auto objectCount = static_cast<uint32_t>(oids.size());
+
+        if (objectCount > 0)
         {
-            consumer.m_toSync.emplace(kfvKey(task.kofvs), task.kofvs);
-        }
-    }
+            SWSS_LOG_TIMER("Set %u ingress priority groups buffer profile", objectCount);
 
-    m_priorityGroupBulk.clear();
+            sai_buffer_api->set_ingress_priority_groups_attribute(objectCount, oids.data(), attrs.data(),
+                SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statuses.data());
+        }
+
+        size_t i = 0;
+        for (auto& task: bulk)
+        {
+            for (auto& port: task.ports)
+            {
+                for (auto& pg: port.pgs)
+                {
+                    if (pg.update_sai)
+                    {
+                        pg.status = statuses[i];
+                        i++;
+                    }
+                }
+            }
+        }
+
+        for (const auto& task: bulk)
+        {
+            auto task_status = processPriorityGroupPost(task);
+            if (task_status == task_process_status::task_need_retry)
+            {
+                consumer.m_toSync.emplace(kfvKey(task.kofvs), task.kofvs);
+            }
+        }
+
+        bulk.clear();
+    }
 }
 
 
@@ -1578,7 +1593,7 @@ task_process_status BufferOrch::processIngressBufferProfileList(KeyOpFieldsValue
         task.ports.emplace_back(PortBufferProfileListTask::PortContext{port_name, port.m_port_id, SaiAttrWrapper{SAI_OBJECT_TYPE_PORT, attr}, SAI_STATUS_NOT_EXECUTED});
     }
 
-    m_portIngressBufferProfileListBulk.push_back(task);
+    m_portIngressBufferProfileListBulk[op].push_back(task);
 
     return task_process_status::task_success;
 }
@@ -1605,50 +1620,54 @@ task_process_status BufferOrch::processIngressBufferProfileListPost(const PortBu
 
 void BufferOrch::processIngressBufferProfileListBulk(Consumer& consumer)
 {
-    std::vector<sai_object_id_t> oids;
-    std::vector<sai_attribute_t> attrs;
-    std::vector<sai_status_t> statuses;
-
-    for (const auto& task: m_portIngressBufferProfileListBulk)
+    for (const auto op: {DEL_COMMAND, SET_COMMAND})
     {
-        for (const auto& port: task.ports)
+        std::vector<sai_object_id_t> oids;
+        std::vector<sai_attribute_t> attrs;
+        std::vector<sai_status_t> statuses;
+
+        auto& bulk = m_portIngressBufferProfileListBulk[op];
+        for (const auto& task: bulk)
         {
-            oids.push_back(port.port_oid);
-            attrs.push_back(port.attr.getSaiAttr());
-            statuses.push_back(SAI_STATUS_NOT_EXECUTED);
+            for (const auto& port: task.ports)
+            {
+                oids.push_back(port.port_oid);
+                attrs.push_back(port.attr.getSaiAttr());
+                statuses.push_back(SAI_STATUS_NOT_EXECUTED);
+            }
         }
-    }
 
-    const auto objectCount = static_cast<uint32_t>(oids.size());
+        const auto objectCount = static_cast<uint32_t>(oids.size());
 
-    if (objectCount > 0)
-    {
-        SWSS_LOG_TIMER("Set %u ports ingress buffer profile list", objectCount);
-
-        sai_port_api->set_ports_attribute(objectCount, oids.data(), attrs.data(),
-            SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statuses.data());
-    }
-
-    size_t i = 0;
-    for (auto& task: m_portIngressBufferProfileListBulk)
-    {
-        for (auto& port: task.ports)
+        if (objectCount > 0)
         {
-            port.status = statuses[i];
-            i++;
-        }
-    }
+            SWSS_LOG_TIMER("Set %u ports ingress buffer profile list", objectCount);
 
-    for (const auto& task: m_portIngressBufferProfileListBulk)
-    {
-        auto task_status = processIngressBufferProfileListPost(task);
-        if (task_status == task_process_status::task_need_retry)
+            sai_port_api->set_ports_attribute(objectCount, oids.data(), attrs.data(),
+                SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statuses.data());
+        }
+
+        size_t i = 0;
+        for (auto& task: bulk)
         {
-            consumer.m_toSync.emplace(kfvKey(task.kofvs), task.kofvs);
+            for (auto& port: task.ports)
+            {
+                port.status = statuses[i];
+                i++;
+            }
         }
-    }
 
-    m_portIngressBufferProfileListBulk.clear();
+        for (const auto& task: bulk)
+        {
+            auto task_status = processIngressBufferProfileListPost(task);
+            if (task_status == task_process_status::task_need_retry)
+            {
+                consumer.m_toSync.emplace(kfvKey(task.kofvs), task.kofvs);
+            }
+        }
+
+        bulk.clear();
+    }
 }
 
 /*
@@ -1722,7 +1741,7 @@ task_process_status BufferOrch::processEgressBufferProfileList(KeyOpFieldsValues
         task.ports.emplace_back(PortBufferProfileListTask::PortContext{port_name, port.m_port_id, SaiAttrWrapper{SAI_OBJECT_TYPE_PORT, attr}, SAI_STATUS_NOT_EXECUTED});
     }
 
-    m_portEgressBufferProfileListBulk.push_back(task);
+    m_portEgressBufferProfileListBulk[op].push_back(task);
 
     return task_process_status::task_success;
 }
@@ -1749,50 +1768,54 @@ task_process_status BufferOrch::processEgressBufferProfileListPost(const PortBuf
 
 void BufferOrch::processEgressBufferProfileListBulk(Consumer& consumer)
 {
-    std::vector<sai_object_id_t> oids;
-    std::vector<sai_attribute_t> attrs;
-    std::vector<sai_status_t> statuses;
-
-    for (const auto& task: m_portEgressBufferProfileListBulk)
+    for (const auto op: {DEL_COMMAND, SET_COMMAND})
     {
-        for (const auto& port: task.ports)
+        std::vector<sai_object_id_t> oids;
+        std::vector<sai_attribute_t> attrs;
+        std::vector<sai_status_t> statuses;
+
+        auto& bulk = m_portEgressBufferProfileListBulk[op];
+        for (const auto& task: bulk)
         {
-            oids.push_back(port.port_oid);
-            attrs.push_back(port.attr.getSaiAttr());
-            statuses.push_back(SAI_STATUS_NOT_EXECUTED);
+            for (const auto& port: task.ports)
+            {
+                oids.push_back(port.port_oid);
+                attrs.push_back(port.attr.getSaiAttr());
+                statuses.push_back(SAI_STATUS_NOT_EXECUTED);
+            }
         }
-    }
 
-    const auto objectCount = static_cast<uint32_t>(oids.size());
+        const auto objectCount = static_cast<uint32_t>(oids.size());
 
-    if (objectCount > 0)
-    {
-        SWSS_LOG_TIMER("Set %u ports egress buffer profile list", objectCount);
-
-        sai_port_api->set_ports_attribute(objectCount, oids.data(), attrs.data(),
-            SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statuses.data());
-    }
-
-    size_t i = 0;
-    for (auto& task: m_portEgressBufferProfileListBulk)
-    {
-        for (auto& port: task.ports)
+        if (objectCount > 0)
         {
-            port.status = statuses[i];
-            i++;
-        }
-    }
+            SWSS_LOG_TIMER("Set %u ports egress buffer profile list", objectCount);
 
-    for (const auto& task: m_portEgressBufferProfileListBulk)
-    {
-        auto task_status = processEgressBufferProfileListPost(task);
-        if (task_status == task_process_status::task_need_retry)
+            sai_port_api->set_ports_attribute(objectCount, oids.data(), attrs.data(),
+                SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR, statuses.data());
+        }
+
+        size_t i = 0;
+        for (auto& task: bulk)
         {
-            consumer.m_toSync.emplace(kfvKey(task.kofvs), task.kofvs);
+            for (auto& port: task.ports)
+            {
+                port.status = statuses[i];
+                i++;
+            }
         }
-    }
 
-    m_portEgressBufferProfileListBulk.clear();
+        for (const auto& task: bulk)
+        {
+            auto task_status = processEgressBufferProfileListPost(task);
+            if (task_status == task_process_status::task_need_retry)
+            {
+                consumer.m_toSync.emplace(kfvKey(task.kofvs), task.kofvs);
+            }
+        }
+
+        bulk.clear();
+    }
 }
 
 void BufferOrch::doTask()
