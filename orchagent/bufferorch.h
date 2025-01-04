@@ -150,10 +150,10 @@ private:
     bool m_isBufferPoolWatermarkCounterIdListGenerated = false;
     set<string> m_partiallyAppliedQueues;
 
-    std::vector<PortBufferProfileListTask> m_portIngressBufferProfileListBulk;
-    std::vector<PortBufferProfileListTask> m_portEgressBufferProfileListBulk;
-    std::vector<PriorityGroupTask> m_priorityGroupBulk;
-    std::vector<QueueTask> m_queueBulk;
+    std::map<std::string, std::vector<PortBufferProfileListTask>> m_portIngressBufferProfileListBulk;
+    std::map<std::string, std::vector<PortBufferProfileListTask>> m_portEgressBufferProfileListBulk;
+    std::map<std::string, std::vector<PriorityGroupTask>> m_priorityGroupBulk;
+    std::map<std::string, std::vector<QueueTask>> m_queueBulk;
 };
 #endif /* SWSS_BUFFORCH_H */
 
