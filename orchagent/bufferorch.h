@@ -123,16 +123,21 @@ private:
     void initBufferConstants();
     task_process_status processBufferPool(KeyOpFieldsValuesTuple &tuple);
     task_process_status processBufferProfile(KeyOpFieldsValuesTuple &tuple);
+
+    // These methods process input task and add operations to the bulk buffer. This is first stage.
     task_process_status processQueue(KeyOpFieldsValuesTuple &tuple);
     task_process_status processPriorityGroup(KeyOpFieldsValuesTuple &tuple);
     task_process_status processIngressBufferProfileList(KeyOpFieldsValuesTuple &tuple);
     task_process_status processEgressBufferProfileList(KeyOpFieldsValuesTuple &tuple);
 
+    // These methods flush the bulk buffer and update SAI return status codes per task.
     void processQueueBulk(Consumer& consumer);
     void processPriorityGroupBulk(Consumer& consumer);
     void processIngressBufferProfileListBulk(Consumer& consumer);
     void processEgressBufferProfileListBulk(Consumer& consumer);
 
+    // These methods are invoked by the corresponding *Bulk methods after SAI operations complete.
+    // These handle SAI return status code per task. This is second stage.
     task_process_status processQueuePost(const QueueTask& task);
     task_process_status processPriorityGroupPost(const PriorityGroupTask& task);
     task_process_status processIngressBufferProfileListPost(const PortBufferProfileListTask& task);
@@ -150,6 +155,7 @@ private:
     bool m_isBufferPoolWatermarkCounterIdListGenerated = false;
     set<string> m_partiallyAppliedQueues;
 
+    // Bulk task buffers per DB operation
     std::map<std::string, std::vector<PortBufferProfileListTask>> m_portIngressBufferProfileListBulk;
     std::map<std::string, std::vector<PortBufferProfileListTask>> m_portEgressBufferProfileListBulk;
     std::map<std::string, std::vector<PriorityGroupTask>> m_priorityGroupBulk;
