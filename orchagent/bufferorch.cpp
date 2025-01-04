@@ -1141,6 +1141,8 @@ task_process_status BufferOrch::processQueuePost(const QueueTask& task)
 
 void BufferOrch::processQueueBulk(Consumer& consumer)
 {
+    SWSS_LOG_ENTER();
+
     for (const auto op: {DEL_COMMAND, SET_COMMAND})
     {
         std::vector<sai_object_id_t> oids;
@@ -1457,6 +1459,8 @@ task_process_status BufferOrch::processPriorityGroupPost(const PriorityGroupTask
 
 void BufferOrch::processPriorityGroupBulk(Consumer& consumer)
 {
+    SWSS_LOG_ENTER();
+
     for (const auto op: {DEL_COMMAND, SET_COMMAND})
     {
         std::vector<sai_object_id_t> oids;
@@ -1620,6 +1624,8 @@ task_process_status BufferOrch::processIngressBufferProfileListPost(const PortBu
 
 void BufferOrch::processIngressBufferProfileListBulk(Consumer& consumer)
 {
+    SWSS_LOG_ENTER();
+
     for (const auto op: {DEL_COMMAND, SET_COMMAND})
     {
         std::vector<sai_object_id_t> oids;
@@ -1768,6 +1774,8 @@ task_process_status BufferOrch::processEgressBufferProfileListPost(const PortBuf
 
 void BufferOrch::processEgressBufferProfileListBulk(Consumer& consumer)
 {
+    SWSS_LOG_ENTER();
+
     for (const auto op: {DEL_COMMAND, SET_COMMAND})
     {
         std::vector<sai_object_id_t> oids;
