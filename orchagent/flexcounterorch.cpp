@@ -77,11 +77,11 @@ FlexCounterOrch::FlexCounterOrch(DBConnector *db, vector<string> &tableNames):
     m_deviceMetadataConfigTable(db, CFG_DEVICE_METADATA_TABLE_NAME)
 {
     SWSS_LOG_ENTER();
-    m_delayTimer = new SelectableTimer(timespec{.tv_sec = FLEX_COUNTER_DELAY_SEC, .tv_nsec = 0});
+    m_delayTimer = std::make_unique<SelectableTimer>(timespec{.tv_sec = FLEX_COUNTER_DELAY_SEC, .tv_nsec = 0});
     if (WarmStart::isWarmStart())
     {
-        auto executor = new ExecutableTimer(m_delayTimer, this, "FLEX_COUNTER_DELAY");
-        Orch::addExecutor(executor);
+        m_delayExecutor = std::make_unique<ExecutableTimer>(m_delayTimer.get(), this, "FLEX_COUNTER_DELAY");
+        Orch::addExecutor(m_delayExecutor.get());
         m_delayTimer->start();
     }
     else

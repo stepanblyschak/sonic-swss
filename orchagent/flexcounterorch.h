@@ -69,7 +69,8 @@ private:
     Table m_bufferQueueConfigTable;
     Table m_bufferPgConfigTable;
     Table m_deviceMetadataConfigTable;
-    SelectableTimer* m_delayTimer;
+    std::unique_ptr<SelectableTimer> m_delayTimer;
+    std::unique_ptr<Executor> m_delayExecutor;
 };
 
 #endif
