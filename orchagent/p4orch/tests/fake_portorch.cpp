@@ -418,24 +418,11 @@ void PortsOrch::removeDefaultBridgePorts()
 {
 }
 
-bool PortsOrch::initializePort(Port &port)
-{
-    return true;
-}
-
-void PortsOrch::initializePriorityGroups(Port &port)
-{
-}
-
 void PortsOrch::initializePortBufferMaximumParameters(Port &port)
 {
 }
 
-void PortsOrch::initializeQueues(Port &port)
-{
-}
-
-bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id)
+bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id, bool up)
 {
     return true;
 }
@@ -510,11 +497,6 @@ void PortsOrch::deInitPort(string alias, sai_object_id_t port_id)
 }
 
 bool PortsOrch::setPortAdminStatus(Port &port, bool up)
-{
-    return true;
-}
-
-bool PortsOrch::getPortAdminStatus(sai_object_id_t id, bool &up)
 {
     return true;
 }
@@ -697,5 +679,9 @@ std::unordered_set<std::string> PortsOrch::generateCounterStats(const string &ty
 }
 
 void PortsOrch::doTask(swss::SelectableTimer &timer)
+{
+}
+
+void PortsOrch::onWarmBootEnd()
 {
 }

@@ -18,12 +18,15 @@ extern "C" {
 #include <sairedis.h>
 
 #define DEFAULT_PORT_VLAN_ID    1
+
+#define MAX_MACSEC_SECTAG_SIZE 32
+
 /*
  * Default MTU is derived from SAI_PORT_ATTR_MTU (1514)
  * Orchagent adds extra 22 bytes for Ethernet header and FCS,
  * hence setting to 1492 (1514 - 22)
  */
-#define DEFAULT_MTU             1492
+#define DEFAULT_MTU             1492 - MAX_MACSEC_SECTAG_SIZE
 
 /*
  * Default TPID is 8100
@@ -268,6 +271,8 @@ public:
     uint32_t m_suppress_threshold = 0;
     uint32_t m_reuse_threshold = 0;
     uint32_t m_flap_penalty = 0;
+
+    Role m_role;
 };
 
 }
