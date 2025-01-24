@@ -501,6 +501,11 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool up)
     return true;
 }
 
+bool PortsOrch::getPortAdminStatus(sai_object_id_t id, bool &up)
+{
+    return true;
+}
+
 bool PortsOrch::setPortMtu(const Port &port, sai_uint32_t mtu)
 {
     return true;

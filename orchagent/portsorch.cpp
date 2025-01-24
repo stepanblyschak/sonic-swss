@@ -1063,7 +1063,6 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList, std::vector
             attr.id = SAI_PORT_ATTR_FEC_MODE;
             attr.value.s32 = cit.fec.value;
             attrList.push_back(attr);
-            p.m_fec_mode = cit.fec.value;
         }
 
         if (m_cmisModuleAsicSyncSupported)
@@ -1822,6 +1821,56 @@ void PortsOrch::setHostTxReady(Port port, const std::string &status)
 {
     SWSS_LOG_NOTICE("Setting host_tx_ready status = %s, alias = %s, port_id = 0x%" PRIx64, status.c_str(), port.m_alias.c_str(), port.m_port_id);
     m_portStateTable.hset(port.m_alias, "host_tx_ready", status);
+}
+
+bool PortsOrch::getPortAdminStatus(sai_object_id_t id, bool &up)
+{
+    SWSS_LOG_ENTER();
+
+    getDestPortId(id, LINE_PORT_TYPE, id);
+
+    sai_attribute_t attr;
+    attr.id = SAI_PORT_ATTR_ADMIN_STATE;
+
+    sai_status_t status = sai_port_api->get_port_attribute(id, 1, &attr);
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to get admin status for port pid:%" PRIx64, id);
+        task_process_status handle_status = handleSaiGetStatus(SAI_API_PORT, status);
+        if (handle_status != task_process_status::task_success)
+        {
+            return false;
+        }
+    }
+
+    up = attr.value.booldata;
+
+    return true;
+}
+
+bool PortsOrch::getPortMtu(const Port& port, sai_uint32_t &mtu)
+{
+    SWSS_LOG_ENTER();
+
+    sai_attribute_t attr;
+    attr.id = SAI_PORT_ATTR_MTU;
+
+    sai_status_t status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
+
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        return false;
+    }
+
+    mtu = attr.value.u32 - (uint32_t)(sizeof(struct ether_header) + FCS_LEN + VLAN_TAG_LEN);
+
+    /* Reduce the default MTU got from ASIC by MAX_MACSEC_SECTAG_SIZE */
+    if (mtu > MAX_MACSEC_SECTAG_SIZE)
+    {
+        mtu -= MAX_MACSEC_SECTAG_SIZE;
+    }
+
+    return true;
 }
 
 bool PortsOrch::setPortMtu(const Port& port, sai_uint32_t mtu)
@@ -3480,7 +3529,7 @@ string PortsOrch::getPriorityGroupDropPacketsFlexCounterTableKey(string key)
     return string(PG_DROP_STAT_COUNTER_FLEX_COUNTER_GROUP) + ":" + key;
 }
 
-bool PortsOrch::initPort(const PortConfig& port)
+bool PortsOrch::initExistingPort(const PortConfig& port)
 {
     SWSS_LOG_ENTER();
 
@@ -3511,11 +3560,24 @@ bool PortsOrch::initPort(const PortConfig& port)
     p.m_index = index;
     p.m_port_id = id;
 
+    /* initialize port admin status */
+    if (!getPortAdminStatus(p.m_port_id, p.m_admin_state_up))
+    {
+        SWSS_LOG_ERROR("Failed to get initial port admin status %s", p.m_alias.c_str());
+        return false;
+    }
+
     // Read port speed of an already existing port
     if (!isAutoNegEnabled(p.m_port_id) && !getPortSpeed(p.m_port_id, p.m_speed))
     {
         SWSS_LOG_ERROR("Failed to get initial port admin speed %d", p.m_speed);
         return false;
+    }
+
+     /* initialize port mtu */
+    if (!getPortMtu(p, p.m_mtu))
+    {
+        SWSS_LOG_ERROR("Failed to get initial port mtu %d", p.m_mtu);
     }
 
     return initPortsBulk({p});
@@ -3964,7 +4026,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
             // TODO:
             // Fix the issue below
             // After PortConfigDone, while waiting for "PortInitDone" and the first gBufferOrch->isPortReady(alias),
-            // the complete m_lanesAliasSpeedMap may be populated again, so initPort() will be called more than once
+            // the complete m_lanesAliasSpeedMap may be populated again, so initExistingPort() will be called more than once
             // for the same port.
 
             /* Once all ports received, go through the each port and perform appropriate actions:
@@ -4009,9 +4071,9 @@ void PortsOrch::doPortTask(Consumer &consumer)
                         continue;
                     }
 
-                    if (!initPort(it->second))
+                    if (!initExistingPort(it->second))
                     {
-                        // Failure has been recorded in initPort
+                        // Failure has been recorded in initExistingPort
                         it++;
                         continue;
                     }

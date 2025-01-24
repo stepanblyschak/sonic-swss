@@ -397,7 +397,7 @@ private:
     bool setDistributionOnLagMember(Port &lagMember, bool enableDistribution);
 
     sai_status_t removePort(sai_object_id_t port_id);
-    bool initPort(const PortConfig &port);
+    bool initExistingPort(const PortConfig &port);
 
     bool initPortsBulk(std::vector<Port> ports);
 
@@ -411,6 +411,8 @@ private:
     void initPortCapLinkTraining(Port &port);
 
     bool setPortAdminStatus(Port &port, bool up);
+    bool getPortAdminStatus(sai_object_id_t id, bool& up);
+    bool getPortMtu(const Port& port, sai_uint32_t &mtu);
     bool getPortHostTxReady(const Port& port, bool &hostTxReadyVal);
     bool setPortMtu(const Port& port, sai_uint32_t mtu);
     bool setPortTpid(Port &port, sai_uint16_t tpid);
