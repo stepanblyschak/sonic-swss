@@ -26,7 +26,7 @@ extern "C" {
  * Orchagent adds extra 22 bytes for Ethernet header and FCS,
  * hence setting to 1492 (1514 - 22)
  */
-#define DEFAULT_MTU             1492 - MAX_MACSEC_SECTAG_SIZE
+#define DEFAULT_MTU             (1492 - MAX_MACSEC_SECTAG_SIZE)
 
 /*
  * Default TPID is 8100
@@ -213,7 +213,6 @@ public:
     uint32_t  m_fdb_count = 0;
     uint64_t  m_flap_count = 0;
     uint32_t  m_up_member_count = 0;
-    uint32_t  m_maximum_headroom = 0;
     std::set<uint32_t> m_adv_speeds;
     sai_port_interface_type_t m_interface_type = SAI_PORT_INTERFACE_TYPE_NONE;
     std::set<sai_port_interface_type_t> m_adv_interface_types;

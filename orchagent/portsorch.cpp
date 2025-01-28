@@ -3560,6 +3560,11 @@ bool PortsOrch::initExistingPort(const PortConfig& port)
     p.m_index = index;
     p.m_port_id = id;
 
+    if (gMySwitchType != "dpu")
+    {
+        initializeSchedulerGroups(p);
+    }
+
     /* initialize port admin status */
     if (!getPortAdminStatus(p.m_port_id, p.m_admin_state_up))
     {
@@ -3580,10 +3585,11 @@ bool PortsOrch::initExistingPort(const PortConfig& port)
         SWSS_LOG_ERROR("Failed to get initial port mtu %d", p.m_mtu);
     }
 
-    return initPortsBulk({p});
+    std::vector<Port> ports = {p};
+    return initPortsBulk(ports);
 }
 
-bool PortsOrch::initPortsBulk(std::vector<Port> ports)
+bool PortsOrch::initPortsBulk(std::vector<Port>& ports)
 {
     SWSS_LOG_ENTER();
 
@@ -3673,21 +3679,23 @@ void PortsOrch::registerPort(Port &p)
     }
 }
 
-void PortsOrch::postPortInit(Port& p)
+void PortsOrch::postPortInit(const Port& p)
 {
     SWSS_LOG_ENTER();
 
-    initializeSchedulerGroups(p);
-    initializePortBufferMaximumParameters(p);
-
-    initPortSupportedSpeeds(p.m_alias, p.m_port_id);
-    initPortSupportedFecModes(p.m_alias, p.m_port_id);
+    if (gMySwitchType != "dpu")
+    {
+        initializePortBufferMaximumParameters(p);
+    }
 
     // We have to test the size of m_queue_ids here since it isn't initialized on some platforms (like DPU)
     if (p.m_host_tx_queue_configured && p.m_queue_ids.size() > p.m_host_tx_queue)
     {
         createPortBufferQueueCounters(p, to_string(p.m_host_tx_queue), false);
     }
+
+    initPortSupportedSpeeds(p.m_alias, p.m_port_id);
+    initPortSupportedFecModes(p.m_alias, p.m_port_id);
 }
 
 void PortsOrch::deInitPort(string alias, sai_object_id_t port_id)
@@ -6159,7 +6167,7 @@ void PortsOrch::initializeQueuesBulk(std::vector<Port>& ports)
     }
 }
 
-void PortsOrch::initializePortBufferMaximumParameters(Port &port)
+void PortsOrch::initializePortBufferMaximumParameters(const Port &port)
 {
     sai_attribute_t attr;
     vector<FieldValueTuple> fvVector;
@@ -6173,8 +6181,8 @@ void PortsOrch::initializePortBufferMaximumParameters(Port &port)
     }
     else
     {
-        port.m_maximum_headroom = attr.value.u32;
-        fvVector.emplace_back("max_headroom_size", to_string(port.m_maximum_headroom));
+        auto maximum_headroom = attr.value.u32;
+        fvVector.emplace_back("max_headroom_size", to_string(maximum_headroom));
     }
 
     fvVector.emplace_back("max_priority_groups", to_string(port.m_priority_group_ids.size()));
