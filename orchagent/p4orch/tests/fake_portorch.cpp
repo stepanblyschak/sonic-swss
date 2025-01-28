@@ -494,7 +494,7 @@ sai_status_t PortsOrch::removePort(sai_object_id_t port_id)
     return SAI_STATUS_SUCCESS;
 }
 
-bool PortsOrch::initPort(const PortConfig &port)
+bool PortsOrch::initExistingPort(const PortConfig &port)
 {
     return true;
 }
