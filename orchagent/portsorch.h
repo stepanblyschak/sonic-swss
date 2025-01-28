@@ -380,7 +380,7 @@ private:
     void initializeQueuesBulk(std::vector<Port>& ports);
     void initializePortHostTxReadyBulk(std::vector<Port>& ports);
 
-    void initializePortBufferMaximumParameters(Port &port);
+    void initializePortBufferMaximumParameters(const Port &port);
     void initializeSchedulerGroups(Port &port);
     void initializeVoqs(Port &port);
 
@@ -403,11 +403,11 @@ private:
     sai_status_t removePort(sai_object_id_t port_id);
     bool initExistingPort(const PortConfig &port);
 
-    bool initPortsBulk(std::vector<Port> ports);
+    bool initPortsBulk(std::vector<Port>& ports);
 
     void registerPort(Port &p);
 
-    void postPortInit(Port &p);
+    void postPortInit(const Port &p);
     
     void deInitPort(string alias, sai_object_id_t port_id);
 
