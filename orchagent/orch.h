@@ -243,6 +243,8 @@ public:
     virtual void doTask(swss::NotificationConsumer &consumer) { }
     virtual void doTask(swss::SelectableTimer &timer) { }
 
+    virtual void onWarmBootEnd() { }
+
     void dumpPendingTasks(std::vector<std::string> &ts);
 
     /**
