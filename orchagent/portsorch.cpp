@@ -3557,6 +3557,8 @@ bool PortsOrch::initExistingPort(const PortConfig& port)
 
     if (gMySwitchType != "dpu")
     {
+        /* Query scheduler groups to work around an issue where scheduler groups get removed after SWSS warm restart.
+         * https://github.com/sonic-net/sonic-swss/pull/2174 for more details. */
         initializeSchedulerGroups(p);
     }
 
