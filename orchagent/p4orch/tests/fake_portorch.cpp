@@ -425,7 +425,7 @@ void PortsOrch::removeDefaultBridgePorts()
 {
 }
 
-void PortsOrch::initializePortBufferMaximumParameters(Port &port)
+void PortsOrch::initializePortBufferMaximumParameters(const Port &port)
 {
 }
 
