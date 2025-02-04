@@ -6245,14 +6245,11 @@ bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_int
         }
     }
 
-    if (up)
-    {
-        SWSS_LOG_NOTICE("Set operation status %s to host interface %s",
-                up ? "UP" : "DOWN", port.m_alias.c_str());
+    SWSS_LOG_NOTICE("Set operation status %s to host interface %s",
+            up ? "UP" : "DOWN", port.m_alias.c_str());
 
-        event_params_t params = {{"ifname",port.m_alias},{"status", up ? "up" : "down"}};
-        event_publish(g_events_handle, "if-state", &params);
-    }
+    event_params_t params = {{"ifname",port.m_alias},{"status", up ? "up" : "down"}};
+    event_publish(g_events_handle, "if-state", &params);
 
     SWSS_LOG_NOTICE("Create host interface for port %s", alias.c_str());
 
