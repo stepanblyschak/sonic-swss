@@ -7,6 +7,7 @@
 #include "directory.h"
 #include "subintf.h"
 #include "notifications.h"
+#include "stporch.h"
 
 #include <inttypes.h>
 #include <cassert>
@@ -56,6 +57,7 @@ extern CrmOrch *gCrmOrch;
 extern BufferOrch *gBufferOrch;
 extern FdbOrch *gFdbOrch;
 extern SwitchOrch *gSwitchOrch;
+extern StpOrch *gStpOrch;
 extern Directory<Orch*> gDirectory;
 extern sai_system_port_api_t *sai_system_port_api;
 extern string gMySwitchType;
@@ -719,6 +721,15 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
         {
             bc_sup_flood_control_type.insert(static_cast<sai_vlan_flood_control_type_t>(values.list[idx]));
         }
+    }
+
+    if (gSwitchOrch->querySwitchCapability(SAI_OBJECT_TYPE_HOSTIF, SAI_HOSTIF_ATTR_QUEUE))
+    {
+        m_supportsHostIfTxQueue = true;
+    }
+    else
+    {
+        SWSS_LOG_WARN("Hostif queue attribute not supported");
     }
 
     // Query whether SAI supports Host Tx Signal and Host Tx Notification
@@ -1822,8 +1833,16 @@ bool PortsOrch::setPortAdminStatus(Port &port, bool state)
 
 void PortsOrch::setHostTxReady(Port port, const std::string &status)
 {
-    SWSS_LOG_NOTICE("Setting host_tx_ready status = %s, alias = %s, port_id = 0x%" PRIx64, status.c_str(), port.m_alias.c_str(), port.m_port_id);
-    m_portStateTable.hset(port.m_alias, "host_tx_ready", status);
+    vector<FieldValueTuple> tuples;
+    bool exist;
+
+    /* If the port is revmoed, don't need to update StateDB*/
+    exist = m_portStateTable.get(port.m_alias, tuples);
+    if (exist)
+    {
+        SWSS_LOG_NOTICE("Setting host_tx_ready status = %s, alias = %s, port_id = 0x%" PRIx64, status.c_str(), port.m_alias.c_str(), port.m_port_id);
+        m_portStateTable.hset(port.m_alias, "host_tx_ready", status);
+    }
 }
 
 bool PortsOrch::getPortAdminStatus(sai_object_id_t id, bool &up)
@@ -2112,6 +2131,10 @@ bool PortsOrch::setPortPfcAsym(Port &port, sai_port_priority_flow_control_mode_t
     if (status != SAI_STATUS_SUCCESS)
     {
         SWSS_LOG_ERROR("Failed to set PFC mode %d to port id 0x%" PRIx64 " (rc:%d)", pfc_asym, port.m_port_id, status);
+        if (status == SAI_STATUS_NOT_SUPPORTED)
+        {
+            return true;
+        }
         task_process_status handle_status = handleSaiSetStatus(SAI_API_PORT, status);
         if (handle_status != task_success)
         {
@@ -3351,17 +3374,7 @@ bool PortsOrch::createVlanHostIntf(Port& vl, string hostif_name)
     attr.value.chardata[SAI_HOSTIF_NAME_SIZE - 1] = '\0';
     attrs.push_back(attr);
 
-    bool set_hostif_tx_queue = false;
-    if (gSwitchOrch->querySwitchCapability(SAI_OBJECT_TYPE_HOSTIF, SAI_HOSTIF_ATTR_QUEUE))
-    {
-        set_hostif_tx_queue = true;
-    }
-    else
-    {
-        SWSS_LOG_WARN("Hostif queue attribute not supported");
-    }
-
-    if (set_hostif_tx_queue)
+    if (m_supportsHostIfTxQueue)
     {
         attr.id = SAI_HOSTIF_ATTR_QUEUE;
         attr.value.u32 = DEFAULT_HOSTIF_TX_QUEUE;
@@ -6213,17 +6226,7 @@ bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_int
     attr.value.chardata[SAI_HOSTIF_NAME_SIZE - 1] = '\0';
     attrs.push_back(attr);
 
-    bool set_hostif_tx_queue = false;
-    if (gSwitchOrch->querySwitchCapability(SAI_OBJECT_TYPE_HOSTIF, SAI_HOSTIF_ATTR_QUEUE))
-    {
-        set_hostif_tx_queue = true;
-    }
-    else
-    {
-        SWSS_LOG_WARN("Hostif queue attribute not supported");
-    }
-
-    if (set_hostif_tx_queue)
+    if (m_supportsHostIfTxQueue)
     {
         attr.id = SAI_HOSTIF_ATTR_QUEUE;
         attr.value.u32 = DEFAULT_HOSTIF_TX_QUEUE;
@@ -6473,6 +6476,9 @@ bool PortsOrch::removeBridgePort(Port &port)
                 hostif_vlan_tag[SAI_HOSTIF_VLAN_TAG_STRIP], port.m_alias.c_str());
         return false;
     }
+    
+    /* Remove STP ports before bridge port deletion*/
+    gStpOrch->removeStpPorts(port);
 
     //Flush the FDB entires corresponding to the port
     gFdbOrch->flushFDBEntries(port.m_bridge_port_id, SAI_NULL_OBJECT_ID);
@@ -6615,6 +6621,12 @@ bool PortsOrch::removeVlan(Port vlan)
         return false;
     }
 
+    /* If STP instance is associated with VLAN remove VLAN from STP before deletion */
+    if(vlan.m_stp_id != -1)
+    {
+        gStpOrch->removeVlanFromStpInstance(vlan.m_alias, 0);
+    }
+
     sai_status_t status = sai_vlan_api->remove_vlan(vlan.m_vlan_info.vlan_oid);
     if (status != SAI_STATUS_SUCCESS)
     {
@@ -6713,7 +6725,8 @@ bool PortsOrch::addVlanMember(Port &vlan, Port &port, string &tagging_mode, stri
             port.m_alias.c_str(), vlan.m_alias.c_str(), vlan.m_vlan_info.vlan_id, port.m_port_id);
 
     /* Use untagged VLAN as pvid of the member port */
-    if (sai_tagging_mode == SAI_VLAN_TAGGING_MODE_UNTAGGED)
+    if (sai_tagging_mode == SAI_VLAN_TAGGING_MODE_UNTAGGED &&
+        port.m_type != Port::TUNNEL)
     {
         if(!setPortPvid(port, vlan.m_vlan_info.vlan_id))
         {
@@ -7048,7 +7061,8 @@ bool PortsOrch::removeVlanMember(Port &vlan, Port &port, string end_point_ip)
             port.m_alias.c_str(), vlan.m_alias.c_str(), vlan.m_vlan_info.vlan_id, vlan_member_id);
 
     /* Restore to default pvid if this port joined this VLAN in untagged mode previously */
-    if (sai_tagging_mode == SAI_VLAN_TAGGING_MODE_UNTAGGED)
+    if (sai_tagging_mode == SAI_VLAN_TAGGING_MODE_UNTAGGED &&
+        port.m_type != Port::TUNNEL)
     {
         if (!setPortPvid(port, DEFAULT_PORT_VLAN_ID))
         {
@@ -10220,4 +10234,3 @@ void PortsOrch::doTask(swss::SelectableTimer &timer)
         m_port_state_poller->stop();
     }
 }
-
