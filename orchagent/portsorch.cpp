@@ -35,6 +35,7 @@
 #include "subscriberstatetable.h"
 
 #include "saitam.h"
+#include "warm_restart.h"
 
 extern sai_switch_api_t *sai_switch_api;
 extern sai_bridge_api_t *sai_bridge_api;
@@ -76,6 +77,9 @@ extern event_handle_t g_events_handle;
 #define PORT_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS     1000
 #define PORT_BUFFER_DROP_STAT_POLLING_INTERVAL_MS     60000
 #define QUEUE_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS   10000
+#define QUEUE_WATERMARK_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS   60000
+#define PG_WATERMARK_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS   60000
+#define PG_DROP_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS   10000
 
 // types --------------------------------------------------------------------------------------------------------------
 
@@ -86,6 +90,50 @@ struct PortAttrValue
 
 typedef PortAttrValue PortAttrValue_t;
 typedef std::map<sai_port_serdes_attr_t, std::vector<std::uint32_t>> PortSerdesAttrMap_t;
+
+struct PortBulker
+{
+    std::vector<sai_object_id_t> oids;
+    std::vector<uint32_t> attrCount;
+    std::vector<sai_attribute_t> attrList;
+    std::vector<sai_status_t> statuses;
+
+    uint32_t count;
+
+    PortBulker(uint32_t size) :
+        oids(size),
+        attrCount(size, 1),
+        attrList(size),
+        statuses(size, SAI_STATUS_NOT_EXECUTED),
+        count(0)
+    {
+    }
+
+    void add(sai_object_id_t oid, sai_attribute_t& attr)
+    {
+        oids[count] = oid;
+        attrList[count] = attr;
+        count++;
+    }
+
+    void executeGet(sai_bulk_op_error_mode_t errorMode = SAI_BULK_OP_ERROR_MODE_IGNORE_ERROR)
+    {
+        if (count == 0)
+        {
+            return;
+        }
+
+        std::vector<sai_attribute_t*> attrs(count);
+
+        for (size_t idx = 0; idx < count; idx++)
+        {
+            attrs[idx] = &attrList[idx];
+        }
+
+        sai_port_api->get_ports_attribute(count, oids.data(), attrCount.data(),
+            attrs.data(), errorMode, statuses.data());
+    }
+};
 
 // constants ----------------------------------------------------------------------------------------------------------
 
@@ -157,6 +205,14 @@ static map<string, sai_port_path_tracing_timestamp_type_t> pt_timestamp_template
  { "template2", SAI_PORT_PATH_TRACING_TIMESTAMP_TYPE_12_19 },
  { "template3", SAI_PORT_PATH_TRACING_TIMESTAMP_TYPE_16_23 },
  { "template4", SAI_PORT_PATH_TRACING_TIMESTAMP_TYPE_20_27 }
+};
+
+static map<sai_queue_type_t, string> sai_queue_type_string_map =
+{
+    {SAI_QUEUE_TYPE_ALL, "SAI_QUEUE_TYPE_ALL"},
+    {SAI_QUEUE_TYPE_UNICAST, "SAI_QUEUE_TYPE_UNICAST"},
+    {SAI_QUEUE_TYPE_MULTICAST, "SAI_QUEUE_TYPE_MULTICAST"},
+    {SAI_QUEUE_TYPE_UNICAST_VOQ, "SAI_QUEUE_TYPE_UNICAST_VOQ"},
 };
 
 const vector<sai_port_stat_t> port_stat_ids =
@@ -535,6 +591,9 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
                 PORT_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, false),
         port_buffer_drop_stat_manager(PORT_BUFFER_DROP_STAT_FLEX_COUNTER_GROUP, StatsMode::READ, PORT_BUFFER_DROP_STAT_POLLING_INTERVAL_MS, false),
         queue_stat_manager(QUEUE_STAT_COUNTER_FLEX_COUNTER_GROUP, StatsMode::READ, QUEUE_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, false),
+        queue_watermark_manager(QUEUE_WATERMARK_STAT_COUNTER_FLEX_COUNTER_GROUP, StatsMode::READ_AND_CLEAR, QUEUE_WATERMARK_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, false),
+        pg_watermark_manager(PG_WATERMARK_STAT_COUNTER_FLEX_COUNTER_GROUP, StatsMode::READ_AND_CLEAR, PG_WATERMARK_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, false),
+        pg_drop_stat_manager(PG_DROP_STAT_COUNTER_FLEX_COUNTER_GROUP, StatsMode::READ, PG_DROP_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, false),
         m_port_state_poller(new SelectableTimer(timespec { .tv_sec = PORT_STATE_POLLING_SEC, .tv_nsec = 0 }))
 {
     SWSS_LOG_ENTER();
@@ -945,7 +1004,7 @@ void PortsOrch::setPortConfigState(port_config_state_t value)
     this->m_portConfigState = value;
 }
 
-bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
+bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList, std::vector<Port>& addedPorts)
 {
     // The method is used to create ports in a bulk mode.
     // The action takes place when:
@@ -958,6 +1017,8 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
     {
         return true;
     }
+
+    addedPorts.reserve(portList.size());
 
     std::vector<PortAttrValue_t> attrValueList;
     std::vector<std::vector<sai_attribute_t>> attrDataList;
@@ -972,6 +1033,12 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
     {
         sai_attribute_t attr;
         std::vector<sai_attribute_t> attrList;
+
+        addedPorts.emplace_back(cit.key, Port::PHY);
+        auto& p = addedPorts.back();
+
+        p.m_role = cit.role.value;
+        p.m_index = cit.index.value;
 
         if (cit.lanes.is_set)
         {
@@ -992,6 +1059,7 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
             attr.id = SAI_PORT_ATTR_SPEED;
             attr.value.u32 = cit.speed.value;
             attrList.push_back(attr);
+            p.m_speed = cit.speed.value;
         }
 
         if (cit.autoneg.is_set)
@@ -999,6 +1067,7 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
             attr.id = SAI_PORT_ATTR_AUTO_NEG_MODE;
             attr.value.booldata = cit.autoneg.value;
             attrList.push_back(attr);
+            p.m_autoneg = cit.autoneg.value;
         }
 
         if (cit.fec.is_set)
@@ -1126,6 +1195,7 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList)
         }
 
         m_portListLaneMap[portList.at(i).lanes.value] = oidList.at(i);
+        addedPorts.at(i).m_port_id = oidList.at(i);
         m_portCount++;
     }
 
@@ -1790,25 +1860,6 @@ bool PortsOrch::getPortAdminStatus(sai_object_id_t id, bool &up)
     return true;
 }
 
-bool PortsOrch::getPortHostTxReady(const Port& port, bool &hostTxReadyVal)
-{
-    SWSS_LOG_ENTER();
-
-    sai_attribute_t attr;
-    attr.id = SAI_PORT_ATTR_HOST_TX_READY_STATUS;
-
-    sai_status_t status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        hostTxReadyVal = false;
-        return false;
-    }
-
-    hostTxReadyVal = attr.value.s32;
-
-    return true;
-}
-
 bool PortsOrch::getPortMtu(const Port& port, sai_uint32_t &mtu)
 {
     SWSS_LOG_ENTER();
@@ -1868,7 +1919,6 @@ bool PortsOrch::setPortMtu(const Port& port, sai_uint32_t mtu)
     SWSS_LOG_INFO("Set MTU %u to port pid:%" PRIx64, attr.value.u32, port.m_port_id);
     return true;
 }
-
 
 bool PortsOrch::setPortTpid(Port &port, sai_uint16_t tpid)
 {
@@ -2706,7 +2756,6 @@ void PortsOrch::initPortSupportedSpeeds(const std::string& alias, sai_object_id_
     m_portStateTable.set(alias, v);
 }
 
-
 void PortsOrch::initPortCapAutoNeg(Port &port)
 {
     sai_status_t status;
@@ -3115,7 +3164,7 @@ task_process_status PortsOrch::setPortAdvInterfaceTypes(Port &port, std::set<sai
     return task_success;
 }
 
-bool PortsOrch::getQueueTypeAndIndex(sai_object_id_t queue_id, string &type, uint8_t &index)
+bool PortsOrch::getQueueTypeAndIndex(sai_object_id_t queue_id, sai_queue_type_t &queue_type, uint8_t &index)
 {
     SWSS_LOG_ENTER();
 
@@ -3151,26 +3200,8 @@ bool PortsOrch::getQueueTypeAndIndex(sai_object_id_t queue_id, string &type, uin
         SWSS_LOG_INFO("Fetched cached information (index %d type %d) for queue %" PRIx64, attr[1].value.u8, attr[0].value.s32, queue_id);
     }
 
-    switch (attr[0].value.s32)
-    {
-    case SAI_QUEUE_TYPE_ALL:
-        type = "SAI_QUEUE_TYPE_ALL";
-        break;
-    case SAI_QUEUE_TYPE_UNICAST:
-        type = "SAI_QUEUE_TYPE_UNICAST";
-        break;
-    case SAI_QUEUE_TYPE_MULTICAST:
-        type = "SAI_QUEUE_TYPE_MULTICAST";
-        break;
-    case SAI_QUEUE_TYPE_UNICAST_VOQ:
-        type = "SAI_QUEUE_TYPE_UNICAST_VOQ";
-        break;
-    default:
-        SWSS_LOG_ERROR("Got unsupported queue type %d for %" PRIx64 " queue", attr[0].value.s32, queue_id);
-        throw runtime_error("Got unsupported queue type");
-    }
-
     index = attr[1].value.u8;
+    queue_type = static_cast<sai_queue_type_t>(attr[0].value.s32);
 
     return true;
 }
@@ -3496,7 +3527,7 @@ string PortsOrch::getPriorityGroupDropPacketsFlexCounterTableKey(string key)
     return string(PG_DROP_STAT_COUNTER_FLEX_COUNTER_GROUP) + ":" + key;
 }
 
-bool PortsOrch::initPort(const PortConfig &port)
+bool PortsOrch::initExistingPort(const PortConfig& port)
 {
     SWSS_LOG_ENTER();
 
@@ -3505,96 +3536,166 @@ bool PortsOrch::initPort(const PortConfig &port)
     const auto &index = port.index.value;
     const auto &lane_set = port.lanes.value;
 
-    /* Determine if the lane combination exists in switch */
-    if (m_portListLaneMap.find(lane_set) != m_portListLaneMap.end())
+    /* Determine if the port has already been initialized before */
+    auto it = m_portList.find(alias);
+    if (it != m_portList.end())
     {
-        sai_object_id_t id = m_portListLaneMap[lane_set];
-
-        /* Determine if the port has already been initialized before */
-        if (m_portList.find(alias) != m_portList.end() && m_portList[alias].m_port_id == id)
-        {
-            SWSS_LOG_DEBUG("Port has already been initialized before alias:%s", alias.c_str());
-        }
-        else
-        {
-            Port p(alias, Port::PHY);
-
-            p.m_index = index;
-            p.m_port_id = id;
-
-            /* Initialize the port and create corresponding host interface */
-            if (initializePort(p))
-            {
-                /* Create associated Gearbox lane mapping */
-                initGearboxPort(p);
-
-                /* Add port to port list */
-                m_portList[alias] = p;
-                saiOidToAlias[id] = alias;
-                m_port_ref_count[alias] = 0;
-                m_portOidToIndex[id] = index;
-
-                /* Add port name map to counter table */
-                FieldValueTuple tuple(p.m_alias, sai_serialize_object_id(p.m_port_id));
-                vector<FieldValueTuple> fields;
-                fields.push_back(tuple);
-                m_counterTable->set("", fields);
-
-                // Install a flex counter for this port to track stats
-                auto flex_counters_orch = gDirectory.get<FlexCounterOrch*>();
-                /* Delay installing the counters if they are yet enabled
-                If they are enabled, install the counters immediately */
-                if (flex_counters_orch->getPortCountersState())
-                {
-                    auto port_counter_stats = generateCounterStats(PORT_STAT_COUNTER_FLEX_COUNTER_GROUP);
-                    port_stat_manager.setCounterIdList(p.m_port_id,
-                            CounterType::PORT, port_counter_stats);
-                    auto gbport_counter_stats = generateCounterStats(PORT_STAT_COUNTER_FLEX_COUNTER_GROUP, true);
-                    if (p.m_system_side_id)
-                        gb_port_stat_manager.setCounterIdList(p.m_system_side_id,
-                                CounterType::PORT, gbport_counter_stats, p.m_switch_id);
-                    if (p.m_line_side_id)
-                        gb_port_stat_manager.setCounterIdList(p.m_line_side_id,
-                                CounterType::PORT, gbport_counter_stats, p.m_switch_id);
-                }
-                if (flex_counters_orch->getPortBufferDropCountersState())
-                {
-                    auto port_buffer_drop_stats = generateCounterStats(PORT_BUFFER_DROP_STAT_FLEX_COUNTER_GROUP);
-                    port_buffer_drop_stat_manager.setCounterIdList(p.m_port_id, CounterType::PORT, port_buffer_drop_stats);
-                }
-
-                PortUpdate update = { p, true };
-                notify(SUBJECT_TYPE_PORT_CHANGE, static_cast<void *>(&update));
-
-                m_portList[alias].m_init = true;
-
-                if (role == Port::Role::Rec || role == Port::Role::Inb)
-                {
-                    m_recircPortRole[alias] = role;
-                }
-
-                // We have to test the size of m_queue_ids here since it isn't initialized on some platforms (like DPU)
-                if (p.m_host_tx_queue_configured && p.m_queue_ids.size() > p.m_host_tx_queue)
-                {
-                    createPortBufferQueueCounters(p, to_string(p.m_host_tx_queue), false);
-                }
-
-                SWSS_LOG_NOTICE("Initialized port %s", alias.c_str());
-            }
-            else
-            {
-                SWSS_LOG_ERROR("Failed to initialize port %s", alias.c_str());
-                return false;
-            }
-        }
+        SWSS_LOG_DEBUG("Port has already been initialized before alias:%s", alias.c_str());
+        return true;
     }
-    else
+
+    /* Determine if the lane combination exists in switch */
+    if (m_portListLaneMap.find(lane_set) == m_portListLaneMap.end())
     {
         SWSS_LOG_ERROR("Failed to locate port lane combination alias:%s", alias.c_str());
         return false;
     }
 
-    return true;
+    sai_object_id_t id = m_portListLaneMap[lane_set];
+
+    Port p(alias, Port::PHY);
+    p.m_role = role;
+    p.m_index = index;
+    p.m_port_id = id;
+
+    if (gMySwitchType != "dpu")
+    {
+        /* Query scheduler groups to work around an issue where scheduler groups get removed after SWSS warm restart.
+         * https://github.com/sonic-net/sonic-swss/pull/2174 for more details. */
+        initializeSchedulerGroups(p);
+    }
+
+    /* initialize port admin status */
+    if (!getPortAdminStatus(p.m_port_id, p.m_admin_state_up))
+    {
+        SWSS_LOG_ERROR("Failed to get initial port admin status %s", p.m_alias.c_str());
+        return false;
+    }
+
+    // Read port speed of an already existing port
+    if (!isAutoNegEnabled(p.m_port_id) && !getPortSpeed(p.m_port_id, p.m_speed))
+    {
+        SWSS_LOG_ERROR("Failed to get initial port admin speed %d", p.m_speed);
+        return false;
+    }
+
+     /* initialize port mtu */
+    if (!getPortMtu(p, p.m_mtu))
+    {
+        SWSS_LOG_ERROR("Failed to get initial port mtu %d", p.m_mtu);
+    }
+
+    std::vector<Port> ports = {p};
+    return initPortsBulk(ports);
+}
+
+bool PortsOrch::initPortsBulk(std::vector<Port>& ports)
+{
+    SWSS_LOG_ENTER();
+
+    bool warmStart = WarmStart::isWarmStart();
+
+    bool status = true;
+
+    SWSS_LOG_TIMER(__FUNCTION__);
+
+    if (!initializePorts(ports))
+    {
+        status = false;
+    }
+
+    for (auto& p: ports)
+    {
+        const auto& alias = p.m_alias;
+
+        registerPort(p);
+
+        if (!warmStart)
+        {
+            postPortInit(m_portList[alias]);
+        }
+
+        SWSS_LOG_NOTICE("Initialized port %s", alias.c_str());
+    }
+
+    return status;
+}
+
+void PortsOrch::registerPort(Port &p)
+{
+    SWSS_LOG_ENTER();
+
+    const auto &alias = p.m_alias;
+    const auto &role = p.m_role;
+    const auto &index = p.m_index;
+    const auto id = p.m_port_id;
+
+    /* Create associated Gearbox lane mapping */
+    initGearboxPort(p);
+
+    /* Add port to port list */
+    m_portList[alias] = p;
+    saiOidToAlias[id] = alias;
+    m_port_ref_count[alias] = 0;
+    m_portOidToIndex[id] = index;
+
+    /* Add port name map to counter table */
+    FieldValueTuple tuple(p.m_alias, sai_serialize_object_id(p.m_port_id));
+    vector<FieldValueTuple> fields;
+    fields.push_back(tuple);
+    m_counterTable->set("", fields);
+
+    // Install a flex counter for this port to track stats
+    auto flex_counters_orch = gDirectory.get<FlexCounterOrch*>();
+    /* Delay installing the counters if they are yet enabled
+    If they are enabled, install the counters immediately */
+    if (flex_counters_orch->getPortCountersState())
+    {
+        auto port_counter_stats = generateCounterStats(port_stat_ids, sai_serialize_port_stat);
+        port_stat_manager.setCounterIdList(p.m_port_id,
+                CounterType::PORT, port_counter_stats);
+        auto gbport_counter_stats = generateCounterStats(gbport_stat_ids, sai_serialize_port_stat);
+        if (p.m_system_side_id)
+            gb_port_stat_manager.setCounterIdList(p.m_system_side_id,
+                    CounterType::PORT, gbport_counter_stats, p.m_switch_id);
+        if (p.m_line_side_id)
+            gb_port_stat_manager.setCounterIdList(p.m_line_side_id,
+                    CounterType::PORT, gbport_counter_stats, p.m_switch_id);
+    }
+    if (flex_counters_orch->getPortBufferDropCountersState())
+    {
+        auto port_buffer_drop_stats = generateCounterStats(port_buffer_drop_stat_ids, sai_serialize_port_stat);
+        port_buffer_drop_stat_manager.setCounterIdList(p.m_port_id, CounterType::PORT, port_buffer_drop_stats);
+    }
+
+    PortUpdate update = { p, true };
+    notify(SUBJECT_TYPE_PORT_CHANGE, static_cast<void *>(&update));
+
+    m_portList[alias].m_init = true;
+
+    if (role == Port::Role::Rec || role == Port::Role::Inb)
+    {
+        m_recircPortRole[alias] = role;
+    }
+}
+
+void PortsOrch::postPortInit(const Port& p)
+{
+    SWSS_LOG_ENTER();
+
+    if (gMySwitchType != "dpu")
+    {
+        initializePortBufferMaximumParameters(p);
+    }
+
+    // We have to test the size of m_queue_ids here since it isn't initialized on some platforms (like DPU)
+    if (p.m_host_tx_queue_configured && p.m_queue_ids.size() > p.m_host_tx_queue)
+    {
+        createPortBufferQueueCounters(p, to_string(p.m_host_tx_queue), false);
+    }
+
+    initPortSupportedSpeeds(p.m_alias, p.m_port_id);
+    initPortSupportedFecModes(p.m_alias, p.m_port_id);
 }
 
 void PortsOrch::deInitPort(string alias, sai_object_id_t port_id)
@@ -3933,7 +4034,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
             // TODO:
             // Fix the issue below
             // After PortConfigDone, while waiting for "PortInitDone" and the first gBufferOrch->isPortReady(alias),
-            // the complete m_lanesAliasSpeedMap may be populated again, so initPort() will be called more than once
+            // the complete m_lanesAliasSpeedMap may be populated again, so initExistingPort() will be called more than once
             // for the same port.
 
             /* Once all ports received, go through the each port and perform appropriate actions:
@@ -3978,15 +4079,12 @@ void PortsOrch::doPortTask(Consumer &consumer)
                         continue;
                     }
 
-                    if (!initPort(it->second))
+                    if (!initExistingPort(it->second))
                     {
-                        // Failure has been recorded in initPort
+                        // Failure has been recorded in initExistingPort
                         it++;
                         continue;
                     }
-
-                    initPortSupportedSpeeds(it->second.key, m_portListLaneMap[it->first]);
-                    initPortSupportedFecModes(it->second.key, m_portListLaneMap[it->first]);
 
                     it++;
                 }
@@ -3994,22 +4092,13 @@ void PortsOrch::doPortTask(Consumer &consumer)
                 // Bulk port add
                 if (!portsToAddList.empty())
                 {
-                    if (!addPortBulk(portsToAddList))
+                    std::vector<Port> addedPorts;
+                    if (!addPortBulk(portsToAddList, addedPorts))
                     {
                         SWSS_LOG_THROW("PortsOrch initialization failure");
                     }
 
-                    for (const auto &cit : portsToAddList)
-                    {
-                        if (!initPort(cit))
-                        {
-                            // Failure has been recorded in initPort
-                            continue;
-                        }
-
-                        initPortSupportedSpeeds(cit.key, m_portListLaneMap[cit.lanes.value]);
-                        initPortSupportedFecModes(cit.key, m_portListLaneMap[cit.lanes.value]);
-                    }
+                    initPortsBulk(addedPorts);
                 }
 
                 setPortConfigState(PORT_CONFIG_DONE);
@@ -5619,6 +5708,25 @@ void PortsOrch::doTask()
     }
 }
 
+void PortsOrch::onWarmBootEnd()
+{
+    SWSS_LOG_ENTER();
+
+    /* Start dynamic state sync up */
+    refreshPortStatus();
+
+    // Do post boot port initialization
+    for (auto& it: m_portList)
+    {
+        Port& port = it.second;
+
+        if (port.m_type == Port::PHY)
+        {
+            postPortInit(it.second);
+        }
+    }
+}
+
 void PortsOrch::doTask(Consumer &consumer)
 {
     SWSS_LOG_ENTER();
@@ -5632,6 +5740,7 @@ void PortsOrch::doTask(Consumer &consumer)
     else if (table_name == APP_PORT_TABLE_NAME)
     {
         doPortTask(consumer);
+        flushCounters();
     }
     else if (table_name == APP_SEND_TO_INGRESS_PORT_TABLE_NAME)
     {
@@ -5709,48 +5818,147 @@ void PortsOrch::initializeVoqs(Port &port)
     SWSS_LOG_INFO("Get voqs for port %s", port.m_alias.c_str());
 }
 
-void PortsOrch::initializeQueues(Port &port)
+bool PortsOrch::initializePorts(std::vector<Port>& ports)
 {
     SWSS_LOG_ENTER();
 
-    sai_attribute_t attr;
-    attr.id = SAI_PORT_ATTR_QOS_NUMBER_OF_QUEUES;
-    sai_status_t status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
-    if (status != SAI_STATUS_SUCCESS)
+    bool status = true;
+
+    if (gMySwitchType != "dpu")
     {
-        SWSS_LOG_ERROR("Failed to get number of queues for port %s rv:%d", port.m_alias.c_str(), status);
-        task_process_status handle_status = handleSaiGetStatus(SAI_API_PORT, status);
-        if (handle_status != task_process_status::task_success)
+        initializePriorityGroupsBulk(ports);
+        initializeQueuesBulk(ports);
+    }
+
+    /* initialize port host_tx_ready value (only for supporting systems) */
+    if (m_cmisModuleAsicSyncSupported)
+    {
+        initializePortHostTxReadyBulk(ports);
+    }
+
+    // Create host interfaces
+    for (auto iter = ports.begin(); iter != ports.end();)
+    {
+        Port& port = *iter;
+
+        /* Check warm start states */
+        vector<FieldValueTuple> tuples;
+        bool exist = m_portTable->get(port.m_alias, tuples);
+        string operStatus, flapCount = "0";
+        if (exist)
         {
-            throw runtime_error("PortsOrch initialization failure.");
+            for (auto i : tuples)
+            {
+                if (fvField(i) == "oper_status")
+                {
+                    operStatus = fvValue(i);
+                }
+
+                if (fvField(i) == "flap_count")
+                {
+                    flapCount = fvValue(i);
+                }
+            }
         }
-    }
-    SWSS_LOG_INFO("Get %d queues for port %s", attr.value.u32, port.m_alias.c_str());
 
-    port.m_queue_ids.resize(attr.value.u32);
-    port.m_queue_lock.resize(attr.value.u32);
+        SWSS_LOG_INFO("Port %s with oper %s flap_count=%s", port.m_alias.c_str(), operStatus.c_str(), flapCount.c_str());
 
-    if (attr.value.u32 == 0)
-    {
-        return;
-    }
-
-    attr.id = SAI_PORT_ATTR_QOS_QUEUE_LIST;
-    attr.value.objlist.count = (uint32_t)port.m_queue_ids.size();
-    attr.value.objlist.list = port.m_queue_ids.data();
-
-    status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Failed to get queue list for port %s rv:%d", port.m_alias.c_str(), status);
-        task_process_status handle_status = handleSaiGetStatus(SAI_API_PORT, status);
-        if (handle_status != task_process_status::task_success)
+        /**
+         * Create database port oper status as DOWN if attr missing
+         * This status will be updated upon receiving port_oper_status_notification.
+         */
+        if (operStatus == "up")
         {
-            throw runtime_error("PortsOrch initialization failure.");
+            port.m_oper_status = SAI_PORT_OPER_STATUS_UP;
         }
+        else if (operStatus.empty())
+        {
+            port.m_oper_status = SAI_PORT_OPER_STATUS_DOWN;
+            /* Fill oper_status in db with default value "down" */
+            m_portTable->hset(port.m_alias, "oper_status", "down");
+        }
+        else
+        {
+            port.m_oper_status = SAI_PORT_OPER_STATUS_DOWN;
+        }
+
+        // initalize port flap count
+        if (!flapCount.empty())
+        {
+            try
+            {
+                port.m_flap_count = stoull(flapCount);
+                m_portTable->hset(port.m_alias, "flap_count", flapCount);
+            }
+            catch (const std::exception &e)
+            {
+                SWSS_LOG_ERROR("Failed to get port (%s) flap_count: %s", port.m_alias.c_str(), e.what());
+            }
+        }
+
+        /*
+        * always initialize Port SAI_HOSTIF_ATTR_OPER_STATUS based on oper_status value in appDB.
+        */
+        bool isUp = port.m_oper_status == SAI_PORT_OPER_STATUS_UP;
+
+        /* Create host interface */
+        if (!addHostIntfs(port, port.m_alias, port.m_hif_id, isUp))
+        {
+            SWSS_LOG_ERROR("Failed to create host interface for port %s", port.m_alias.c_str());
+            iter = ports.erase(iter);
+            status = false;
+            continue;
+        }
+
+        iter++;
     }
 
-    SWSS_LOG_INFO("Get queues for port %s", port.m_alias.c_str());
+    return status;
+}
+
+void PortsOrch::initializePortHostTxReadyBulk(std::vector<Port>& ports)
+{
+    SWSS_LOG_ENTER();
+
+    SWSS_LOG_TIMER(__FUNCTION__);
+
+    const auto portCount = static_cast<uint32_t>(ports.size());
+
+    PortBulker bulker(portCount);
+
+    for (auto& port: ports)
+    {
+        sai_attribute_t attr;
+        attr.id = SAI_PORT_ATTR_HOST_TX_READY_STATUS;
+        bulker.add(port.m_port_id, attr);
+    }
+
+    bulker.executeGet();
+
+    size_t idx = 0;
+    for (auto& port: ports)
+    {
+        const auto status = bulker.statuses[idx];
+        const auto& attr = bulker.attrList[idx];
+
+        idx++;
+
+        bool hostTxReady = false;
+
+        if (status == SAI_STATUS_SUCCESS)
+        {
+            hostTxReady = attr.value.booldata;
+        }
+        else
+        {
+            SWSS_LOG_ERROR("Failed to get host_tx_ready value from SAI to Port %" PRIx64 , port.m_port_id);
+        }
+
+        string hostTxReadyStr = hostTxReady ? "true" : "false";
+
+        SWSS_LOG_DEBUG("Received host_tx_ready current status: port_id: 0x%" PRIx64 " status: %s", port.m_port_id, hostTxReadyStr.c_str());
+        setHostTxReady(port, hostTxReadyStr);
+    }
 }
 
 void PortsOrch::initializeSchedulerGroups(Port &port)
@@ -5797,49 +6005,170 @@ void PortsOrch::initializeSchedulerGroups(Port &port)
     SWSS_LOG_INFO("Got scheduler groups for port %s", port.m_alias.c_str());
 }
 
-void PortsOrch::initializePriorityGroups(Port &port)
+void PortsOrch::initializePriorityGroupsBulk(std::vector<Port>& ports)
 {
     SWSS_LOG_ENTER();
 
-    sai_attribute_t attr;
-    attr.id = SAI_PORT_ATTR_NUMBER_OF_INGRESS_PRIORITY_GROUPS;
-    sai_status_t status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
-    if (status != SAI_STATUS_SUCCESS)
+    SWSS_LOG_TIMER(__FUNCTION__);
+
+    const auto portCount = static_cast<uint32_t>(ports.size());
+
+    // Query number of ingress priority groups
     {
-        SWSS_LOG_ERROR("Failed to get number of priority groups for port %s rv:%d", port.m_alias.c_str(), status);
-        task_process_status handle_status = handleSaiGetStatus(SAI_API_PORT, status);
-        if (handle_status != task_process_status::task_success)
+        PortBulker bulker(portCount);
+
+        for (const auto& port: ports)
         {
-            throw runtime_error("PortsOrch initialization failure.");
+            sai_attribute_t attr;
+            attr.id = SAI_PORT_ATTR_NUMBER_OF_INGRESS_PRIORITY_GROUPS;
+            bulker.add(port.m_port_id, attr);
+        }
+
+        bulker.executeGet();
+
+        size_t idx = 0;
+        for (auto& port: ports)
+        {
+            const auto status = bulker.statuses[idx];
+            const auto& attr = bulker.attrList[idx];
+
+            idx++;
+
+            if (status != SAI_STATUS_SUCCESS)
+            {
+                SWSS_LOG_ERROR("Failed to get number of priority groups for port %s rv:%d", port.m_alias.c_str(), status);
+                handleSaiGetStatus(SAI_API_PORT, status);
+                throw runtime_error("PortsOrch initialization failure.");
+            }
+
+            SWSS_LOG_INFO("Get %d priority groups for port %s", attr.value.u32, port.m_alias.c_str());
+            port.m_priority_group_ids.resize(attr.value.u32);
         }
     }
-    SWSS_LOG_INFO("Get %d priority groups for port %s", attr.value.u32, port.m_alias.c_str());
 
-    port.m_priority_group_ids.resize(attr.value.u32);
-
-    if (attr.value.u32 == 0)
+    // Query ingress priority groups lists
     {
-        return;
-    }
+        PortBulker bulker(portCount);
 
-    attr.id = SAI_PORT_ATTR_INGRESS_PRIORITY_GROUP_LIST;
-    attr.value.objlist.count = (uint32_t)port.m_priority_group_ids.size();
-    attr.value.objlist.list = port.m_priority_group_ids.data();
-
-    status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Fail to get priority group list for port %s rv:%d", port.m_alias.c_str(), status);
-        task_process_status handle_status = handleSaiGetStatus(SAI_API_PORT, status);
-        if (handle_status != task_process_status::task_success)
+        for (auto& port: ports)
         {
-            throw runtime_error("PortsOrch initialization failure.");
+            sai_attribute_t attr;
+
+            if (port.m_priority_group_ids.size() == 0)
+            {
+                continue;
+            }
+
+            attr.id = SAI_PORT_ATTR_INGRESS_PRIORITY_GROUP_LIST;
+            attr.value.objlist.list = port.m_priority_group_ids.data();
+            attr.value.objlist.count = static_cast<uint32_t>(port.m_priority_group_ids.size());
+            bulker.add(port.m_port_id, attr);
+        }
+
+        bulker.executeGet();
+
+        size_t idx = 0;
+        for (auto& port: ports)
+        {
+            const auto status = bulker.statuses[idx];
+
+            idx++;
+
+            if (status != SAI_STATUS_SUCCESS)
+            {
+                SWSS_LOG_ERROR("Fail to get priority group list for port %s rv:%d", port.m_alias.c_str(), status);
+                handleSaiGetStatus(SAI_API_PORT, status);
+                throw runtime_error("PortsOrch initialization failure.");
+            }
+
+            SWSS_LOG_INFO("Get priority groups for port %s", port.m_alias.c_str());
         }
     }
-    SWSS_LOG_INFO("Get priority groups for port %s", port.m_alias.c_str());
 }
 
-void PortsOrch::initializePortBufferMaximumParameters(Port &port)
+void PortsOrch::initializeQueuesBulk(std::vector<Port>& ports)
+{
+    SWSS_LOG_ENTER();
+
+    SWSS_LOG_TIMER(__FUNCTION__);
+
+    const auto portCount = static_cast<uint32_t>(ports.size());
+
+    // Query number of queues
+    {
+        PortBulker bulker(portCount);
+
+        for (auto& port: ports)
+        {
+            sai_attribute_t attr;
+            attr.id = SAI_PORT_ATTR_QOS_NUMBER_OF_QUEUES;
+            bulker.add(port.m_port_id, attr);
+        }
+
+        bulker.executeGet();
+
+        size_t idx = 0;
+        for (auto& port: ports)
+        {
+            const auto status = bulker.statuses[idx];
+            const auto& attr = bulker.attrList[idx];
+
+            idx++;
+
+            if (status != SAI_STATUS_SUCCESS)
+            {
+                SWSS_LOG_ERROR("Failed to get number of queues for port %s rv:%d", port.m_alias.c_str(), status);
+                handleSaiGetStatus(SAI_API_PORT, status);
+                throw runtime_error("PortsOrch initialization failure.");
+            }
+
+            SWSS_LOG_INFO("Get %d queues for port %s", attr.value.u32, port.m_alias.c_str());
+            port.m_queue_ids.resize(attr.value.u32);
+            port.m_queue_lock.resize(attr.value.u32);
+        }
+    }
+
+    // Query queue lists
+    {
+        PortBulker bulker(portCount);
+
+        for (auto& port: ports)
+        {
+            sai_attribute_t attr;
+
+            if (port.m_queue_ids.size() == 0)
+            {
+                continue;
+            }
+
+            attr.id = SAI_PORT_ATTR_QOS_QUEUE_LIST;
+            attr.value.objlist.list = port.m_queue_ids.data();
+            attr.value.objlist.count = static_cast<uint32_t>(port.m_queue_ids.size());
+            bulker.add(port.m_port_id, attr);
+        }
+
+        bulker.executeGet();
+
+        size_t idx = 0;
+        for (auto& port: ports)
+        {
+            const auto status = bulker.statuses[idx];
+
+            idx++;
+
+            if (status != SAI_STATUS_SUCCESS)
+            {
+                SWSS_LOG_ERROR("Fail to get queue list for port %s rv:%d", port.m_alias.c_str(), status);
+                handleSaiGetStatus(SAI_API_PORT, status);
+                throw runtime_error("PortsOrch initialization failure.");
+            }
+
+            SWSS_LOG_INFO("Get queues for port %s", port.m_alias.c_str());
+        }
+    }
+}
+
+void PortsOrch::initializePortBufferMaximumParameters(const Port &port)
 {
     sai_attribute_t attr;
     vector<FieldValueTuple> fvVector;
@@ -5853,8 +6182,8 @@ void PortsOrch::initializePortBufferMaximumParameters(Port &port)
     }
     else
     {
-        port.m_maximum_headroom = attr.value.u32;
-        fvVector.emplace_back("max_headroom_size", to_string(port.m_maximum_headroom));
+        auto maximum_headroom = attr.value.u32;
+        fvVector.emplace_back("max_headroom_size", to_string(maximum_headroom));
     }
 
     fvVector.emplace_back("max_priority_groups", to_string(port.m_priority_group_ids.size()));
@@ -5863,132 +6192,7 @@ void PortsOrch::initializePortBufferMaximumParameters(Port &port)
     m_stateBufferMaximumValueTable->set(port.m_alias, fvVector);
 }
 
-bool PortsOrch::initializePort(Port &port)
-{
-    SWSS_LOG_ENTER();
-
-    SWSS_LOG_NOTICE("Initializing port alias:%s pid:%" PRIx64, port.m_alias.c_str(), port.m_port_id);
-
-    if (gMySwitchType != "dpu")
-    {
-        initializePriorityGroups(port);
-        initializeQueues(port);
-        initializeSchedulerGroups(port);
-        initializePortBufferMaximumParameters(port);
-    }
-
-    /* Create host interface */
-    if (!addHostIntfs(port, port.m_alias, port.m_hif_id))
-    {
-        SWSS_LOG_ERROR("Failed to create host interface for port %s", port.m_alias.c_str());
-        return false;
-    }
-
-    /* Check warm start states */
-    vector<FieldValueTuple> tuples;
-    bool exist = m_portTable->get(port.m_alias, tuples);
-    string operStatus, flapCount = "0";
-    if (exist)
-    {
-        for (auto i : tuples)
-        {
-            if (fvField(i) == "oper_status")
-            {
-                operStatus = fvValue(i);
-            }
-
-            if (fvField(i) == "flap_count")
-            {
-                flapCount = fvValue(i);
-            }
-        }
-    }
-    SWSS_LOG_INFO("Port %s with oper %s flap_count=%s", port.m_alias.c_str(), operStatus.c_str(), flapCount.c_str());
-
-    /**
-     * Create database port oper status as DOWN if attr missing
-     * This status will be updated upon receiving port_oper_status_notification.
-     */
-    if (operStatus == "up")
-    {
-        port.m_oper_status = SAI_PORT_OPER_STATUS_UP;
-    }
-    else if (operStatus.empty())
-    {
-        port.m_oper_status = SAI_PORT_OPER_STATUS_DOWN;
-        /* Fill oper_status in db with default value "down" */
-        m_portTable->hset(port.m_alias, "oper_status", "down");
-    }
-    else
-    {
-        port.m_oper_status = SAI_PORT_OPER_STATUS_DOWN;
-    }
-
-    // initalize port flap count
-    if (!flapCount.empty())
-    {
-        try
-        {
-            port.m_flap_count = stoull(flapCount);
-            m_portTable->hset(port.m_alias, "flap_count", flapCount);
-        }
-        catch (const std::exception &e)
-        {
-            SWSS_LOG_ERROR("Failed to get port (%s) flap_count: %s", port.m_alias.c_str(), e.what());
-        }
-    }
-
-    /* initialize port admin status */
-    if (!getPortAdminStatus(port.m_port_id, port.m_admin_state_up))
-    {
-        SWSS_LOG_ERROR("Failed to get initial port admin status %s", port.m_alias.c_str());
-        return false;
-    }
-
-    /* initialize port admin speed */
-    if (!isAutoNegEnabled(port.m_port_id) && !getPortSpeed(port.m_port_id, port.m_speed))
-    {
-        SWSS_LOG_ERROR("Failed to get initial port admin speed %d", port.m_speed);
-        return false;
-    }
-
-    /* initialize port mtu */
-    if (!getPortMtu(port, port.m_mtu))
-    {
-        SWSS_LOG_ERROR("Failed to get initial port mtu %d", port.m_mtu);
-    }
-
-    /* initialize port host_tx_ready value (only for supporting systems) */
-    if (m_cmisModuleAsicSyncSupported)
-    {
-        bool hostTxReadyVal;
-        if (!getPortHostTxReady(port, hostTxReadyVal))
-        {
-            SWSS_LOG_ERROR("Failed to get host_tx_ready value from SAI to Port %" PRIx64 , port.m_port_id);
-        }
-        /* set value to state DB */
-
-        string hostTxReadyStr = hostTxReadyVal ? "true" : "false";
-
-        SWSS_LOG_DEBUG("Received host_tx_ready current status: port_id: 0x%" PRIx64 " status: %s", port.m_port_id, hostTxReadyStr.c_str());
-        setHostTxReady(port, hostTxReadyStr);
-    }
-
-    /*
-     * always initialize Port SAI_HOSTIF_ATTR_OPER_STATUS based on oper_status value in appDB.
-     */
-    bool isUp = port.m_oper_status == SAI_PORT_OPER_STATUS_UP;
-    if (!setHostIntfsOperStatus(port, isUp))
-    {
-        SWSS_LOG_WARN("Failed to set operation status %s to host interface %s",
-                      operStatus.c_str(), port.m_alias.c_str());
-        return false;
-    }
-
-    return true;
-}
-
-bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id)
+bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id, bool up)
 {
     SWSS_LOG_ENTER();
 
@@ -6022,6 +6226,13 @@ bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_int
         port.m_host_tx_queue_configured = true;
     }
 
+    if (up)
+    {
+        attr.id = SAI_HOSTIF_ATTR_OPER_STATUS;
+        attr.value.booldata = up;
+        attrs.push_back(attr);
+    }
+
     sai_status_t status = sai_hostif_api->create_hostif(&host_intfs_id, gSwitchId, (uint32_t)attrs.size(), attrs.data());
     if (status != SAI_STATUS_SUCCESS)
     {
@@ -6032,6 +6243,12 @@ bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_int
             return parseHandleSaiStatusFailure(handle_status);
         }
     }
+
+    SWSS_LOG_NOTICE("Set operation status %s to host interface %s",
+            up ? "UP" : "DOWN", port.m_alias.c_str());
+
+    event_params_t params = {{"ifname",port.m_alias},{"status", up ? "up" : "down"}};
+    event_publish(g_events_handle, "if-state", &params);
 
     SWSS_LOG_NOTICE("Create host interface for port %s", alias.c_str());
 
@@ -7388,7 +7605,7 @@ void PortsOrch::generateQueueMapPerPort(const Port& port, FlexCounterQueueStates
 
         const auto id = sai_serialize_object_id(queue_ids[queueIndex]);
 
-        string queueType;
+        sai_queue_type_t queueType;
         uint8_t queueRealIndex = 0;
         if (getQueueTypeAndIndex(queue_ids[queueIndex], queueType, queueRealIndex))
         {
@@ -7398,7 +7615,7 @@ void PortsOrch::generateQueueMapPerPort(const Port& port, FlexCounterQueueStates
             {
                 continue;
             }
-            queueTypeVector.emplace_back(id, queueType);
+            queueTypeVector.emplace_back(id, sai_queue_type_string_map[queueType]);
             queueIndexVector.emplace_back(id, to_string(queueRealIndex));
         }
 
@@ -7408,7 +7625,7 @@ void PortsOrch::generateQueueMapPerPort(const Port& port, FlexCounterQueueStates
             // Install a flex counter for this voq to track stats. Voq counters do
             // not have buffer queue config. So it does not get enabled through the
             // flexcounter orch logic. Always enabled voq counters.
-            addQueueFlexCountersPerPortPerQueueIndex(port, queueIndex, true);
+            addQueueFlexCountersPerPortPerQueueIndex(port, queueIndex, true, queueType);
             queuePortVector.emplace_back(id, sai_serialize_object_id(port.m_system_port_oid));
         }
         else
@@ -7421,7 +7638,7 @@ void PortsOrch::generateQueueMapPerPort(const Port& port, FlexCounterQueueStates
             // counter on voq systems.
             if (gMySwitchType == "voq")
             {
-               addQueueFlexCountersPerPortPerQueueIndex(port, queueIndex, false);
+               addQueueFlexCountersPerPortPerQueueIndex(port, queueIndex, false, queueType);
             }
             queuePortVector.emplace_back(id, sai_serialize_object_id(port.m_port_id));
         }
@@ -7487,7 +7704,7 @@ void PortsOrch::addQueueFlexCountersPerPort(const Port& port, FlexCounterQueueSt
 {
     for (size_t queueIndex = 0; queueIndex < port.m_queue_ids.size(); ++queueIndex)
     {
-        string queueType;
+        sai_queue_type_t queueType;
         uint8_t queueRealIndex = 0;
         if (getQueueTypeAndIndex(port.m_queue_ids[queueIndex], queueType, queueRealIndex))
         {
@@ -7496,12 +7713,12 @@ void PortsOrch::addQueueFlexCountersPerPort(const Port& port, FlexCounterQueueSt
                 continue;
             }
             // Install a flex counter for this queue to track stats
-            addQueueFlexCountersPerPortPerQueueIndex(port, queueIndex, false);
+            addQueueFlexCountersPerPortPerQueueIndex(port, queueIndex, false, queueType);
         }
     }
 }
 
-void PortsOrch::addQueueFlexCountersPerPortPerQueueIndex(const Port& port, size_t queueIndex, bool voq)
+void PortsOrch::addQueueFlexCountersPerPortPerQueueIndex(const Port& port, size_t queueIndex, bool voq, sai_queue_type_t queueType)
 {
     std::unordered_set<string> counter_stats;
     std::vector<sai_object_id_t> queue_ids;
@@ -7523,7 +7740,7 @@ void PortsOrch::addQueueFlexCountersPerPortPerQueueIndex(const Port& port, size_
         queue_ids = port.m_queue_ids;
     }
 
-    queue_stat_manager.setCounterIdList(queue_ids[queueIndex], CounterType::QUEUE, counter_stats);
+    queue_stat_manager.setCounterIdList(queue_ids[queueIndex], CounterType::QUEUE, counter_stats, queueType);
 }
 
 
@@ -7573,7 +7790,7 @@ void PortsOrch::addQueueWatermarkFlexCountersPerPort(const Port& port, FlexCount
 
     for (size_t queueIndex = 0; queueIndex < port.m_queue_ids.size(); ++queueIndex)
     {
-        string queueType;
+        sai_queue_type_t queueType;
         uint8_t queueRealIndex = 0;
         if (getQueueTypeAndIndex(port.m_queue_ids[queueIndex], queueType, queueRealIndex))
         {
@@ -7581,28 +7798,15 @@ void PortsOrch::addQueueWatermarkFlexCountersPerPort(const Port& port, FlexCount
             {
                 continue;
             }
-            addQueueWatermarkFlexCountersPerPortPerQueueIndex(port, queueIndex);
+            addQueueWatermarkFlexCountersPerPortPerQueueIndex(port, queueIndex, queueType);
         }
     }
 }
 
-void PortsOrch::addQueueWatermarkFlexCountersPerPortPerQueueIndex(const Port& port, size_t queueIndex)
+void PortsOrch::addQueueWatermarkFlexCountersPerPortPerQueueIndex(const Port& port, size_t queueIndex, sai_queue_type_t queueType)
 {
-    const auto id = sai_serialize_object_id(port.m_queue_ids[queueIndex]);
-
-    /* add watermark queue counters */
-    string key = getQueueWatermarkFlexCounterTableKey(id);
-
-    string delimiter("");
-    std::ostringstream counters_stream;
-    for (const auto& it: queueWatermarkStatIds)
-    {
-        counters_stream << delimiter << sai_serialize_queue_stat(it);
-        delimiter = comma;
-    }
-    auto &&counters_str = counters_stream.str();
-
-    startFlexCounterPolling(gSwitchId, key, counters_str, QUEUE_COUNTER_ID_LIST);
+    auto queue_counter_stats = generateCounterStats(queueWatermarkStatIds, sai_serialize_queue_stat);
+    queue_watermark_manager.setCounterIdList(port.m_queue_ids[queueIndex], CounterType::QUEUE, queue_counter_stats, queueType);
 }
 
 void PortsOrch::createPortBufferQueueCounters(const Port &port, string queues, bool skip_host_tx_queue)
@@ -7635,11 +7839,11 @@ void PortsOrch::createPortBufferQueueCounters(const Port &port, string queues, b
 
         const auto id = sai_serialize_object_id(port.m_queue_ids[queueIndex]);
 
-        string queueType;
+        sai_queue_type_t queueType;
         uint8_t queueRealIndex = 0;
         if (getQueueTypeAndIndex(port.m_queue_ids[queueIndex], queueType, queueRealIndex))
         {
-            queueTypeVector.emplace_back(id, queueType);
+            queueTypeVector.emplace_back(id, sai_queue_type_string_map[queueType]);
             queueIndexVector.emplace_back(id, to_string(queueRealIndex));
         }
 
@@ -7650,12 +7854,12 @@ void PortsOrch::createPortBufferQueueCounters(const Port &port, string queues, b
         if (flexCounterOrch->getQueueCountersState())
         {
             // Install a flex counter for this queue to track stats
-            addQueueFlexCountersPerPortPerQueueIndex(port, queueIndex, false);
+            addQueueFlexCountersPerPortPerQueueIndex(port, queueIndex, false, queueType);
         }
         if (flexCounterOrch->getQueueWatermarkCountersState())
         {
             /* add watermark queue counters */
-            addQueueWatermarkFlexCountersPerPortPerQueueIndex(port, queueIndex);
+            addQueueWatermarkFlexCountersPerPortPerQueueIndex(port, queueIndex, queueType);
         }
     }
 
@@ -7696,7 +7900,7 @@ void PortsOrch::removePortBufferQueueCounters(const Port &port, string queues, b
         m_queueTable->hdel("", name.str());
         m_queuePortTable->hdel("", id);
 
-        string queueType;
+        sai_queue_type_t queueType;
         uint8_t queueRealIndex = 0;
         if (getQueueTypeAndIndex(port.m_queue_ids[queueIndex], queueType, queueRealIndex))
         {
@@ -7708,14 +7912,13 @@ void PortsOrch::removePortBufferQueueCounters(const Port &port, string queues, b
         if (flexCounterOrch->getQueueCountersState())
         {
             // Remove the flex counter for this queue
-            queue_stat_manager.clearCounterIdList(port.m_queue_ids[queueIndex]);
+            queue_stat_manager.clearCounterIdList(port.m_queue_ids[queueIndex], queueType);
         }
 
         if (flexCounterOrch->getQueueWatermarkCountersState())
         {
             // Remove watermark queue counters
-            string key = getQueueWatermarkFlexCounterTableKey(id);
-            stopFlexCounterPolling(gSwitchId, key);
+            queue_watermark_manager.clearCounterIdList(port.m_queue_ids[queueIndex], queueType);
         }
     }
 
@@ -7888,22 +8091,8 @@ void PortsOrch::addPriorityGroupFlexCountersPerPort(const Port& port, FlexCounte
 
 void PortsOrch::addPriorityGroupFlexCountersPerPortPerPgIndex(const Port& port, size_t pgIndex)
 {
-    const auto id = sai_serialize_object_id(port.m_priority_group_ids[pgIndex]);
-
-    string delimiter = "";
-    std::ostringstream ingress_pg_drop_packets_counters_stream;
-    string key = getPriorityGroupDropPacketsFlexCounterTableKey(id);
-    /* Add dropped packets counters to flex_counter */
-    for (const auto& it: ingressPriorityGroupDropStatIds)
-    {
-        ingress_pg_drop_packets_counters_stream << delimiter << sai_serialize_ingress_priority_group_stat(it);
-        if (delimiter.empty())
-        {
-            delimiter = comma;
-        }
-    }
-    auto &&counters_str = ingress_pg_drop_packets_counters_stream.str();
-    startFlexCounterPolling(gSwitchId, key, counters_str, PG_COUNTER_ID_LIST);
+    auto pg_counter_stats = generateCounterStats(ingressPriorityGroupDropStatIds, sai_serialize_ingress_priority_group_stat);
+    pg_drop_stat_manager.setCounterIdList(port.m_priority_group_ids[pgIndex], CounterType::PRIORITY_GROUP, pg_counter_stats);
 }
 
 void PortsOrch::addPriorityGroupWatermarkFlexCounters(map<string, FlexCounterPgStates> pgsStateVector)
@@ -7958,22 +8147,8 @@ void PortsOrch::addPriorityGroupWatermarkFlexCountersPerPort(const Port& port, F
 
 void PortsOrch::addPriorityGroupWatermarkFlexCountersPerPortPerPgIndex(const Port& port, size_t pgIndex)
 {
-    const auto id = sai_serialize_object_id(port.m_priority_group_ids[pgIndex]);
-
-    string key = getPriorityGroupWatermarkFlexCounterTableKey(id);
-
-    std::string delimiter = "";
-    std::ostringstream counters_stream;
-    /* Add watermark counters to flex_counter */
-    for (const auto& it: ingressPriorityGroupWatermarkStatIds)
-    {
-        counters_stream << delimiter << sai_serialize_ingress_priority_group_stat(it);
-        delimiter = comma;
-    }
-
-    auto &&counters_str = counters_stream.str();
-
-    startFlexCounterPolling(gSwitchId, key, counters_str, PG_COUNTER_ID_LIST);
+    auto pg_counter_stats = generateCounterStats(ingressPriorityGroupWatermarkStatIds, sai_serialize_ingress_priority_group_stat);
+    pg_watermark_manager.setCounterIdList(port.m_priority_group_ids[pgIndex], CounterType::PRIORITY_GROUP, pg_counter_stats);
 }
 
 void PortsOrch::removePortBufferPgCounters(const Port& port, string pgs)
@@ -8005,15 +8180,13 @@ void PortsOrch::removePortBufferPgCounters(const Port& port, string pgs)
         if (flexCounterOrch->getPgCountersState())
         {
             // Remove dropped packets counters from flex_counter
-            string key = getPriorityGroupDropPacketsFlexCounterTableKey(id);
-            stopFlexCounterPolling(gSwitchId, key);
+            pg_drop_stat_manager.clearCounterIdList(port.m_priority_group_ids[pgIndex]);
         }
 
         if (flexCounterOrch->getPgWatermarkCountersState())
         {
             // Remove watermark counters from flex_counter
-            string key = getPriorityGroupWatermarkFlexCounterTableKey(id);
-            stopFlexCounterPolling(gSwitchId, key);
+            pg_watermark_manager.clearCounterIdList(port.m_priority_group_ids[pgIndex]);
         }
     }
 
@@ -8027,8 +8200,8 @@ void PortsOrch::generatePortCounterMap()
         return;
     }
 
-    auto port_counter_stats = generateCounterStats(PORT_STAT_COUNTER_FLEX_COUNTER_GROUP);
-    auto gbport_counter_stats = generateCounterStats(PORT_STAT_COUNTER_FLEX_COUNTER_GROUP, true);
+    auto port_counter_stats = generateCounterStats(port_stat_ids, sai_serialize_port_stat);
+    auto gbport_counter_stats = generateCounterStats(gbport_stat_ids, sai_serialize_port_stat);
     for (const auto& it: m_portList)
     {
         // Set counter stats only for PHY ports to ensure syncd will not try to query the counter statistics from the HW for non-PHY ports.
@@ -8056,7 +8229,7 @@ void PortsOrch::generatePortBufferDropCounterMap()
         return;
     }
 
-    auto port_buffer_drop_stats = generateCounterStats(PORT_BUFFER_DROP_STAT_FLEX_COUNTER_GROUP);
+    auto port_buffer_drop_stats = generateCounterStats(port_buffer_drop_stat_ids, sai_serialize_port_stat);
     for (const auto& it: m_portList)
     {
         // Set counter stats only for PHY ports to ensure syncd will not try to query the counter statistics from the HW for non-PHY ports.
@@ -8068,6 +8241,16 @@ void PortsOrch::generatePortBufferDropCounterMap()
     }
 
     m_isPortBufferDropCounterMapGenerated = true;
+}
+
+void PortsOrch::flushCounters()
+{
+    port_stat_manager.flush();
+    port_buffer_drop_stat_manager.flush();
+    queue_stat_manager.flush();
+    queue_watermark_manager.flush();
+    pg_watermark_manager.flush();
+    pg_drop_stat_manager.flush();
 }
 
 uint32_t PortsOrch::getNumberOfPortSupportedPgCounters(string port)
@@ -9500,24 +9683,16 @@ void PortsOrch::voqSyncDelLagMember(Port &lag, Port &port)
     m_tableVoqSystemLagMemberTable->del(key);
 }
 
-std::unordered_set<std::string> PortsOrch::generateCounterStats(const string& type, bool gearbox)
+template <typename T>
+std::unordered_set<std::string> PortsOrch::generateCounterStats(const vector<T> &counterIds, std::string (*serializer)(const T))
 {
     std::unordered_set<std::string> counter_stats;
-    if (type == PORT_STAT_COUNTER_FLEX_COUNTER_GROUP)
+
+    for (const auto& it:counterIds)
     {
-        auto& stat_ids = gearbox ? gbport_stat_ids : port_stat_ids;
-        for (const auto& it: stat_ids)
-        {
-            counter_stats.emplace(sai_serialize_port_stat(it));
-        }
+        counter_stats.emplace(serializer(it));
     }
-    else if (type == PORT_BUFFER_DROP_STAT_FLEX_COUNTER_GROUP)
-    {
-        for (const auto& it: port_buffer_drop_stat_ids)
-        {
-            counter_stats.emplace(sai_serialize_port_stat(it));
-        }
-    }
+
     return counter_stats;
 }
 
