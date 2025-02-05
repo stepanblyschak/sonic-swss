@@ -71,7 +71,6 @@ private:
     Table m_deviceMetadataConfigTable;
     std::unique_ptr<SelectableTimer> m_delayTimer;
     std::unique_ptr<Executor> m_delayExecutor;
-    std::unordered_set<std::string> m_groupsWithBulkChunkSize;
 };
 
 #endif
