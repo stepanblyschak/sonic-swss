@@ -1056,6 +1056,8 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList, std::vector
             attr.value.booldata = cit.autoneg.value;
             attrList.push_back(attr);
             p.m_autoneg = cit.autoneg.value;
+            // If port is successfully created then autoneg was set and is supported
+            p.m_cap_an = 1;
         }
 
         if (cit.fec.is_set)
@@ -1063,6 +1065,41 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList, std::vector
             attr.id = SAI_PORT_ATTR_FEC_MODE;
             attr.value.s32 = cit.fec.value;
             attrList.push_back(attr);
+            p.m_fec_mode = cit.fec.value;
+
+            if (fec_override_sup)
+            {
+                attr.id = SAI_PORT_ATTR_AUTO_NEG_FEC_MODE_OVERRIDE;
+                attr.value.booldata = cit.fec.override_fec;
+                attrList.push_back(attr);
+                p.m_override_fec = cit.fec.override_fec;
+            }
+        }
+
+        if (cit.tpid.is_set)
+        {
+            sai_attribute_t attr;
+            attr.id = SAI_PORT_ATTR_TPID;
+            attr.value.u16 = cit.tpid.value;
+            attrList.push_back(attr);
+            p.m_tpid = cit.tpid.value;
+        }
+
+        if (cit.pfc_asym.is_set)
+        {
+            sai_attribute_t attr;
+            attr.id = SAI_PORT_ATTR_PRIORITY_FLOW_CONTROL;
+            attr.value.s32 = cit.pfc_asym.value;
+            attrList.push_back(attr);
+
+            if (cit.pfc_asym.value == SAI_PORT_PRIORITY_FLOW_CONTROL_MODE_SEPARATE)
+            {
+                attr.id = SAI_PORT_ATTR_PRIORITY_FLOW_CONTROL_RX;
+                attr.value.u8 = static_cast<uint8_t>(0xff);
+                attrList.push_back(attr);
+            }
+
+            p.m_pfc_asym = cit.pfc_asym.value;
         }
 
         if (m_cmisModuleAsicSyncSupported)
@@ -1963,34 +2000,45 @@ bool PortsOrch::setPortFecOverride(sai_object_id_t port_obj, bool override_fec)
     return true;
 }
 
-bool PortsOrch::setPortFec(Port &port, sai_port_fec_mode_t fec_mode, bool override_fec)
+task_process_status PortsOrch::setPortFec(Port &port, sai_port_fec_mode_t fec_mode, bool override_fec)
 {
     SWSS_LOG_ENTER();
 
-    sai_attribute_t attr;
-    attr.id = SAI_PORT_ATTR_FEC_MODE;
-    attr.value.s32 = fec_mode;
-
-    sai_status_t status = sai_port_api->set_port_attribute(port.m_port_id, &attr);
-    if (status != SAI_STATUS_SUCCESS)
+    if (port.m_fec_mode != fec_mode && port.m_override_fec != override_fec)
     {
-        SWSS_LOG_ERROR("Failed to set FEC mode %d to port %s", fec_mode, port.m_alias.c_str());
-        task_process_status handle_status = handleSaiSetStatus(SAI_API_PORT, status);
-        if (handle_status != task_success)
+        if (!isFecModeSupported(port, fec_mode))
         {
-            return parseHandleSaiStatusFailure(handle_status);
+            string fecStr;
+            m_portHlpr.fecToStr(fecStr, fec_mode);
+            SWSS_LOG_ERROR(
+                "Unsupported port %s FEC mode %s",
+                port.m_alias.c_str(), fecStr.c_str()
+            );
+            return task_failed;
+        }
+
+        sai_attribute_t attr;
+        attr.id = SAI_PORT_ATTR_FEC_MODE;
+        attr.value.s32 = fec_mode;
+
+        sai_status_t status = sai_port_api->set_port_attribute(port.m_port_id, &attr);
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR("Failed to set FEC mode %d to port %s", fec_mode, port.m_alias.c_str());
+            return handleSaiSetStatus(SAI_API_PORT, status);
+        }
+
+        if (fec_override_sup && !setPortFecOverride(port.m_port_id, override_fec))
+        {
+            return task_need_retry;
         }
     }
 
-    if (fec_override_sup && !setPortFecOverride(port.m_port_id, override_fec))
-    {
-        return false;
-    }
     setGearboxPortsAttr(port, SAI_PORT_ATTR_FEC_MODE, &fec_mode, override_fec);
 
     SWSS_LOG_NOTICE("Set port %s FEC mode %d", port.m_alias.c_str(), fec_mode);
 
-    return true;
+    return task_success;
 }
 
 bool PortsOrch::getPortPfc(sai_object_id_t portId, uint8_t *pfc_bitmask)
@@ -3241,6 +3289,11 @@ task_process_status PortsOrch::setPortAutoNeg(Port &port, bool autoneg)
 {
     SWSS_LOG_ENTER();
 
+    if (port.m_autoneg == autoneg)
+    {
+        return task_success;
+    }
+
     sai_attribute_t attr;
     attr.id = SAI_PORT_ATTR_AUTO_NEG_MODE;
     attr.value.booldata = autoneg;
@@ -3251,7 +3304,9 @@ task_process_status PortsOrch::setPortAutoNeg(Port &port, bool autoneg)
         SWSS_LOG_ERROR("Failed to set AutoNeg %u to port %s", attr.value.booldata, port.m_alias.c_str());
         return handleSaiSetStatus(SAI_API_PORT, status);
     }
-    SWSS_LOG_INFO("Set AutoNeg %u to port %s", attr.value.booldata, port.m_alias.c_str());
+
+    SWSS_LOG_INFO("Set AutoNeg %u to port %s", autoneg, port.m_alias.c_str());
+
     return task_success;
 }
 
@@ -4633,16 +4688,6 @@ void PortsOrch::doPortTask(Consumer &consumer)
                             it = taskMap.erase(it);
                             continue;
                         }
-                        if (!isFecModeSupported(p, pCfg.fec.value))
-                        {
-                            SWSS_LOG_ERROR(
-                                "Unsupported port %s FEC mode %s",
-                                p.m_alias.c_str(), m_portHlpr.getFecStr(pCfg).c_str()
-                            );
-                            // FEC mode is not supported, don't retry
-                            it = taskMap.erase(it);
-                            continue;
-                        }
 
                         if (!pCfg.fec.override_fec && !p.m_autoneg)
                         {
@@ -4666,13 +4711,21 @@ void PortsOrch::doPortTask(Consumer &consumer)
                             m_portList[p.m_alias] = p;
                         }
 
-                        if (!setPortFec(p, pCfg.fec.value, pCfg.fec.override_fec))
+                        auto status = setPortFec(p, pCfg.fec.value, pCfg.fec.override_fec);
+                        if (status != task_success)
                         {
                             SWSS_LOG_ERROR(
                                 "Failed to set port %s FEC mode %s",
                                 p.m_alias.c_str(), m_portHlpr.getFecStr(pCfg).c_str()
                             );
-                            it++;
+                            if (status == task_need_retry)
+                            {
+                                it++;
+                            }
+                            else
+                            {
+                                it = taskMap.erase(it);
+                            }
                             continue;
                         }
 
@@ -4715,7 +4768,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
 
                 if (pCfg.pfc_asym.is_set)
                 {
-                    if (!p.m_pfc_asym_cfg || p.m_pfc_asym != pCfg.pfc_asym.value)
+                    if (p.m_pfc_asym != pCfg.pfc_asym.value)
                     {
                         if (m_portCap.isPortPfcAsymSupported())
                         {
@@ -4730,7 +4783,6 @@ void PortsOrch::doPortTask(Consumer &consumer)
                             }
 
                             p.m_pfc_asym = pCfg.pfc_asym.value;
-                            p.m_pfc_asym_cfg = true;
                             m_portList[p.m_alias] = p;
 
                             SWSS_LOG_NOTICE(

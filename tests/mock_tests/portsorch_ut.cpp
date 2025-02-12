@@ -2471,7 +2471,7 @@ namespace portsorch_test
 
         entries.push_back({"Ethernet0", "SET",
                            {
-                               { "pfc_asym", "off"}
+                               { "pfc_asym", "on"}
                            }});
         auto consumer = dynamic_cast<Consumer *>(gPortsOrch->getExecutor(APP_PORT_TABLE_NAME));
         consumer->addToSync(entries);

@@ -526,9 +526,9 @@ bool PortsOrch::getPortPvid(Port &port, sai_uint32_t &pvid)
     return true;
 }
 
-bool PortsOrch::setPortFec(Port &port, sai_port_fec_mode_t fec_mode, bool override_fec)
+task_process_status PortsOrch::setPortFec(Port &port, sai_port_fec_mode_t fec_mode, bool override_fec)
 {
-    return true;
+    return task_success;
 }
 
 bool PortsOrch::isFecModeSupported(const Port &port, sai_port_fec_mode_t fec_mode)

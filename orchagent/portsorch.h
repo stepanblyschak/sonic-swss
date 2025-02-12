@@ -418,7 +418,7 @@ private:
     bool setPortTpid(Port &port, sai_uint16_t tpid);
     bool setPortPvid (Port &port, sai_uint32_t pvid);
     bool getPortPvid(Port &port, sai_uint32_t &pvid);
-    bool setPortFec(Port &port, sai_port_fec_mode_t fec_mode, bool override_fec);
+    task_process_status setPortFec(Port &port, sai_port_fec_mode_t fec_mode, bool override_fec);
     bool setPortFecOverride(sai_object_id_t port_obj, bool override_fec);
     bool setPortPfcAsym(Port &port, sai_port_priority_flow_control_mode_t pfc_asym);
     bool getDestPortId(sai_object_id_t src_port_id, dest_port_type_t port_type, sai_object_id_t &des_port_id);
