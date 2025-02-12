@@ -8,9 +8,14 @@ extern "C"
 
 #include "portsorch.h"
 
-#define PORT_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS 1000
-#define PORT_BUFFER_DROP_STAT_POLLING_INTERVAL_MS 60000
-#define QUEUE_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS 10000
+#define PORT_SPEED_LIST_DEFAULT_SIZE                     16
+#define PORT_STATE_POLLING_SEC                            5
+#define PORT_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS     1000
+#define PORT_BUFFER_DROP_STAT_POLLING_INTERVAL_MS     60000
+#define QUEUE_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS   10000
+#define QUEUE_WATERMARK_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS   60000
+#define PG_WATERMARK_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS   60000
+#define PG_DROP_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS   10000
 
 PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_with_pri_t> &tableNames,
                      DBConnector *chassisAppDb)
@@ -21,8 +26,10 @@ PortsOrch::PortsOrch(DBConnector *db, DBConnector *stateDb, vector<table_name_wi
                         PORT_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, true),
       port_buffer_drop_stat_manager(PORT_BUFFER_DROP_STAT_FLEX_COUNTER_GROUP, StatsMode::READ,
                                     PORT_BUFFER_DROP_STAT_POLLING_INTERVAL_MS, true),
-      queue_stat_manager(QUEUE_STAT_COUNTER_FLEX_COUNTER_GROUP, StatsMode::READ,
-                         QUEUE_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, true)
+        queue_stat_manager(QUEUE_STAT_COUNTER_FLEX_COUNTER_GROUP, StatsMode::READ, QUEUE_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, false),
+        queue_watermark_manager(QUEUE_WATERMARK_STAT_COUNTER_FLEX_COUNTER_GROUP, StatsMode::READ_AND_CLEAR, QUEUE_WATERMARK_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, false),
+        pg_watermark_manager(PG_WATERMARK_STAT_COUNTER_FLEX_COUNTER_GROUP, StatsMode::READ_AND_CLEAR, PG_WATERMARK_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, false),
+        pg_drop_stat_manager(PG_DROP_STAT_COUNTER_FLEX_COUNTER_GROUP, StatsMode::READ, PG_DROP_STAT_FLEX_COUNTER_POLLING_INTERVAL_MS, false)
 {
 }
 
@@ -418,24 +425,11 @@ void PortsOrch::removeDefaultBridgePorts()
 {
 }
 
-bool PortsOrch::initializePort(Port &port)
-{
-    return true;
-}
-
-void PortsOrch::initializePriorityGroups(Port &port)
+void PortsOrch::initializePortBufferMaximumParameters(const Port &port)
 {
 }
 
-void PortsOrch::initializePortBufferMaximumParameters(Port &port)
-{
-}
-
-void PortsOrch::initializeQueues(Port &port)
-{
-}
-
-bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id)
+bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id, bool up)
 {
     return true;
 }
@@ -500,7 +494,7 @@ sai_status_t PortsOrch::removePort(sai_object_id_t port_id)
     return SAI_STATUS_SUCCESS;
 }
 
-bool PortsOrch::initPort(const PortConfig &port)
+bool PortsOrch::initExistingPort(const PortConfig &port)
 {
     return true;
 }
@@ -604,7 +598,7 @@ task_process_status PortsOrch::setPortAdvSpeeds(Port &port, std::set<sai_uint32_
     return task_success;
 }
 
-bool PortsOrch::getQueueTypeAndIndex(sai_object_id_t queue_id, string &type, uint8_t &index)
+bool PortsOrch::getQueueTypeAndIndex(sai_object_id_t queue_id, sai_queue_type_t &type, uint8_t &index)
 {
     return true;
 }
@@ -691,11 +685,16 @@ void PortsOrch::voqSyncDelLagMember(Port &lag, Port &port)
 {
 }
 
-std::unordered_set<std::string> PortsOrch::generateCounterStats(const string &type, bool gearbox)
+template <typename T>
+std::unordered_set<std::string> PortsOrch::generateCounterStats(const vector<T> &counterIds, std::string (*serializer)(const T))
 {
     return {};
 }
 
 void PortsOrch::doTask(swss::SelectableTimer &timer)
+{
+}
+
+void PortsOrch::onWarmBootEnd()
 {
 }
