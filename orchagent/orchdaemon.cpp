@@ -936,6 +936,8 @@ void OrchDaemon::start(long heartBeatInterval)
  */
 bool OrchDaemon::warmRestoreAndSyncUp()
 {
+    SWSS_LOG_ENTER();
+
     WarmStart::setWarmStartState("orchagent", WarmStart::INITIALIZED);
 
     for (Orch *o : m_orchList)
@@ -998,8 +1000,10 @@ bool OrchDaemon::warmRestoreAndSyncUp()
 
     syncd_apply_view();
 
-    /* Start dynamic state sync up */
-    gPortsOrch->refreshPortStatus();
+    for (Orch *o : m_orchList)
+    {
+        o->onWarmBootEnd();
+    }
 
     /*
      * Note. Arp sync up is handled in neighsyncd.
