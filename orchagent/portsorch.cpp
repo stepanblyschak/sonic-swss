@@ -1105,6 +1105,9 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList, std::vector
             attr.value.booldata = cit.autoneg.value;
             attrList.push_back(attr);
             p.m_autoneg = cit.autoneg.value;
+            // If port is successfully created then autoneg was set and is supported
+            p.m_cap_an = 1;
+            p.m_an_cfg = true;
         }
 
         if (cit.fec.is_set)
@@ -1112,6 +1115,43 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList, std::vector
             attr.id = SAI_PORT_ATTR_FEC_MODE;
             attr.value.s32 = cit.fec.value;
             attrList.push_back(attr);
+
+            if (fec_override_sup)
+            {
+                attr.id = SAI_PORT_ATTR_AUTO_NEG_FEC_MODE_OVERRIDE;
+                attr.value.booldata = cit.fec.override_fec;
+                attrList.push_back(attr);
+            }
+
+            p.m_fec_mode = cit.fec.value;
+            p.m_override_fec = cit.fec.override_fec;
+            p.m_fec_cfg = true;
+        }
+
+        if (cit.tpid.is_set)
+        {
+            sai_attribute_t attr;
+            attr.id = SAI_PORT_ATTR_TPID;
+            attr.value.u16 = cit.tpid.value;
+            attrList.push_back(attr);
+            p.m_tpid = cit.tpid.value;
+        }
+
+        if (cit.pfc_asym.is_set)
+        {
+            sai_attribute_t attr;
+            attr.id = SAI_PORT_ATTR_PRIORITY_FLOW_CONTROL_MODE;
+            attr.value.s32 = cit.pfc_asym.value;
+            attrList.push_back(attr);
+
+            if (cit.pfc_asym.value == SAI_PORT_PRIORITY_FLOW_CONTROL_MODE_SEPARATE)
+            {
+                attr.id = SAI_PORT_ATTR_PRIORITY_FLOW_CONTROL_RX;
+                attr.value.u8 = static_cast<uint8_t>(0xff);
+                attrList.push_back(attr);
+            }
+
+            p.m_pfc_asym = cit.pfc_asym.value;
         }
 
         if (m_cmisModuleAsicSyncSupported)
@@ -1231,8 +1271,16 @@ bool PortsOrch::addPortBulk(const std::vector<PortConfig> &portList, std::vector
             return false;
         }
 
+        Port& p = addedPorts.at(i);
+        PortConfig pCfg = portList.at(i);
+
+        if (pCfg.autoneg.is_set)
+        {
+            updatePortStatePoll(p, PORT_STATE_POLL_AN, pCfg.autoneg.value);
+        }
+
         m_portListLaneMap[portList.at(i).lanes.value] = oidList.at(i);
-        addedPorts.at(i).m_port_id = oidList.at(i);
+        p.m_port_id = oidList.at(i);
         m_portCount++;
     }
 
@@ -4869,13 +4917,16 @@ void PortsOrch::doPortTask(Consumer &consumer)
 
                         p.m_fec_mode = pCfg.fec.value;
                         p.m_override_fec = pCfg.fec.override_fec;
-                        p.m_fec_cfg = true;
                         m_portList[p.m_alias] = p;
 
                         SWSS_LOG_NOTICE(
                             "Set port %s FEC mode to %s",
                             p.m_alias.c_str(), m_portHlpr.getFecStr(pCfg).c_str()
                         );
+                    }
+                    else
+                    {
+                        setGearboxPortsAttr(p, SAI_PORT_ATTR_FEC_MODE, &pCfg.fec.value, pCfg.fec.override_fec);
                     }
                 }
 
@@ -4906,7 +4957,7 @@ void PortsOrch::doPortTask(Consumer &consumer)
 
                 if (pCfg.pfc_asym.is_set)
                 {
-                    if (!p.m_pfc_asym_cfg || p.m_pfc_asym != pCfg.pfc_asym.value)
+                    if (p.m_pfc_asym != pCfg.pfc_asym.value)
                     {
                         if (m_portCap.isPortPfcAsymSupported())
                         {
@@ -4921,7 +4972,6 @@ void PortsOrch::doPortTask(Consumer &consumer)
                             }
 
                             p.m_pfc_asym = pCfg.pfc_asym.value;
-                            p.m_pfc_asym_cfg = true;
                             m_portList[p.m_alias] = p;
 
                             SWSS_LOG_NOTICE(
