@@ -390,7 +390,7 @@ const std::unordered_map<sai_port_error_status_t, std::string> PortOperErrorEven
     { SAI_PORT_ERROR_STATUS_FEC_SYNC_LOSS, "fec_sync_loss"},
     { SAI_PORT_ERROR_STATUS_FEC_LOSS_ALIGNMENT_MARKER, "fec_alignment_loss"},
     { SAI_PORT_ERROR_STATUS_HIGH_SER,  "high_ser_error"},
-    { SAI_PORT_ERROR_STATUS_HIGH_BER, "high ber_error"},
+    { SAI_PORT_ERROR_STATUS_HIGH_BER, "high_ber_error"},
     { SAI_PORT_ERROR_STATUS_CRC_RATE, "crc_rate"},
     { SAI_PORT_ERROR_STATUS_DATA_UNIT_CRC_ERROR, "data_unit_crc_error"},
     { SAI_PORT_ERROR_STATUS_DATA_UNIT_SIZE, "data_unit_size"},
@@ -6397,7 +6397,7 @@ void PortsOrch::initializePortBufferMaximumParameters(const Port &port)
     m_stateBufferMaximumValueTable->set(port.m_alias, fvVector);
 }
 
-bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id, bool up)
+bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id, bool isUp)
 {
     SWSS_LOG_ENTER();
 
@@ -6431,12 +6431,9 @@ bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_int
         port.m_host_tx_queue_configured = true;
     }
 
-    if (up)
-    {
-        attr.id = SAI_HOSTIF_ATTR_OPER_STATUS;
-        attr.value.booldata = up;
-        attrs.push_back(attr);
-    }
+    attr.id = SAI_HOSTIF_ATTR_OPER_STATUS;
+    attr.value.booldata = isUp;
+    attrs.push_back(attr);
 
     sai_status_t status = sai_hostif_api->create_hostif(&host_intfs_id, gSwitchId, (uint32_t)attrs.size(), attrs.data());
     if (status != SAI_STATUS_SUCCESS)
@@ -6449,13 +6446,10 @@ bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_int
         }
     }
 
-    SWSS_LOG_NOTICE("Set operation status %s to host interface %s",
-            up ? "UP" : "DOWN", port.m_alias.c_str());
+    SWSS_LOG_NOTICE("Create host interface for port %s with oper status %s", alias.c_str(), isUp ? "up" : "down");
 
-    event_params_t params = {{"ifname",port.m_alias},{"status", up ? "up" : "down"}};
+    event_params_t params = {{"ifname", alias},{"status", isUp ? "up" : "down"}};
     event_publish(g_events_handle, "if-state", &params);
-
-    SWSS_LOG_NOTICE("Create host interface for port %s", alias.c_str());
 
     return true;
 }
@@ -8626,16 +8620,25 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
         return;
     }
 
-    std::string op;
-    std::string data;
-    std::vector<swss::FieldValueTuple> values;
-
-    consumer.pop(op, data, values);
-
     if (&consumer != m_portStatusNotificationConsumer && &consumer != m_portHostTxReadyNotificationConsumer)
     {
         return;
     }
+
+    std::deque<KeyOpFieldsValuesTuple> entries;
+    consumer.pops(entries);
+
+    for (auto& entry : entries)
+    {
+        handleNotification(consumer, entry);
+    }
+}
+
+void PortsOrch::handleNotification(NotificationConsumer &consumer, KeyOpFieldsValuesTuple& entry)
+{
+    auto op = kfvOp(entry);
+    auto data = kfvKey(entry);
+    auto values = kfvFieldsValues(entry);
 
     if (&consumer == m_portStatusNotificationConsumer && op == "port_state_change")
     {
@@ -8681,7 +8684,7 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
                     if (!m_portHlpr.fecToStr(fec_str, fec_mode))
                     {
                         SWSS_LOG_ERROR("Error unknown fec mode %d while querying port %s fec mode",
-                                       static_cast<std::int32_t>(fec_mode), port.m_alias.c_str());
+                                    static_cast<std::int32_t>(fec_mode), port.m_alias.c_str());
                         fec_str = "N/A";
                     }
                     updateDbPortOperFec(port,fec_str);
@@ -8720,7 +8723,6 @@ void PortsOrch::doTask(NotificationConsumer &consumer)
         }
         setHostTxReady(p, host_tx_ready_status == SAI_PORT_HOST_TX_READY_STATUS_READY ? "true" : "false");
     }
-
 }
 
 void PortsOrch::updatePortErrorStatus(Port &port, sai_port_error_status_t errstatus)

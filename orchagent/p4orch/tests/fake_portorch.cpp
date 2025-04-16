@@ -431,7 +431,7 @@ void PortsOrch::initializePortBufferMaximumParameters(const Port &port)
 {
 }
 
-bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id, bool up)
+bool PortsOrch::addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id, bool isUp)
 {
     return true;
 }
