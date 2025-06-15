@@ -3480,6 +3480,7 @@ namespace portsorch_test
     {
     };
 
+    // This test ensures post port initialization is performed when calling onWarmBootEnd()
     TEST_F(PostPortInitTests, PortPostInit)
     {
         Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
@@ -3503,6 +3504,7 @@ namespace portsorch_test
         portTable.set("PortConfigDone", { { "count", to_string(ports.size()) } });
         portTable.set("PortInitDone", { { "lanes", "0" } });
 
+        // Set warm boot flag
         gPortsOrch->m_isWarmRestoreStage = true;
 
         gPortsOrch->bake();
@@ -3511,11 +3513,14 @@ namespace portsorch_test
         std::string value;
         bool stateDbSet;
 
+        // At this point postPortInit() hasn't been called yet, so don't expect
+        // to find "max_priority_groups" field in STATE_DB
         stateDbSet = stateTable.hget("Ethernet0", "max_priority_groups", value);
         ASSERT_FALSE(stateDbSet);
 
         gPortsOrch->onWarmBootEnd();
 
+        // Now the field "max_priority_groups" is set
         stateDbSet = stateTable.hget("Ethernet0", "max_priority_groups", value);
         ASSERT_TRUE(stateDbSet);
     }
