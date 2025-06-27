@@ -93,9 +93,9 @@ namespace portsorch_test
     uint32_t set_pt_interface_id_count = false;
     uint32_t set_pt_timestamp_template_count = false;
     uint32_t set_port_tam_count = false;
-    uint32_t set_pt_interface_id_failures;
-    uint32_t set_pt_timestamp_template_failures;
-    uint32_t set_port_tam_failures;
+    uint32_t set_pt_interface_id_failures = 0;
+    uint32_t set_pt_timestamp_template_failures = 0;
+    uint32_t set_port_tam_failures = 0;
     bool set_link_event_damping_success = true;
     uint32_t _sai_set_link_event_damping_algorithm_count;
     uint32_t _sai_set_link_event_damping_config_count;
@@ -238,7 +238,7 @@ namespace portsorch_test
     {
         if (attr[0].id == SAI_REDIS_SWITCH_ATTR_NOTIFY_SYNCD)
         {
-            *_sai_syncd_notifications_count =+ 1;
+            *_sai_syncd_notifications_count = *_sai_syncd_notifications_count + 1;
             *_sai_syncd_notification_event = attr[0].value.s32;
         }
 	else if (attr[0].id == SAI_SWITCH_ATTR_PFC_DLR_PACKET_ACTION)
@@ -1686,6 +1686,12 @@ namespace portsorch_test
         _hook_sai_port_api();
         _hook_sai_switch_api();
 
+        _sai_syncd_notifications_count = (uint32_t*)mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE,
+                    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        _sai_syncd_notification_event = (int32_t*)mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE,
+                    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        *_sai_syncd_notifications_count = 0;
+        uint32_t notif_count = *_sai_syncd_notifications_count;
         auto portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
         Port p;
         std::deque<KeyOpFieldsValuesTuple> kfvList;
@@ -1738,8 +1744,9 @@ namespace portsorch_test
         consumer->addToSync(kfvList);
 
         static_cast<Orch*>(gPortsOrch)->doTask();
-
-        ASSERT_EQ(set_pt_interface_id_fail, 1);
+        ASSERT_EQ(set_pt_interface_id_failures, 1);
+        ASSERT_EQ(*_sai_syncd_notifications_count, ++notif_count);
+        ASSERT_EQ(*_sai_syncd_notification_event, SAI_REDIS_NOTIFY_SYNCD_INVOKE_DUMP);
 
         set_pt_interface_id_fail = false;
 
@@ -1762,6 +1769,8 @@ namespace portsorch_test
         static_cast<Orch*>(gPortsOrch)->doTask();
 
         ASSERT_EQ(set_pt_timestamp_template_failures, 1);
+        ASSERT_EQ(*_sai_syncd_notifications_count, ++notif_count);
+        ASSERT_EQ(*_sai_syncd_notification_event, SAI_REDIS_NOTIFY_SYNCD_INVOKE_DUMP);
 
         set_pt_timestamp_template_fail = false;
 
@@ -1783,7 +1792,9 @@ namespace portsorch_test
 
         static_cast<Orch*>(gPortsOrch)->doTask();
 
-        ASSERT_EQ(set_port_tam_fail, 1);
+        ASSERT_EQ(set_port_tam_failures, 1);
+        ASSERT_EQ(*_sai_syncd_notifications_count, ++notif_count);
+        ASSERT_EQ(*_sai_syncd_notification_event, SAI_REDIS_NOTIFY_SYNCD_INVOKE_DUMP);
 
         set_port_tam_fail = false;
 
@@ -2554,7 +2565,7 @@ namespace portsorch_test
                            }});
         auto consumer = dynamic_cast<Consumer *>(gPortsOrch->getExecutor(APP_PORT_TABLE_NAME));
         consumer->addToSync(entries);
-        ASSERT_DEATH({static_cast<Orch *>(gPortsOrch)->doTask();}, "");
+        gPortsOrch->doTask();
 
         ASSERT_EQ(*_sai_syncd_notifications_count, 1);
         ASSERT_EQ(*_sai_syncd_notification_event, SAI_REDIS_NOTIFY_SYNCD_INVOKE_DUMP);
@@ -3091,6 +3102,60 @@ namespace portsorch_test
         queueConsumer->dumpPendingTasks(ts);
         ASSERT_TRUE(ts.empty()); // queue should be processed now
         ts.clear();
+    }
+
+    /* This test passes an incorrect LAG entry and verifies that this entry is not
+     * erased from the consumer table.
+     */
+    TEST_F(PortsOrchTest, LagMemberCanNotBeLocated)
+    {
+        Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
+        Table lagTable = Table(m_app_db.get(), APP_LAG_TABLE_NAME);
+        Table lagMemberTable = Table(m_app_db.get(), APP_LAG_MEMBER_TABLE_NAME);
+
+        // Get SAI default ports to populate DB
+        auto ports = ut_helper::getInitialSaiPorts();
+
+        /*
+         * Next we will prepare some configuration data to be consumed by PortsOrch
+         * 32 Ports, 1 LAG, 1 port is an invalid LAG member.
+         */
+
+        // Populate pot table with SAI ports
+        for (const auto &it : ports)
+        {
+            portTable.set(it.first, it.second);
+        }
+
+        // Set PortConfigDone
+        portTable.set("PortConfigDone", { { "count", to_string(ports.size()) } });
+        portTable.set("PortInitDone", { { } });
+        lagTable.set("PortChannel999",
+            {
+                {"admin_status", "up"},
+                {"mtu", "9100"}
+            }
+        );
+
+        // Add invalid lag member
+        lagMemberTable.set(
+            std::string("InvalidLagMember") + lagMemberTable.getTableNameSeparator() + ports.begin()->first,
+            { {"status", "enabled"} });
+
+        // refill consumer
+        gPortsOrch->addExistingData(&portTable);
+        gPortsOrch->addExistingData(&lagTable);
+        gPortsOrch->addExistingData(&lagMemberTable);
+
+        static_cast<Orch *>(gPortsOrch)->doTask();
+
+        // verify there is a pending task to do.
+        vector<string> ts;
+        auto exec = gPortsOrch->getExecutor(APP_LAG_MEMBER_TABLE_NAME);
+        auto consumer = static_cast<Consumer*>(exec);
+        ts.clear();
+        consumer->dumpPendingTasks(ts);
+        ASSERT_FALSE(ts.empty());
     }
 
     /* This test checks that a LAG member validation happens on orchagent level
