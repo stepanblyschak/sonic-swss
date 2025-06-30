@@ -6012,25 +6012,6 @@ void PortsOrch::doTask()
     }
 }
 
-void PortsOrch::onWarmBootEnd()
-{
-    SWSS_LOG_ENTER();
-
-    /* Start dynamic state sync up */
-    refreshPortStatus();
-
-    // Do post boot port initialization
-    for (auto& it: m_portList)
-    {
-        Port& port = it.second;
-
-        if (port.m_type == Port::PHY)
-        {
-            postPortInit(it.second);
-        }
-    }
-}
-
 void PortsOrch::doTask(Consumer &consumer)
 {
     SWSS_LOG_ENTER();
