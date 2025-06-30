@@ -3822,8 +3822,6 @@ bool PortsOrch::initPortsBulk(std::vector<Port>& ports)
 {
     SWSS_LOG_ENTER();
 
-    bool warmStart = WarmStart::isWarmStart();
-
     bool status = true;
 
     SWSS_LOG_TIMER(__FUNCTION__);
@@ -3839,7 +3837,7 @@ bool PortsOrch::initPortsBulk(std::vector<Port>& ports)
 
         registerPort(p);
 
-        if (!warmStart)
+        if (!m_isWarmRestoreStage)
         {
             postPortInit(m_portList[alias]);
         }
