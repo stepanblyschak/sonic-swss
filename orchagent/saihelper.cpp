@@ -91,6 +91,7 @@ sai_twamp_api_t*                    sai_twamp_api;
 sai_tam_api_t*                      sai_tam_api;
 sai_stp_api_t*                      sai_stp_api;
 sai_dash_meter_api_t*               sai_dash_meter_api;
+sai_dash_trusted_vni_api_t*         sai_dash_trusted_vni_api;
 
 extern sai_object_id_t gSwitchId;
 extern bool gTraditionalFlexCounter;
@@ -396,7 +397,7 @@ void initSaiRedis()
     }
 
     char *platform = getenv("platform");
-    if (platform && (strstr(platform, MLNX_PLATFORM_SUBSTRING) || strstr(platform, XS_PLATFORM_SUBSTRING)))
+    if (platform && (strstr(platform, MLNX_PLATFORM_SUBSTRING) || strstr(platform, XS_PLATFORM_SUBSTRING) || strstr(platform, MRVL_PRST_PLATFORM_SUBSTRING)))
     {
         /* We set this long timeout in order for Orchagent to wait enough time for
          * response from syncd. It is needed since in init, systemd syncd startup
