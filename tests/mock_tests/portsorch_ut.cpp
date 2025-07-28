@@ -2812,8 +2812,9 @@ namespace portsorch_test
     {
         Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
 
+        auto original_api = sai_hostif_api->create_hostif;
         auto hostIfSpy = SpyOn<SAI_API_HOSTIF, SAI_OBJECT_TYPE_HOSTIF>(&sai_hostif_api->create_hostif);
-        hostIfSpy->callFake([&](sai_object_id_t *oid, sai_object_id_t swoid, uint32_t count, const sai_attribute_t * attrs) -> sai_status_t {
+        hostIfSpy->callFake([&](sai_object_id_t*, sai_object_id_t, uint32_t, const sai_attribute_t*) -> sai_status_t {
                 return SAI_STATUS_INSUFFICIENT_RESOURCES;
             }
         );
@@ -2837,6 +2838,8 @@ namespace portsorch_test
         //  create ports
 
         static_cast<Orch *>(gPortsOrch)->doTask();
+
+        sai_hostif_api->create_hostif = original_api;
 
         Port port;
         gPortsOrch->getPort("Ethernet0", port);
