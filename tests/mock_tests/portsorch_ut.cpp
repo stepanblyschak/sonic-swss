@@ -2808,6 +2808,42 @@ namespace portsorch_test
         }
     }
 
+    TEST_F(PortsOrchTest, PortHostIfCreateFailed)
+    {
+        Table portTable = Table(m_app_db.get(), APP_PORT_TABLE_NAME);
+
+        auto hostIfSpy = SpyOn<SAI_API_HOSTIF, SAI_OBJECT_TYPE_HOSTIF>(&sai_hostif_api->create_hostif);
+        hostIfSpy->callFake([&](sai_object_id_t *oid, sai_object_id_t swoid, uint32_t count, const sai_attribute_t * attrs) -> sai_status_t {
+                return SAI_STATUS_INSUFFICIENT_RESOURCES;
+            }
+        );
+
+        // Get SAI default ports to populate DB
+
+        auto ports = ut_helper::getInitialSaiPorts();
+
+        // Populate pot table with SAI ports
+        for (const auto &it : ports)
+        {
+            portTable.set(it.first, it.second);
+        }
+
+        // Set PortConfigDone
+        portTable.set("PortConfigDone", { { "count", to_string(ports.size()) } });
+
+        gPortsOrch->addExistingData(&portTable);
+
+        // Apply configuration :
+        //  create ports
+
+        static_cast<Orch *>(gPortsOrch)->doTask();
+
+        Port port;
+        gPortsOrch->getPort("Ethernet0", port);
+
+        ASSERT_FALSE(port.m_init);
+    }
+
     TEST_F(PortsOrchTest, PfcDlrHandlerCallingDlrInitAttribute)
     {
         _hook_sai_port_api();
