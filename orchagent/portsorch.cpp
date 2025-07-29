@@ -5975,19 +5975,6 @@ void PortsOrch::onWarmBootEnd()
     }
 }
 
-void PortsOrch::postPortInit(Port& p)
-{
-    SWSS_LOG_ENTER();
-
-    if (gMySwitchType != "dpu")
-    {
-        initializePortBufferMaximumParameters(p);
-    }
-
-    initPortSupportedSpeeds(p.m_alias, p.m_port_id);
-    initPortSupportedFecModes(p.m_alias, p.m_port_id);
-}
-
 void PortsOrch::doTask()
 {
     auto tableOrder = {

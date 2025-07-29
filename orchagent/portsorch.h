@@ -430,8 +430,6 @@ private:
     void initPortCapAutoNeg(Port &port);
     void initPortCapLinkTraining(Port &port);
 
-    void postPortInit(Port &p);
-
     bool setPortAdminStatus(Port &port, bool up);
     bool getPortAdminStatus(sai_object_id_t id, bool& up);
     bool getPortMtu(const Port& port, sai_uint32_t &mtu);
