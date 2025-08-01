@@ -37,7 +37,6 @@
 #include "warm_restart.h"
 
 #include "saitam.h"
-#include "warm_restart.h"
 
 extern sai_switch_api_t *sai_switch_api;
 extern sai_bridge_api_t *sai_bridge_api;
@@ -100,7 +99,6 @@ struct PortBulker
     std::vector<uint32_t> attrCount;
     std::vector<sai_attribute_t> attrList;
     std::vector<sai_status_t> statuses;
-
     uint32_t count;
 
     PortBulker(uint32_t size) :
@@ -2059,31 +2057,6 @@ bool PortsOrch::getPortAdminStatus(sai_object_id_t id, bool &up)
     return true;
 }
 
-bool PortsOrch::getPortMtu(const Port& port, sai_uint32_t &mtu)
-{
-    SWSS_LOG_ENTER();
-
-    sai_attribute_t attr;
-    attr.id = SAI_PORT_ATTR_MTU;
-
-    sai_status_t status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
-
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        return false;
-    }
-
-    mtu = attr.value.u32 - (uint32_t)(sizeof(struct ether_header) + FCS_LEN + VLAN_TAG_LEN);
-
-    /* Reduce the default MTU got from ASIC by MAX_MACSEC_SECTAG_SIZE */
-    if (mtu > MAX_MACSEC_SECTAG_SIZE)
-    {
-        mtu -= MAX_MACSEC_SECTAG_SIZE;
-    }
-
-    return true;
-}
-
 bool PortsOrch::setPortMtu(const Port& port, sai_uint32_t mtu)
 {
     SWSS_LOG_ENTER();
@@ -2118,6 +2091,7 @@ bool PortsOrch::setPortMtu(const Port& port, sai_uint32_t mtu)
     SWSS_LOG_INFO("Set MTU %u to port pid:%" PRIx64, attr.value.u32, port.m_port_id);
     return true;
 }
+
 
 bool PortsOrch::setPortTpid(Port &port, sai_uint16_t tpid)
 {
@@ -2955,6 +2929,7 @@ void PortsOrch::initPortSupportedSpeeds(const std::string& alias, sai_object_id_
     m_portStateTable.set(alias, v);
 }
 
+
 void PortsOrch::initPortCapAutoNeg(Port &port)
 {
     sai_status_t status;
@@ -3791,13 +3766,6 @@ bool PortsOrch::initExistingPort(const PortConfig& port)
     p.m_index = index;
     p.m_port_id = id;
 
-    if (gMySwitchType != "dpu")
-    {
-        /* Query scheduler groups to work around an issue where scheduler groups get removed after SWSS warm restart.
-         * https://github.com/sonic-net/sonic-swss/pull/2174 for more details. */
-        initializeSchedulerGroups(p);
-    }
-
     /* initialize port admin status */
     if (!getPortAdminStatus(p.m_port_id, p.m_admin_state_up))
     {
@@ -3810,12 +3778,6 @@ bool PortsOrch::initExistingPort(const PortConfig& port)
     {
         SWSS_LOG_ERROR("Failed to get initial port admin speed %d", p.m_speed);
         return false;
-    }
-
-     /* initialize port mtu */
-    if (!getPortMtu(p, p.m_mtu))
-    {
-        SWSS_LOG_ERROR("Failed to get initial port mtu %d", p.m_mtu);
     }
 
     std::vector<Port> ports = {p};
@@ -3915,25 +3877,6 @@ void PortsOrch::registerPort(Port &p)
     {
         m_recircPortRole[alias] = role;
     }
-}
-
-void PortsOrch::postPortInit(const Port& p)
-{
-    SWSS_LOG_ENTER();
-
-    if (gMySwitchType != "dpu")
-    {
-        initializePortBufferMaximumParameters(p);
-    }
-
-    // We have to test the size of m_queue_ids here since it isn't initialized on some platforms (like DPU)
-    if (p.m_host_tx_queue_configured && p.m_queue_ids.size() > p.m_host_tx_queue)
-    {
-        createPortBufferQueueCounters(p, to_string(p.m_host_tx_queue), false);
-    }
-
-    initPortSupportedSpeeds(p.m_alias, p.m_port_id);
-    initPortSupportedFecModes(p.m_alias, p.m_port_id);
 }
 
 void PortsOrch::deInitPort(string alias, sai_object_id_t port_id)
@@ -5975,6 +5918,25 @@ void PortsOrch::onWarmBootEnd()
     }
 }
 
+void PortsOrch::postPortInit(Port& p)
+{
+    SWSS_LOG_ENTER();
+
+    if (gMySwitchType != "dpu")
+    {
+        initializePortBufferMaximumParameters(p);
+    }
+
+    // We have to test the size of m_queue_ids here since it isn't initialized on some platforms (like DPU)
+    if (p.m_host_tx_queue_configured && p.m_queue_ids.size() > p.m_host_tx_queue)
+    {
+        createPortBufferQueueCounters(p, to_string(p.m_host_tx_queue), false);
+    }
+
+    initPortSupportedSpeeds(p.m_alias, p.m_port_id);
+    initPortSupportedFecModes(p.m_alias, p.m_port_id);
+}
+
 void PortsOrch::doTask()
 {
     auto tableOrder = {
@@ -6104,6 +6066,7 @@ bool PortsOrch::initializePorts(std::vector<Port>& ports)
     {
         initializePriorityGroupsBulk(ports);
         initializeQueuesBulk(ports);
+        initializeSchedulerGroupsBulk(ports);
     }
 
     /* initialize port host_tx_ready value (only for supporting systems) */
@@ -6111,6 +6074,8 @@ bool PortsOrch::initializePorts(std::vector<Port>& ports)
     {
         initializePortHostTxReadyBulk(ports);
     }
+
+    initializePortMtuBulk(ports);
 
     // Create host interfaces
     for (auto iter = ports.begin(); iter != ports.end();)
@@ -6211,13 +6176,11 @@ void PortsOrch::initializePortHostTxReadyBulk(std::vector<Port>& ports)
 
     bulker.executeGet();
 
-    size_t idx = 0;
-    for (auto& port: ports)
+    for (size_t idx = 0; idx < portCount; idx++)
     {
+        const auto& port = ports[idx];
         const auto status = bulker.statuses[idx];
         const auto& attr = bulker.attrList[idx];
-
-        idx++;
 
         bool hostTxReady = false;
 
@@ -6237,48 +6200,48 @@ void PortsOrch::initializePortHostTxReadyBulk(std::vector<Port>& ports)
     }
 }
 
-void PortsOrch::initializeSchedulerGroups(Port &port)
+void PortsOrch::initializePortMtuBulk(std::vector<Port>& ports)
 {
-    std::vector<sai_object_id_t> scheduler_group_ids;
     SWSS_LOG_ENTER();
 
-    sai_attribute_t attr;
-    attr.id = SAI_PORT_ATTR_QOS_NUMBER_OF_SCHEDULER_GROUPS;
-    sai_status_t status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
-    if (status != SAI_STATUS_SUCCESS)
+    SWSS_LOG_TIMER(__FUNCTION__);
+
+    const auto portCount = static_cast<uint32_t>(ports.size());
+
+    PortBulker bulker(portCount);
+
+    for (auto& port: ports)
     {
-        SWSS_LOG_ERROR("Failed to get number of scheduler groups for port:%s", port.m_alias.c_str());
-        task_process_status handle_status = handleSaiGetStatus(SAI_API_PORT, status);
-        if (handle_status != task_process_status::task_success)
+        sai_attribute_t attr;
+        attr.id = SAI_PORT_ATTR_MTU;
+        bulker.add(port.m_port_id, attr);
+    }
+
+    bulker.executeGet();
+
+    for (size_t idx = 0; idx < portCount; idx++)
+    {
+        auto& port = ports[idx];
+        const auto status = bulker.statuses[idx];
+        const auto& attr = bulker.attrList[idx];
+
+        if (status == SAI_STATUS_SUCCESS)
         {
-            throw runtime_error("PortsOrch initialization failure.");
+            auto mtu = attr.value.u32 - (uint32_t)(sizeof(struct ether_header) + FCS_LEN + VLAN_TAG_LEN);
+
+            /* Reduce the default MTU got from ASIC by MAX_MACSEC_SECTAG_SIZE */
+            if (mtu > MAX_MACSEC_SECTAG_SIZE)
+            {
+                mtu -= MAX_MACSEC_SECTAG_SIZE;
+            }
+
+            port.m_mtu = mtu;
+        }
+        else
+        {
+            SWSS_LOG_ERROR("Failed to get mtu value from SAI for Port %" PRIx64 , port.m_port_id);
         }
     }
-    SWSS_LOG_INFO("Got %d number of scheduler groups for port %s", attr.value.u32, port.m_alias.c_str());
-
-    scheduler_group_ids.resize(attr.value.u32);
-
-    if (attr.value.u32 == 0)
-    {
-        return;
-    }
-
-    attr.id = SAI_PORT_ATTR_QOS_SCHEDULER_GROUP_LIST;
-    attr.value.objlist.count = (uint32_t)scheduler_group_ids.size();
-    attr.value.objlist.list = scheduler_group_ids.data();
-
-    status = sai_port_api->get_port_attribute(port.m_port_id, 1, &attr);
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Failed to get scheduler group list for port %s rv:%d", port.m_alias.c_str(), status);
-        task_process_status handle_status = handleSaiGetStatus(SAI_API_PORT, status);
-        if (handle_status != task_process_status::task_success)
-        {
-            throw runtime_error("PortsOrch initialization failure.");
-        }
-    }
-
-    SWSS_LOG_INFO("Got scheduler groups for port %s", port.m_alias.c_str());
 }
 
 void PortsOrch::initializePriorityGroupsBulk(std::vector<Port>& ports)
@@ -6302,13 +6265,11 @@ void PortsOrch::initializePriorityGroupsBulk(std::vector<Port>& ports)
 
         bulker.executeGet();
 
-        size_t idx = 0;
-        for (auto& port: ports)
+        for (size_t idx = 0; idx < portCount; idx++)
         {
+            auto& port = ports[idx];
             const auto status = bulker.statuses[idx];
             const auto& attr = bulker.attrList[idx];
-
-            idx++;
 
             if (status != SAI_STATUS_SUCCESS)
             {
@@ -6343,12 +6304,10 @@ void PortsOrch::initializePriorityGroupsBulk(std::vector<Port>& ports)
 
         bulker.executeGet();
 
-        size_t idx = 0;
-        for (auto& port: ports)
+        for (size_t idx = 0; idx < portCount; idx++)
         {
+            const auto& port = ports[idx];
             const auto status = bulker.statuses[idx];
-
-            idx++;
 
             if (status != SAI_STATUS_SUCCESS)
             {
@@ -6383,13 +6342,11 @@ void PortsOrch::initializeQueuesBulk(std::vector<Port>& ports)
 
         bulker.executeGet();
 
-        size_t idx = 0;
-        for (auto& port: ports)
+        for (size_t idx = 0; idx < portCount; idx++)
         {
+            auto& port = ports[idx];
             const auto status = bulker.statuses[idx];
             const auto& attr = bulker.attrList[idx];
-
-            idx++;
 
             if (status != SAI_STATUS_SUCCESS)
             {
@@ -6425,12 +6382,10 @@ void PortsOrch::initializeQueuesBulk(std::vector<Port>& ports)
 
         bulker.executeGet();
 
-        size_t idx = 0;
-        for (auto& port: ports)
+        for (size_t idx = 0; idx < portCount; idx++)
         {
+            const auto& port = ports[idx];
             const auto status = bulker.statuses[idx];
-
-            idx++;
 
             if (status != SAI_STATUS_SUCCESS)
             {
@@ -6440,6 +6395,86 @@ void PortsOrch::initializeQueuesBulk(std::vector<Port>& ports)
             }
 
             SWSS_LOG_INFO("Get queues for port %s", port.m_alias.c_str());
+        }
+    }
+}
+
+void PortsOrch::initializeSchedulerGroupsBulk(std::vector<Port>& ports)
+{
+    SWSS_LOG_ENTER();
+
+    SWSS_LOG_TIMER(__FUNCTION__);
+
+    std::vector<std::vector<sai_object_id_t>> scheduler_group_ids(ports.size());
+
+    const auto portCount = static_cast<uint32_t>(ports.size());
+
+    // Query number of scheduler groups
+    {
+        PortBulker bulker(portCount);
+
+        for (const auto& port: ports)
+        {
+            sai_attribute_t attr;
+            attr.id = SAI_PORT_ATTR_QOS_NUMBER_OF_SCHEDULER_GROUPS;
+            bulker.add(port.m_port_id, attr);
+        }
+
+        bulker.executeGet();
+
+        for (size_t idx = 0; idx < portCount; idx++)
+        {
+            const auto& port = ports[idx];
+            const auto status = bulker.statuses[idx];
+            const auto& attr = bulker.attrList[idx];
+
+            if (status != SAI_STATUS_SUCCESS)
+            {
+                SWSS_LOG_ERROR("Failed to get number of scheduler groups for port %s rv:%d", port.m_alias.c_str(), status);
+                handleSaiGetStatus(SAI_API_PORT, status);
+                throw runtime_error("PortsOrch initialization failure.");
+            }
+
+            SWSS_LOG_INFO("Get %d scheduler groups for port %s", attr.value.u32, port.m_alias.c_str());
+            scheduler_group_ids[idx].resize(attr.value.u32);
+        }
+    }
+
+    // Query scheduler groups lists
+    {
+        PortBulker bulker(portCount);
+
+        for (size_t idx = 0; idx < portCount; idx++)
+        {
+            sai_attribute_t attr;
+            const auto& port = ports[idx];
+
+            if (scheduler_group_ids[idx].size() == 0)
+            {
+                continue;
+            }
+
+            attr.id = SAI_PORT_ATTR_QOS_SCHEDULER_GROUP_LIST;
+            attr.value.objlist.list = scheduler_group_ids[idx].data();
+            attr.value.objlist.count = static_cast<uint32_t>(scheduler_group_ids[idx].size());
+            bulker.add(port.m_port_id, attr);
+        }
+
+        bulker.executeGet();
+
+        for (size_t idx = 0; idx < portCount; idx++)
+        {
+            const auto& port = ports[idx];
+            const auto status = bulker.statuses[idx];
+
+            if (status != SAI_STATUS_SUCCESS)
+            {
+                SWSS_LOG_ERROR("Failed to get scheduler group list for port %s rv:%d", port.m_alias.c_str(), status);
+                handleSaiGetStatus(SAI_API_PORT, status);
+                throw runtime_error("PortsOrch initialization failure.");
+            }
+
+            SWSS_LOG_INFO("Get scheduler groups for port %s", port.m_alias.c_str());
         }
     }
 }
