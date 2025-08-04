@@ -25,6 +25,7 @@
 
 #define FCS_LEN 4
 #define VLAN_TAG_LEN 4
+#define MAX_MACSEC_SECTAG_SIZE 32
 #define PORT_STAT_COUNTER_FLEX_COUNTER_GROUP "PORT_STAT_COUNTER"
 #define PORT_RATE_COUNTER_FLEX_COUNTER_GROUP "PORT_RATE_COUNTER"
 #define PORT_BUFFER_DROP_STAT_FLEX_COUNTER_GROUP "PORT_BUFFER_DROP_STAT"
@@ -391,13 +392,13 @@ private:
     void removeDefaultBridgePorts();
 
     bool initializePorts(std::vector<Port>& ports);
-
     void initializePriorityGroupsBulk(std::vector<Port>& ports);
     void initializeQueuesBulk(std::vector<Port>& ports);
+    void initializeSchedulerGroupsBulk(std::vector<Port>& ports);
     void initializePortHostTxReadyBulk(std::vector<Port>& ports);
+    void initializePortMtuBulk(std::vector<Port>& ports);
 
     void initializePortBufferMaximumParameters(const Port &port);
-    void initializeSchedulerGroups(Port &port);
     void initializeVoqs(Port &port);
 
     bool addHostIntfs(Port &port, string alias, sai_object_id_t &host_intfs_id, bool isUp);
@@ -418,12 +419,8 @@ private:
 
     sai_status_t removePort(sai_object_id_t port_id);
     bool initExistingPort(const PortConfig &port);
-
     bool initPortsBulk(std::vector<Port>& ports);
-
     void registerPort(Port &p);
-
-    void postPortInit(const Port &p);
     
     void deInitPort(string alias, sai_object_id_t port_id);
 
