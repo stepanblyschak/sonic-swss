@@ -21,7 +21,7 @@ extern "C" {
 // 
 // Configured via orchagent command line argument: -D <delay_sec>
 // 
-extern uint32_t gFlexCounterDelaySec;
+extern int gFlexCounterDelaySec;
 
 const std::string createAllAvailableBuffersStr = "create_all_available_buffers";
 

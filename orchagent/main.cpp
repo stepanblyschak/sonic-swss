@@ -488,16 +488,7 @@ int main(int argc, char **argv)
         case 'R':
             gRingMode = true;
             break;
-        case 'D':
-            try
-            {
-                gFlexCounterDelaySec = swss::to_uint<uint32_t>(optarg);
-            }
-            catch (const std::exception& error)
-            {
-                SWSS_LOG_ERROR("Invalid flex counter delay sec [%s]: %s", optarg, error.what());
-            }
-            break;
+        case 'D': { gFlexCounterDelaySec = swss::to_int<int>(optarg); } break;
         default: /* '?' */
             exit(EXIT_FAILURE);
         }

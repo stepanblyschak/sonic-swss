@@ -31,7 +31,7 @@ extern FlowCounterRouteOrch *gFlowCounterRouteOrch;
 extern Srv6Orch *gSrv6Orch;
 extern sai_object_id_t gSwitchId;
 
-uint32_t gFlexCounterDelaySec;
+int gFlexCounterDelaySec;
 
 #define BUFFER_POOL_WATERMARK_KEY   "BUFFER_POOL_WATERMARK"
 #define PORT_KEY                    "PORT"
@@ -92,7 +92,7 @@ FlexCounterOrch::FlexCounterOrch(DBConnector *db, vector<string> &tableNames):
 
     if (gFlexCounterDelaySec > 0)
     {
-        m_delayTimer = new SelectableTimer(timespec{.tv_sec = gFlexCounterDelaySec, .tv_nsec = 0});
+        m_delayTimer = new SelectableTimer(timespec{.tv_sec = static_cast<time_t>(gFlexCounterDelaySec), .tv_nsec = 0});
         auto delayExecutor = new ExecutableTimer(m_delayTimer, this, "FLEX_COUNTER_DELAY");
         Orch::addExecutor(delayExecutor);
         m_delayTimer->start();
