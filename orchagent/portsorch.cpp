@@ -3814,6 +3814,13 @@ bool PortsOrch::initPortsBulk(std::vector<Port>& ports)
     return status;
 }
 
+// Registers a newly created and initialized port, adds port to internal maps.
+// Performs the following operations:
+// - Adds port to internal port list and mapping tables
+// - Initializes gearbox port configuration if applicable
+// - Sets up port name mapping for counter tables
+// - Installs flex counters for port statistics monitoring
+// - Notifies subscribers of port state changes
 void PortsOrch::registerPort(Port &p)
 {
     SWSS_LOG_ENTER();
