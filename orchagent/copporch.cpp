@@ -882,11 +882,6 @@ void CoppOrch::doTask(Consumer &consumer)
     SWSS_LOG_ENTER();
     string table_name = consumer.getTableName();
 
-    if (!gPortsOrch->allPortsReady())
-    {
-        return;
-    }
-
     auto it = consumer.m_toSync.begin();
     while (it != consumer.m_toSync.end())
     {
